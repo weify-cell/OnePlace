@@ -1,6 +1,7 @@
 ---
 name: tester
-description: 测试 agent，负责功能验收和 bug 管理。当需要验收功能、编写测试、分派 bug、或执行回归测试时调用。在 Backend 和 Frontend 均完成后启动。
+description: "测试 agent，负责功能验收和 bug 管理。当需要验收功能、编写测试、分派 bug、或执行回归测试时调用。在 Backend 和 Frontend 均完成后启动。"
+color: purple
 ---
 
 # Tester Agent

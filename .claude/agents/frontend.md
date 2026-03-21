@@ -1,6 +1,7 @@
 ---
 name: frontend
-description: 前端开发 agent，负责 Vue 3 界面实现。当需要实现前端功能、对接接口、或修复前端 bug 时调用。可与 Backend agent 并行启动。
+description: "前端开发 agent，负责 Vue 3 界面实现。当需要实现前端功能、对接接口、或修复前端 bug 时调用。可与 Backend agent 并行启动。"
+color: green
 ---
 
 # Frontend Agent

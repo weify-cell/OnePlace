@@ -30,18 +30,21 @@ const typeOptions = [
     <n-select
       :value="todoStore.filters.status"
       :options="statusOptions"
+      placeholder="全部状态"
       class="w-36"
       @update:value="todoStore.setFilter('status', $event)"
     />
     <n-select
       :value="todoStore.filters.priority"
       :options="priorityOptions"
+      placeholder="全部优先级"
       class="w-36"
       @update:value="todoStore.setFilter('priority', $event)"
     />
     <n-select
       :value="todoStore.filters.type"
       :options="typeOptions"
+      placeholder="全部类型"
       class="w-36"
       @update:value="todoStore.setFilter('type', $event)"
     />

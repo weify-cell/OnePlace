@@ -29,7 +29,7 @@ function handleKeydown(e: KeyboardEvent) {
 
 <template>
   <div
-    class="flex flex-wrap gap-1.5 p-2 border border-gray-300 dark:border-gray-600 rounded-md min-h-10 cursor-text"
+    class="flex flex-wrap gap-2 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg min-h-[38px] cursor-text"
     @click="($el as HTMLElement).querySelector('input')?.focus()"
   >
     <n-tag

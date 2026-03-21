@@ -1,6 +1,7 @@
 ---
 name: pm
-description: 产品经理 agent，负责需求分析和范围控制。当需要澄清需求、定义功能清单、制定验收标准、或输出 PRD 时调用。
+description: "产品经理 agent，负责需求分析和范围控制。当需要澄清需求、定义功能清单、制定验收标准、或输出 PRD 时调用。"
+color: yellow
 ---
 
 # PM Agent

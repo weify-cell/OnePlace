@@ -2,14 +2,21 @@
 import { useTodoStore } from '@/stores/todo.store'
 import type { Todo } from '@/types'
 import { TODO_PRIORITY_LABELS, TODO_PRIORITY_COLORS, TODO_TYPE_LABELS, TODO_TYPE_ICONS, TODO_STATUS_LABELS } from '@/types'
+import TodoEditModal from './TodoEditModal.vue'
 
 const props = defineProps<{ todo: Todo }>()
 const todoStore = useTodoStore()
 const message = useMessage()
 const dialog = useDialog()
 
+const showEditModal = ref(false)
+
 async function toggleStatus() {
   await todoStore.toggleStatus(props.todo.id)
+}
+
+function openEdit() {
+  showEditModal.value = true
 }
 
 function confirmDelete() {
@@ -26,7 +33,7 @@ function confirmDelete() {
 </script>
 
 <template>
-  <div :class="['card p-4 flex items-start gap-3 hover:shadow-md transition-shadow', todo.status === 'done' ? 'opacity-60' : '']">
+  <div :class="['group card p-4 flex items-start gap-3 hover:shadow-md transition-shadow', todo.status === 'done' ? 'opacity-60' : '']">
     <!-- Checkbox -->
     <n-checkbox
       :checked="todo.status === 'done'"
@@ -59,7 +66,23 @@ function confirmDelete() {
       </div>
     </div>
 
-    <!-- Delete -->
-    <n-button size="tiny" quaternary circle class="flex-shrink-0" @click="confirmDelete">✕</n-button>
+    <!-- Actions -->
+    <div class="flex items-center gap-1 flex-shrink-0">
+      <n-button
+        size="tiny"
+        quaternary
+        circle
+        class="opacity-0 group-hover:opacity-100 transition-opacity"
+        title="编辑"
+        @click="openEdit"
+      >✎</n-button>
+      <n-button size="tiny" quaternary circle @click="confirmDelete">✕</n-button>
+    </div>
   </div>
+
+  <!-- Edit Modal -->
+  <TodoEditModal
+    v-model:show="showEditModal"
+    :todo="todo"
+  />
 </template>

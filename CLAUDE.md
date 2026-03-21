@@ -3,10 +3,10 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## 当前迭代
-- 迭代目标：优化笔记编辑功能
-- 版本号：v1.1
-- 模块名：note-editor
-- 启动日期：2026-03-21
+- 迭代目标：（待规划）
+- 版本号：v1.2
+- 模块名：（待定）
+- 启动日期：（待定）
 
 ## 阶段完成状态
 - [ ] 需求分析    → .claude/handoff/pm-output.md
@@ -25,7 +25,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 对话输出不超过 150 字
 
 ## 归档索引
-（迭代归档后在此追加记录）
+详见 .claude/archive/index.md
 
 ---
 

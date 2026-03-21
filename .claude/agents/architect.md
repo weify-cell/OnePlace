@@ -1,6 +1,7 @@
 ---
 name: architect
-description: 架构师 agent，负责技术方案设计和接口契约制定。当需要设计 API 接口、数据库 schema、评估架构影响、或输出技术方案文档时调用。在 PM 完成需求分析后启动。
+description: "架构师 agent，负责技术方案设计和接口契约制定。当需要设计 API 接口、数据库 schema、评估架构影响、或输出技术方案文档时调用。在 PM 完成需求分析后启动。"
+color: red
 ---
 
 # Architect Agent

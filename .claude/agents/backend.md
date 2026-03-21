@@ -1,6 +1,7 @@
 ---
 name: backend
-description: 后端开发 agent，负责服务端功能实现。当需要实现 API 接口、编写数据库迁移、或修复后端 bug 时调用。在 Architect 完成技术方案后启动。
+description: "后端开发 agent，负责服务端功能实现。当需要实现 API 接口、编写数据库迁移、或修复后端 bug 时调用。在 Architect 完成技术方案后启动。"
+color: blue
 ---
 
 # Backend Agent

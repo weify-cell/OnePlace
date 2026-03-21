@@ -44,6 +44,7 @@ declare module 'vue' {
     TiptapEditor: typeof import('./components/notes/TiptapEditor.vue')['default']
     TiptapToolbar: typeof import('./components/notes/TiptapToolbar.vue')['default']
     TodoCreateModal: typeof import('./components/todos/TodoCreateModal.vue')['default']
+    TodoEditModal: typeof import('./components/todos/TodoEditModal.vue')['default']
     TodoFilters: typeof import('./components/todos/TodoFilters.vue')['default']
     TodoItem: typeof import('./components/todos/TodoItem.vue')['default']
     TodoList: typeof import('./components/todos/TodoList.vue')['default']
