@@ -1,0 +1,139 @@
+import { connectDatabase } from '../database/index.js'
+
+export interface Note {
+  id: number
+  title: string
+  content: string
+  content_text: string
+  tags: string[]
+  is_pinned: boolean
+  is_archived: boolean
+  is_deleted: boolean
+  created_at: string
+  updated_at: string
+}
+
+interface NoteRow {
+  id: number
+  title: string
+  content: string
+  content_text: string
+  tags: string
+  is_pinned: number
+  is_archived: number
+  is_deleted: number
+  created_at: string
+  updated_at: string
+}
+
+function rowToNote(row: NoteRow): Note {
+  return {
+    ...row,
+    tags: JSON.parse(row.tags || '[]'),
+    is_pinned: row.is_pinned === 1,
+    is_archived: row.is_archived === 1,
+    is_deleted: row.is_deleted === 1
+  }
+}
+
+// Extract plain text from Tiptap JSON content
+function extractText(content: string): string {
+  try {
+    const doc = JSON.parse(content)
+    const texts: string[] = []
+    function traverse(node: { text?: string; content?: unknown[] }) {
+      if (node.text) texts.push(node.text)
+      if (node.content) node.content.forEach(traverse)
+    }
+    traverse(doc)
+    return texts.join(' ').slice(0, 500)
+  } catch {
+    return content.slice(0, 500)
+  }
+}
+
+export interface NoteQuery {
+  tag?: string
+  search?: string
+  is_archived?: boolean
+  is_pinned?: boolean
+  page?: number
+  pageSize?: number
+}
+
+export function getNotes(query: NoteQuery) {
+  const db = connectDatabase()
+  const { tag, search, is_archived = false, is_pinned, page = 1, pageSize = 20 } = query
+
+  const conditions: string[] = ['is_deleted = 0', `is_archived = ${is_archived ? 1 : 0}`]
+  const params: (string | number)[] = []
+
+  if (is_pinned !== undefined) { conditions.push(`is_pinned = ${is_pinned ? 1 : 0}`) }
+  if (search) { conditions.push('(title LIKE ? OR content_text LIKE ?)'); params.push(`%${search}%`, `%${search}%`) }
+  if (tag) { conditions.push(`EXISTS (SELECT 1 FROM json_each(tags) WHERE value = ?)`); params.push(tag) }
+
+  const where = conditions.join(' AND ')
+  const countRow = db.prepare(`SELECT COUNT(*) as total FROM notes WHERE ${where}`).get(...params) as { total: number }
+  const rows = db.prepare(`
+    SELECT * FROM notes WHERE ${where}
+    ORDER BY is_pinned DESC, updated_at DESC
+    LIMIT ? OFFSET ?
+  `).all(...params, pageSize, (page - 1) * pageSize) as NoteRow[]
+
+  return { items: rows.map(rowToNote), total: countRow.total, page, pageSize }
+}
+
+export function getNoteById(id: number): Note | null {
+  const db = connectDatabase()
+  const row = db.prepare('SELECT * FROM notes WHERE id = ? AND is_deleted = 0').get(id) as NoteRow | undefined
+  return row ? rowToNote(row) : null
+}
+
+export function createNote(): Note {
+  const db = connectDatabase()
+  const result = db.prepare(`INSERT INTO notes (title, content, content_text, tags) VALUES ('无标题', '', '', '[]')`).run()
+  return getNoteById(result.lastInsertRowid as number)!
+}
+
+export function updateNote(id: number, data: Partial<Note>): Note | null {
+  const db = connectDatabase()
+  const existing = getNoteById(id)
+  if (!existing) return null
+
+  const updates: string[] = []
+  const params: (string | number | null)[] = []
+
+  if (data.title !== undefined) { updates.push('title = ?'); params.push(data.title) }
+  if (data.content !== undefined) {
+    updates.push('content = ?', 'content_text = ?')
+    params.push(data.content, extractText(data.content))
+  }
+  if (data.tags !== undefined) { updates.push('tags = ?'); params.push(JSON.stringify(data.tags)) }
+  if (data.is_pinned !== undefined) { updates.push('is_pinned = ?'); params.push(data.is_pinned ? 1 : 0) }
+  if (data.is_archived !== undefined) { updates.push('is_archived = ?'); params.push(data.is_archived ? 1 : 0) }
+
+  if (updates.length === 0) return existing
+
+  updates.push("updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')")
+  params.push(id)
+
+  db.prepare(`UPDATE notes SET ${updates.join(', ')} WHERE id = ?`).run(...params)
+  return getNoteById(id)
+}
+
+export function deleteNote(id: number): boolean {
+  const db = connectDatabase()
+  const result = db.prepare("UPDATE notes SET is_deleted = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ? AND is_deleted = 0").run(id)
+  return result.changes > 0
+}
+
+export function getAllNoteTags(): string[] {
+  const db = connectDatabase()
+  const rows = db.prepare(`
+    SELECT DISTINCT je.value as tag
+    FROM notes n, json_each(n.tags) je
+    WHERE n.is_deleted = 0
+    ORDER BY tag
+  `).all() as { tag: string }[]
+  return rows.map(r => r.tag)
+}

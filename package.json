@@ -1,0 +1,49 @@
+{
+  "name": "oneplace",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc && vite build",
+    "preview": "vite preview",
+    "server": "cd server && npm run dev",
+    "server:install": "cd server && npm install",
+    "install:all": "npm install && cd server && npm install",
+    "dev:all": "concurrently \"npm run dev\" \"npm run server\"",
+    "test": "vitest",
+    "typecheck": "vue-tsc --noEmit"
+  },
+  "dependencies": {
+    "vue": "^3.5.13",
+    "vue-router": "^4.5.0",
+    "pinia": "^3.0.1",
+    "naive-ui": "^2.41.0",
+    "axios": "^1.8.4",
+    "@tiptap/vue-3": "^3.0.0",
+    "@tiptap/pm": "^3.0.0",
+    "@tiptap/starter-kit": "^3.0.0",
+    "@tiptap/extension-placeholder": "^3.0.0",
+    "@tiptap/extension-task-list": "^3.0.0",
+    "@tiptap/extension-task-item": "^3.0.0",
+    "@tiptap/extension-code-block-lowlight": "^3.0.0",
+    "lowlight": "^3.3.0",
+    "markdown-it": "^14.1.0",
+    "@vueuse/core": "^12.7.0"
+  },
+  "devDependencies": {
+    "vite": "^6.2.3",
+    "@vitejs/plugin-vue": "^5.2.3",
+    "typescript": "^5.8.2",
+    "vue-tsc": "^2.2.8",
+    "unocss": "^66.1.0",
+    "@unocss/preset-wind": "^66.1.0",
+    "@unocss/preset-icons": "^66.1.0",
+    "@iconify-json/lucide": "^1.2.33",
+    "unplugin-auto-import": "^19.1.2",
+    "unplugin-vue-components": "^28.4.1",
+    "vitest": "^3.1.1",
+    "@vue/test-utils": "^2.4.6",
+    "concurrently": "^9.1.2"
+  }
+}
