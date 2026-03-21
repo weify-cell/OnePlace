@@ -11,14 +11,16 @@ export function getAllSettings(req: Request, res: Response): void {
 }
 
 export function getSetting(req: Request, res: Response): void {
-  const value = settingsService.getSetting(req.params.key)
+  const key = req.params.key as string
+  const value = settingsService.getSetting(key)
   if (value === null) { res.status(404).json({ error: 'NotFound' }); return }
-  try { res.json({ key: req.params.key, value: JSON.parse(value) }) }
-  catch { res.json({ key: req.params.key, value }) }
+  try { res.json({ key, value: JSON.parse(value) }) }
+  catch { res.json({ key, value }) }
 }
 
 export function setSetting(req: Request, res: Response): void {
+  const key = req.params.key as string
   const { value } = req.body
-  settingsService.setSetting(req.params.key, value)
-  res.json({ key: req.params.key, value })
+  settingsService.setSetting(key, value)
+  res.json({ key, value })
 }

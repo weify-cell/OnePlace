@@ -50,21 +50,21 @@ function logout() {
     </div>
 
     <!-- Navigation -->
-    <nav class="flex-1 py-4 space-y-1 px-2">
-      <router-link
-        v-for="item in navItems"
-        :key="item.path"
-        :to="item.path"
-        :class="[
-          'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-sm font-medium',
-          route.path.startsWith(item.path)
-            ? 'bg-primary-50 text-primary-700 dark:bg-primary-900 dark:text-primary-300'
-            : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
-        ]"
-      >
-        <span class="text-lg leading-none flex-shrink-0">{{ item.icon }}</span>
-        <span :class="['whitespace-nowrap overflow-hidden transition-all duration-300', collapsed ? 'max-w-0 opacity-0' : 'max-w-xs opacity-100']">{{ item.label }}</span>
-      </router-link>
+    <nav class="flex-1 py-4 space-y-1 px-2 overflow-y-auto">
+      <template v-for="item in navItems" :key="item.path">
+        <router-link
+          :to="item.path"
+          :class="[
+            'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-sm font-medium',
+            route.path.startsWith(item.path)
+              ? 'bg-primary-50 text-primary-700 dark:bg-primary-900 dark:text-primary-300'
+              : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+          ]"
+        >
+          <span class="text-lg leading-none flex-shrink-0">{{ item.icon }}</span>
+          <span :class="['whitespace-nowrap overflow-hidden transition-all duration-300', collapsed ? 'max-w-0 opacity-0' : 'max-w-xs opacity-100']">{{ item.label }}</span>
+        </router-link>
+      </template>
     </nav>
 
     <!-- Logout -->

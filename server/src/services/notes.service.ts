@@ -6,6 +6,7 @@ export interface Note {
   content: string
   content_text: string
   tags: string[]
+  folder_id: number | null
   is_pinned: boolean
   is_archived: boolean
   is_deleted: boolean
@@ -19,6 +20,7 @@ interface NoteRow {
   content: string
   content_text: string
   tags: string
+  folder_id: number | null
   is_pinned: number
   is_archived: number
   is_deleted: number
@@ -30,6 +32,7 @@ function rowToNote(row: NoteRow): Note {
   return {
     ...row,
     tags: JSON.parse(row.tags || '[]'),
+    folder_id: row.folder_id ?? null,
     is_pinned: row.is_pinned === 1,
     is_archived: row.is_archived === 1,
     is_deleted: row.is_deleted === 1
@@ -43,7 +46,7 @@ function extractText(content: string): string {
     const texts: string[] = []
     function traverse(node: { text?: string; content?: unknown[] }) {
       if (node.text) texts.push(node.text)
-      if (node.content) node.content.forEach(traverse)
+      if (node.content) node.content.forEach(child => traverse(child as { text?: string; content?: unknown[] }))
     }
     traverse(doc)
     return texts.join(' ').slice(0, 500)
@@ -55,6 +58,7 @@ function extractText(content: string): string {
 export interface NoteQuery {
   tag?: string
   search?: string
+  folder_id?: number | 'none'
   is_archived?: boolean
   is_pinned?: boolean
   page?: number
@@ -63,7 +67,7 @@ export interface NoteQuery {
 
 export function getNotes(query: NoteQuery) {
   const db = connectDatabase()
-  const { tag, search, is_archived = false, is_pinned, page = 1, pageSize = 20 } = query
+  const { tag, search, folder_id, is_archived = false, is_pinned, page = 1, pageSize = 20 } = query
 
   const conditions: string[] = ['is_deleted = 0', `is_archived = ${is_archived ? 1 : 0}`]
   const params: (string | number)[] = []
@@ -71,6 +75,12 @@ export function getNotes(query: NoteQuery) {
   if (is_pinned !== undefined) { conditions.push(`is_pinned = ${is_pinned ? 1 : 0}`) }
   if (search) { conditions.push('(title LIKE ? OR content_text LIKE ?)'); params.push(`%${search}%`, `%${search}%`) }
   if (tag) { conditions.push(`EXISTS (SELECT 1 FROM json_each(tags) WHERE value = ?)`); params.push(tag) }
+  if (folder_id === 'none') {
+    conditions.push('folder_id IS NULL')
+  } else if (folder_id !== undefined) {
+    conditions.push('folder_id = ?')
+    params.push(folder_id)
+  }
 
   const where = conditions.join(' AND ')
   const countRow = db.prepare(`SELECT COUNT(*) as total FROM notes WHERE ${where}`).get(...params) as { total: number }
@@ -89,9 +99,12 @@ export function getNoteById(id: number): Note | null {
   return row ? rowToNote(row) : null
 }
 
-export function createNote(): Note {
+export function createNote(data?: { folder_id?: number | null }): Note {
   const db = connectDatabase()
-  const result = db.prepare(`INSERT INTO notes (title, content, content_text, tags) VALUES ('无标题', '', '', '[]')`).run()
+  const folderId = data?.folder_id ?? null
+  const result = db.prepare(
+    `INSERT INTO notes (title, content, content_text, tags, folder_id) VALUES ('无标题', '', '', '[]', ?)`
+  ).run(folderId)
   return getNoteById(result.lastInsertRowid as number)!
 }
 
@@ -111,6 +124,7 @@ export function updateNote(id: number, data: Partial<Note>): Note | null {
   if (data.tags !== undefined) { updates.push('tags = ?'); params.push(JSON.stringify(data.tags)) }
   if (data.is_pinned !== undefined) { updates.push('is_pinned = ?'); params.push(data.is_pinned ? 1 : 0) }
   if (data.is_archived !== undefined) { updates.push('is_archived = ?'); params.push(data.is_archived ? 1 : 0) }
+  if ('folder_id' in data) { updates.push('folder_id = ?'); params.push(data.folder_id ?? null) }
 
   if (updates.length === 0) return existing
 

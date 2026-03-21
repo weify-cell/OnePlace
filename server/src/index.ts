@@ -16,6 +16,7 @@ import { todosRouter } from './routes/todos.routes.js'
 import { notesRouter } from './routes/notes.routes.js'
 import { chatRouter } from './routes/chat.routes.js'
 import { settingsRouter } from './routes/settings.routes.js'
+import { foldersRouter } from './routes/folders.routes.js'
 
 const app = express()
 const PORT = process.env.PORT || 3000
@@ -43,6 +44,7 @@ app.use('/api/todos', todosRouter)
 app.use('/api/notes', notesRouter)
 app.use('/api/conversations', chatRouter)
 app.use('/api/settings', settingsRouter)
+app.use('/api/folders', foldersRouter)
 
 app.use(errorMiddleware)
 

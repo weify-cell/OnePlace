@@ -36,6 +36,14 @@ export interface TodoFilters {
   search: string
 }
 
+// Folder
+export interface Folder {
+  id: number
+  name: string
+  created_at: string
+  updated_at: string
+}
+
 // Note
 export interface Note {
   id: number
@@ -43,6 +51,7 @@ export interface Note {
   content: string
   content_text: string
   tags: string[]
+  folder_id?: number | null
   is_pinned: boolean
   is_archived: boolean
   is_deleted: boolean

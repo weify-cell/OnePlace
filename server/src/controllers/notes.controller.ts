@@ -2,10 +2,19 @@ import { Request, Response } from 'express'
 import * as notesService from '../services/notes.service.js'
 
 export function getNotes(req: Request, res: Response): void {
-  const { tag, search, is_archived, is_pinned, page, pageSize } = req.query
+  const { tag, search, is_archived, is_pinned, page, pageSize, folder_id } = req.query
+
+  let parsedFolderId: number | 'none' | undefined
+  if (folder_id === 'none') {
+    parsedFolderId = 'none'
+  } else if (folder_id !== undefined && folder_id !== '') {
+    parsedFolderId = Number(folder_id)
+  }
+
   const result = notesService.getNotes({
     tag: tag as string,
     search: search as string,
+    folder_id: parsedFolderId,
     is_archived: is_archived === 'true',
     is_pinned: is_pinned !== undefined ? is_pinned === 'true' : undefined,
     page: page ? Number(page) : 1,
@@ -21,7 +30,8 @@ export function getNote(req: Request, res: Response): void {
 }
 
 export function createNote(req: Request, res: Response): void {
-  const note = notesService.createNote()
+  const { folder_id } = req.body
+  const note = notesService.createNote({ folder_id: folder_id ?? null })
   res.status(201).json(note)
 }
 

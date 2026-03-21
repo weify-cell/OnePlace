@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { notesApi } from '@/api/notes.api'
-import type { Note } from '@/types'
+import { foldersApi } from '@/api/folders.api'
+import type { Note, Folder } from '@/types'
 
 export const useNoteStore = defineStore('notes', () => {
   const items = ref<Note[]>([])
@@ -9,7 +10,15 @@ export const useNoteStore = defineStore('notes', () => {
   const loading = ref(false)
   const saving = ref(false)
   const allTags = ref<string[]>([])
-  const filters = ref({ tag: '', search: '', is_archived: false, is_pinned: undefined as boolean | undefined })
+  const folders = ref<Folder[]>([])
+  const currentFolderId = ref<number | null>(null)
+  const filters = ref({
+    tag: '',
+    search: '',
+    is_archived: false,
+    is_pinned: undefined as boolean | undefined,
+    folder_id: null as number | null
+  })
 
   async function fetchNotes() {
     loading.value = true
@@ -18,6 +27,7 @@ export const useNoteStore = defineStore('notes', () => {
       if (filters.value.tag) params.tag = filters.value.tag
       if (filters.value.search) params.search = filters.value.search
       if (filters.value.is_pinned !== undefined) params.is_pinned = filters.value.is_pinned
+      if (filters.value.folder_id !== null) params.folder_id = filters.value.folder_id
       const res = await notesApi.getAll(params)
       items.value = res.data.items
       total.value = res.data.total
@@ -27,7 +37,9 @@ export const useNoteStore = defineStore('notes', () => {
   }
 
   async function createNote() {
-    const res = await notesApi.create()
+    const payload: Record<string, unknown> = {}
+    if (currentFolderId.value !== null) payload.folder_id = currentFolderId.value
+    const res = await notesApi.create(payload)
     return res.data
   }
 
@@ -73,5 +85,42 @@ export const useNoteStore = defineStore('notes', () => {
     allTags.value = res.data
   }
 
-  return { items, total, currentNote, loading, saving, allTags, filters, fetchNotes, createNote, fetchNote, updateNote, deleteNote, togglePin, toggleArchive, fetchAllTags }
+  // Folder actions
+  async function fetchFolders() {
+    const res = await foldersApi.getAll()
+    folders.value = res.data.items
+  }
+
+  async function createFolder(name: string) {
+    await foldersApi.create(name)
+    await fetchFolders()
+  }
+
+  async function renameFolder(id: number, name: string) {
+    const res = await foldersApi.rename(id, name)
+    const idx = folders.value.findIndex(f => f.id === id)
+    if (idx !== -1) folders.value[idx] = res.data
+  }
+
+  async function deleteFolder(id: number) {
+    await foldersApi.delete(id)
+    await fetchFolders()
+    if (currentFolderId.value === id) {
+      selectFolder(null)
+    }
+  }
+
+  function selectFolder(id: number | null) {
+    currentFolderId.value = id
+    filters.value.folder_id = id
+    fetchNotes()
+  }
+
+  return {
+    items, total, currentNote, loading, saving, allTags,
+    folders, currentFolderId, filters,
+    fetchNotes, createNote, fetchNote, updateNote, deleteNote,
+    togglePin, toggleArchive, fetchAllTags,
+    fetchFolders, createFolder, renameFolder, deleteFolder, selectFolder
+  }
 })
