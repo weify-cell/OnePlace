@@ -37,6 +37,15 @@ export const AI_PROVIDERS: Record<string, AIProvider> = {
       { id: 'glm-3-turbo', name: 'GLM-3 Turbo' }
     ]
   },
+  deepseek: {
+    name: 'deepseek',
+    displayName: 'DeepSeek',
+    baseURL: 'https://api.deepseek.com/v1',
+    models: [
+      { id: 'deepseek-chat', name: 'DeepSeek Chat' },
+      { id: 'deepseek-reasoner', name: 'DeepSeek Reasoner' }
+    ]
+  },
   openai: {
     name: 'openai',
     displayName: 'OpenAI',
