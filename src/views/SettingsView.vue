@@ -13,6 +13,8 @@ const defaultProvider = ref('')
 const defaultModel = ref('')
 const theme = ref<'light' | 'dark' | 'system'>('system')
 
+watch(theme, (val) => { settingsStore.theme = val })
+
 onMounted(async () => {
   await settingsStore.loadSettings()
   // Initialize local form from store

@@ -5,11 +5,23 @@ import { darkTheme, lightTheme } from 'naive-ui'
 
 const settingsStore = useSettingsStore()
 
-const naiveTheme = computed(() => {
-  if (settingsStore.theme === 'dark') return darkTheme
-  if (settingsStore.theme === 'light') return lightTheme
-  return null // system
+onMounted(() => { settingsStore.loadSettings() })
+
+const systemDark = ref(window.matchMedia('(prefers-color-scheme: dark)').matches)
+const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+mediaQuery.addEventListener('change', (e) => { systemDark.value = e.matches })
+
+const isDark = computed(() => {
+  if (settingsStore.theme === 'dark') return true
+  if (settingsStore.theme === 'light') return false
+  return systemDark.value
 })
+
+const naiveTheme = computed(() => isDark.value ? darkTheme : lightTheme)
+
+watch(isDark, (val) => {
+  document.documentElement.classList.toggle('dark', val)
+}, { immediate: true })
 </script>
 
 <template>
