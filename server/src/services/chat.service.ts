@@ -103,8 +103,7 @@ export async function streamChat(
 
     // Get conversation history
     const messages = (db.prepare('SELECT role, content FROM messages WHERE conversation_id = ? AND is_error = 0 ORDER BY created_at ASC').all(conversationId) as { role: string; content: string }[])
-      .filter(m => m.content.trim().length > 0)
-      .slice(0, -1) // exclude the empty assistant message we just inserted
+      .filter(m => m.content.trim().length > 0) // exclude the empty assistant placeholder we just inserted
 
     const stream = await client.chat.completions.create({
       model: conversation.model,
