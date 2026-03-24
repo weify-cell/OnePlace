@@ -4,51 +4,44 @@
 
 set -e
 
+# 加载 nvm
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+
 PROJECT_DIR="/soft/oneplace"
 REPO_URL="https://github.com/weify-cell/OnePlace.git"
 
 echo "=== OnePlace 部署开始 ==="
 echo "部署目录: $PROJECT_DIR"
+echo "Node版本: $(node -v)"
 echo ""
 
-# 0. 创建部署目录
-sudo mkdir -p "$PROJECT_DIR"
-sudo chown -R $USER:$USER "$PROJECT_DIR"
+# 1. 检查 PM2
+echo "[1/3] 检查 PM2..."
+pm2 -v
 
-# 1. 安装 Node.js 20
-if ! command -v node &> /dev/null || [ "$(node -v | cut -d'v' -f2 | cut -d'.' -f1)" != "20" ]; then
-    echo "[1/7] 安装 Node.js 20..."
-    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-    sudo apt-get install -y nodejs
-else
-    echo "[1/7] Node.js 已安装: $(node -v)"
-fi
-
-# 2. 安装 PM2
-if ! command -v pm2 &> /dev/null; then
-    echo "[2/7] 安装 PM2..."
-    sudo npm install -g pm2
-else
-    echo "[2/7] PM2 已安装"
-fi
-
-# 3. 克隆/更新代码
-echo "[3/7] 拉取代码..."
+# 2. 克隆/更新代码
+echo "[2/3] 拉取代码..."
 if [ -d "$PROJECT_DIR/.git" ]; then
     cd "$PROJECT_DIR"
     git pull origin master
 else
+    # 如果目录存在但不是git仓库，清空后重新克隆
+    if [ -d "$PROJECT_DIR" ] && [ "$(ls -A $PROJECT_DIR 2>/dev/null)" ]; then
+        echo "目录已存在但不是git仓库，正在清空..."
+        rm -rf "$PROJECT_DIR"/* "$PROJECT_DIR"/.[^.]* 2>/dev/null || true
+    fi
     git clone "$REPO_URL" "$PROJECT_DIR"
     cd "$PROJECT_DIR"
 fi
 
-# 4. 安装依赖并构建
-echo "[4/7] 安装依赖并构建..."
+# 3. 安装依赖并构建
+echo "[3/3] 安装依赖并构建..."
 npm run install:all
 npm run build
 
-# 5. 配置环境变量
-echo "[5/7] 配置环境变量..."
+# 4. 配置环境变量
+echo "配置环境变量..."
 if [ ! -f .env ]; then
     if [ -f .env.production ]; then
         cp .env.production .env
@@ -57,12 +50,12 @@ if [ ! -f .env ]; then
     fi
 fi
 
-# 6. 创建数据目录
-echo "[6/7] 创建数据目录..."
+# 5. 创建数据目录
+echo "创建数据目录..."
 mkdir -p data logs
 
-# 7. 启动服务
-echo "[7/7] 启动服务..."
+# 6. 启动服务
+echo "启动服务..."
 pm2 delete oneplace 2>/dev/null || true
 pm2 start ecosystem.config.cjs
 pm2 save
