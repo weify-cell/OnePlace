@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url'
 // Load .env from project root (2 levels up from server/src/)
 const __dirname = dirname(fileURLToPath(import.meta.url))
 config({ path: resolve(__dirname, '../../.env') })
+
 import express from 'express'
 import cors from 'cors'
 import { connectDatabase } from './database/index.js'
@@ -20,6 +21,7 @@ import { foldersRouter } from './routes/folders.routes.js'
 
 const app = express()
 const PORT = process.env.PORT || 3000
+const isProduction = process.env.NODE_ENV === 'production'
 
 app.use(cors({ origin: ['http://localhost:5173', 'http://localhost:4173'] }))
 app.use(express.json())
@@ -46,6 +48,20 @@ app.use('/api/conversations', chatRouter)
 app.use('/api/settings', settingsRouter)
 app.use('/api/folders', foldersRouter)
 
+// 生产环境：提供静态文件服务
+if (isProduction) {
+  const distPath = resolve(__dirname, '../../dist')
+  console.log(`[Production] Serving static files from: ${distPath}`)
+
+  // 静态文件服务
+  app.use(express.static(distPath))
+
+  // SPA 支持：所有非 API 路由返回 index.html
+  app.get('*', (req, res) => {
+    res.sendFile(resolve(distPath, 'index.html'))
+  })
+}
+
 app.use(errorMiddleware)
 
 // Initialize DB and start server
@@ -54,4 +70,5 @@ runMigrations(db)
 
 app.listen(PORT, () => {
   console.log(`OnePlace server running on http://localhost:${PORT}`)
+  console.log(`Environment: ${isProduction ? 'production' : 'development'}`)
 })
