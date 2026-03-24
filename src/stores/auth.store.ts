@@ -25,7 +25,9 @@ export const useAuthStore = defineStore('auth', () => {
       needsSetup.value = res.data.needsSetup
       return res.data.needsSetup
     } catch {
-      return false
+      // API 失败时返回 true（保守策略），避免误判为已设置密码导致循环跳转
+      needsSetup.value = true
+      return true
     }
   }
 
