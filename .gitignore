@@ -36,6 +36,8 @@ Thumbs.db
 # Cache
 .cache/
 coverage/
+#scripts
+scripts/
 
 # Claude Code
 .claude/

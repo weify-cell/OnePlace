@@ -69,7 +69,7 @@ app.use(errorMiddleware)
 const db = connectDatabase()
 runMigrations(db)
 
-app.listen(PORT, () => {
-  console.log(`OnePlace server running on http://localhost:${PORT}`)
+app.listen(Number(PORT), '0.0.0.0', () => {
+  console.log(`OnePlace server running on http://0.0.0.0:${PORT}`)
   console.log(`Environment: ${isProduction ? 'production' : 'development'}`)
 })
