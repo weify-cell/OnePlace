@@ -7,7 +7,7 @@ import ToolCard from '@/components/toolbox/ToolCard.vue'
 const router = useRouter()
 
 type ToolStatus = 'available' | 'coming-soon'
-type ToolCategory = 'all' | 'time' | 'codec' | 'json' | 'image'
+type ToolCategory = 'all' | 'time' | 'codec' | 'json' | 'image' | 'diff'
 
 interface Tool {
   id: string
@@ -38,6 +38,15 @@ const tools: Tool[] = [
     icon: '🖼️',
     path: '/toolbox/image-base64',
     category: 'image',
+    status: 'available'
+  },
+  {
+    id: 'text-diff',
+    name: '文本比较',
+    description: '逐字符比较文本差异，适合文案校对',
+    icon: '📊',
+    path: '/toolbox/text-diff',
+    category: 'diff',
     status: 'available'
   },
   {
@@ -105,7 +114,8 @@ const tabs = [
   { name: 'time', label: '时间工具' },
   { name: 'codec', label: '编码工具' },
   { name: 'json', label: 'JSON工具' },
-  { name: 'image', label: '图片工具' }
+  { name: 'image', label: '图片工具' },
+  { name: 'diff', label: '文本比较' }
 ]
 </script>
 

@@ -25,16 +25,19 @@
     "@tiptap/vue-3": "^3.0.0",
     "@vueuse/core": "^12.7.0",
     "axios": "^1.8.4",
+    "diff": "^8.0.4",
     "lowlight": "^3.3.0",
     "markdown-it": "^14.1.0",
     "monaco-editor": "^0.55.1",
     "naive-ui": "^2.41.0",
     "pinia": "^3.0.1",
     "vue": "^3.5.13",
-    "vue-router": "^4.5.0"
+    "vue-router": "^4.5.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@iconify-json/lucide": "^1.2.33",
+    "@types/diff": "^7.0.2",
     "@unocss/preset-icons": "^66.1.0",
     "@unocss/preset-wind": "^66.1.0",
     "@vitejs/plugin-vue": "^5.2.3",

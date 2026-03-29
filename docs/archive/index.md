@@ -4,6 +4,15 @@
 
 ------
 
+## v1.6 | 百宝箱 - 文本比较工具 | 2026-03-29
+
+- 主要功能：逐字符 diff 差异化比较（类似 VS Code diff）、差异导航（scrollIntoView）、大文本警告/拒绝机制、纯文本差异报告复制
+- 目录：docs/archive/v1.6-toolbox-text-diff/
+- 结论：全部功能验收通过，Bug-007 已修复，0 控制台错误
+- 新增：TextDiffToolView.vue、DiffResultPanel.vue、text-diff.ts
+
+---
+
 ## v1.5 | 百宝箱 - Excel/JSON 格式转换 v2 | 2026-03-29
 
 - 主要功能：合并单元格展开（垂直/水平）、多 Sheet 复选框选择、单/多 Sheet 输出格式自适应

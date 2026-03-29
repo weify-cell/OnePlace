@@ -2,9 +2,9 @@
 
 ## 当前迭代
 
-- 迭代目标：百宝箱 - Excel/JSON 格式转换规范 v2（合并单元格支持）
-- 版本号：v1.5
-- 模块名：toolbox-excel-json-v2
+- 迭代目标：百宝箱 - 文本比较工具（逐字符 diff）
+- 版本号：v1.6
+- 模块名：toolbox-text-diff
 - 启动日期：2026-03-29
 
 ## 阶段完成状态
@@ -12,11 +12,11 @@
 - [x] 需求分析    → docs/handoff/pm-output.md
 - [x] 架构设计    → docs/handoff/architect-output.md
 - [x] 前端开发    → docs/handoff/frontend-output.md
-- [x] 测试验收    → docs/handoff/tester-output.md
+- [x] 测试验收    → 通过（BUG-007 已修复）
 
 ## 上一迭代
 
-- v1.5 | 百宝箱 - Excel/JSON 格式转换 v2 | 2026-03-29 | docs/archive/v1.5-toolbox-excel-json-v2/
+- v1.6 | 百宝箱 - 文本比较工具 | 2026-03-29 | docs/archive/v1.6-toolbox-text-diff/
 
 ## 归档索引
 
