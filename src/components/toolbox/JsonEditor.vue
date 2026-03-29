@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from 'vue'
-import loader from '@monaco-editor/loader'
+import * as monaco from 'monaco-editor'
+
+// 使用本地 Monaco（通过 Vite 打包）
 
 interface Props {
   modelValue: string
@@ -26,7 +28,7 @@ let monacoInstance: any = null
 onMounted(async () => {
   if (!containerRef.value) return
 
-  monacoInstance = await loader.init()
+  monacoInstance = monaco
 
   editor = monacoInstance.editor.create(containerRef.value, {
     value: props.modelValue,

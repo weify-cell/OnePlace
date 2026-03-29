@@ -7,6 +7,18 @@ import { NaiveUiResolver } from 'unplugin-vue-components/resolvers'
 import { fileURLToPath, URL } from 'node:url'
 
 export default defineConfig({
+  optimizeDeps: {
+    include: ['monaco-editor']
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'monaco-editor': ['monaco-editor']
+        }
+      }
+    }
+  },
   plugins: [
     vue(),
     UnoCSS(),
