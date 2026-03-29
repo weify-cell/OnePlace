@@ -4,6 +4,15 @@ import { useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import AppLayout from '@/components/common/AppLayout.vue'
 import JsonEditor from '@/components/toolbox/JsonEditor.vue'
+import SheetSelectorDialog from '@/components/toolbox/SheetSelectorDialog.vue'
+import {
+  previewExcelSheets,
+  parseExcelFile,
+  exportToExcel,
+  isExcelFile,
+  canExportToExcel,
+  type SheetInfo
+} from '@/utils/excel'
 
 const router = useRouter()
 const message = useMessage()
@@ -12,12 +21,27 @@ const inputValue = ref('')
 const outputValue = ref('')
 const validationError = ref('')
 const isDark = ref(document.documentElement.classList.contains('dark'))
+const fileInputRef = ref<HTMLInputElement>()
+
+// Sheet 选择器状态
+const showSheetSelector = ref(false)
+const sheetList = ref<SheetInfo[]>([])
+const pendingFile = ref<File | null>(null)
 
 const inputEditorRef = ref<InstanceType<typeof JsonEditor>>()
 const outputEditorRef = ref<InstanceType<typeof JsonEditor>>()
 
 const charCount = computed(() => inputValue.value.length)
 const lineCount = computed(() => inputValue.value.split('\n').length)
+const canExport = computed(() => {
+  try {
+    if (!inputValue.value.trim()) return false
+    const parsed = JSON.parse(inputValue.value)
+    return canExportToExcel(parsed)
+  } catch {
+    return false
+  }
+})
 
 function formatJson() {
   try {
@@ -121,12 +145,104 @@ function clearInput() {
 async function handleDrop(e: DragEvent) {
   e.preventDefault()
   const file = e.dataTransfer?.files[0]
-  if (file && file.type === 'application/json') {
+  if (!file) return
+
+  if (file.type === 'application/json') {
     const text = await file.text()
     inputValue.value = text
     message.success(`已加载文件: ${file.name}`)
+  } else if (isExcelFile(file)) {
+    await handleExcelFile(file)
   } else {
-    message.warning('请上传 JSON 文件')
+    message.warning('请上传 JSON 或 Excel 文件')
+  }
+}
+
+function importExcel() {
+  fileInputRef.value?.click()
+}
+
+async function handleFileChange(e: Event) {
+  const target = e.target as HTMLInputElement
+  const file = target.files?.[0]
+  if (!file) return
+
+  if (!isExcelFile(file)) {
+    message.warning('请选择 .xlsx 或 .xls 格式的文件')
+    target.value = ''
+    return
+  }
+
+  await handleExcelFile(file)
+
+  // 重置 input 以便可以重复选择同一文件
+  target.value = ''
+}
+
+// 处理 Excel 文件（支持多 Sheet 选择）
+async function handleExcelFile(file: File) {
+  try {
+    // 1. 预览所有 Sheet
+    const sheets = await previewExcelSheets(file)
+
+    if (sheets.length === 1) {
+      // 单 Sheet 直接导入
+      const result = await parseExcelFile(file, {
+        selectedSheetIndexes: [0]
+      })
+      inputValue.value = JSON.stringify(result.data, null, 2)
+      message.success(`已导入 Excel: ${file.name}`)
+    } else {
+      // 多 Sheet 显示选择器
+      sheetList.value = sheets
+      pendingFile.value = file
+      showSheetSelector.value = true
+    }
+  } catch (error: any) {
+    message.error(error.message)
+  }
+}
+
+// Sheet 选择确认
+async function onSheetSelectConfirmed(selectedIndexes: number[]) {
+  if (!pendingFile.value) return
+
+  try {
+    const result = await parseExcelFile(pendingFile.value, {
+      selectedSheetIndexes: selectedIndexes
+    })
+    inputValue.value = JSON.stringify(result.data, null, 2)
+    message.success(`已导入 Excel: ${pendingFile.value.name}`)
+    showSheetSelector.value = false
+    pendingFile.value = null
+  } catch (error: any) {
+    message.error(error.message)
+  }
+}
+
+// Sheet 选择取消
+function onSheetSelectCancel() {
+  showSheetSelector.value = false
+  pendingFile.value = null
+}
+
+function exportExcel() {
+  try {
+    if (!inputValue.value.trim()) {
+      message.warning('没有可导出的数据')
+      return
+    }
+
+    const parsed = JSON.parse(inputValue.value)
+    if (!canExportToExcel(parsed)) {
+      message.warning('JSON 格式无效，无法导出')
+      return
+    }
+
+    exportToExcel(parsed)
+    message.success('Excel 导出成功')
+  } catch (e: any) {
+    message.error(e.message || '导出失败')
   }
 }
 
@@ -181,6 +297,19 @@ function goBack() {
             <span>/</span>
           </template>
           去转义
+        </n-button>
+        <n-divider vertical />
+        <n-button size="small" @click="importExcel">
+          <template #icon>
+            <span>📥</span>
+          </template>
+          导入 Excel
+        </n-button>
+        <n-button size="small" @click="exportExcel" :disabled="!canExport">
+          <template #icon>
+            <span>📤</span>
+          </template>
+          导出 Excel
         </n-button>
         <n-divider vertical />
         <n-button size="small" @click="pasteInput">
@@ -241,8 +370,25 @@ function goBack() {
       <!-- Status Bar -->
       <div class="px-4 py-2 bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400">
         <span v-if="validationError" class="text-red-500">{{ validationError }}</span>
-        <span v-else>支持拖拽 JSON 文件到输入区域</span>
+        <span v-else>支持拖拽 JSON 或 Excel 文件到输入区域</span>
       </div>
     </div>
+
+    <!-- Hidden file input for Excel import -->
+    <input
+      ref="fileInputRef"
+      type="file"
+      accept=".xlsx,.xls"
+      class="hidden"
+      @change="handleFileChange"
+    />
+
+    <!-- Sheet Selector Dialog -->
+    <SheetSelectorDialog
+      v-model:show="showSheetSelector"
+      :sheets="sheetList"
+      @confirm="onSheetSelectConfirmed"
+      @cancel="onSheetSelectCancel"
+    />
   </AppLayout>
 </template>
