@@ -1,9 +1,13 @@
 <script setup lang="ts">
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import AppLayout from '@/components/common/AppLayout.vue'
 import ToolCard from '@/components/toolbox/ToolCard.vue'
 
 const router = useRouter()
+
+type ToolStatus = 'available' | 'coming-soon'
+type ToolCategory = 'all' | 'time' | 'codec' | 'json' | 'image'
 
 interface Tool {
   id: string
@@ -11,28 +15,98 @@ interface Tool {
   description: string
   icon: string
   path: string
+  category: ToolCategory
+  status: ToolStatus
 }
 
-const devTools: Tool[] = [
+const currentTab = ref<ToolCategory>('all')
+
+const tools: Tool[] = [
   {
     id: 'json',
     name: 'JSON 格式化',
-    description: '格式化、压缩、验证、转义',
+    description: '格式化、压缩、验证、转义、去转义',
     icon: '📝',
-    path: '/toolbox/json'
+    path: '/toolbox/json',
+    category: 'json',
+    status: 'available'
   },
   {
     id: 'image-base64',
     name: '图片 Base64',
-    description: '图片与 Base64 互转',
+    description: '图片与 Base64 互转，支持拖拽和粘贴',
     icon: '🖼️',
-    path: '/toolbox/image-base64'
+    path: '/toolbox/image-base64',
+    category: 'image',
+    status: 'available'
+  },
+  {
+    id: 'timestamp',
+    name: '时间戳转换',
+    description: 'Unix 时间戳与日期时间互转',
+    icon: '⏰',
+    path: '',
+    category: 'time',
+    status: 'coming-soon'
+  },
+  {
+    id: 'date-calc',
+    name: '日期计算',
+    description: '计算日期差、添加减少时间',
+    icon: '📅',
+    path: '',
+    category: 'time',
+    status: 'coming-soon'
+  },
+  {
+    id: 'base64-codec',
+    name: 'Base64 编解码',
+    description: '文本 Base64 编码和解码',
+    icon: '🔐',
+    path: '',
+    category: 'codec',
+    status: 'coming-soon'
+  },
+  {
+    id: 'url-codec',
+    name: 'URL 编解码',
+    description: 'URL 编码和解码',
+    icon: '🔗',
+    path: '',
+    category: 'codec',
+    status: 'coming-soon'
+  },
+  {
+    id: 'hash',
+    name: '哈希计算',
+    description: 'MD5、SHA1、SHA256 等哈希算法',
+    icon: '#️⃣',
+    path: '',
+    category: 'codec',
+    status: 'coming-soon'
   }
 ]
 
-function navigateToTool(path: string) {
-  router.push(path)
+const filteredTools = computed(() => {
+  if (currentTab.value === 'all') {
+    return tools
+  }
+  return tools.filter(tool => tool.category === currentTab.value)
+})
+
+function navigateToTool(tool: Tool) {
+  if (tool.status === 'available' && tool.path) {
+    router.push(tool.path)
+  }
 }
+
+const tabs = [
+  { name: 'all', label: '全部' },
+  { name: 'time', label: '时间工具' },
+  { name: 'codec', label: '编码工具' },
+  { name: 'json', label: 'JSON工具' },
+  { name: 'image', label: '图片工具' }
+]
 </script>
 
 <template>
@@ -41,41 +115,28 @@ function navigateToTool(path: string) {
       <!-- Header -->
       <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
         <h1 class="text-2xl font-bold text-gray-900 dark:text-white">百宝箱</h1>
-        <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">实用开发工具集合</p>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">实用工具集合</p>
       </div>
 
       <!-- Content -->
       <div class="flex-1 p-6 overflow-auto bg-gray-50 dark:bg-gray-900">
-        <n-tabs type="line" animated>
-          <!-- 开发工具 -->
-          <n-tab-pane name="dev" tab="开发工具">
+        <n-tabs v-model:value="currentTab" type="line" animated>
+          <n-tab-pane
+            v-for="tab in tabs"
+            :key="tab.name"
+            :name="tab.name"
+            :tab="tab.label"
+          >
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mt-4">
               <ToolCard
-                v-for="tool in devTools"
+                v-for="tool in filteredTools"
                 :key="tool.id"
                 :name="tool.name"
                 :description="tool.description"
                 :icon="tool.icon"
-                @click="navigateToTool(tool.path)"
+                :status="tool.status"
+                @click="navigateToTool(tool)"
               />
-            </div>
-          </n-tab-pane>
-
-          <!-- 时间工具 -->
-          <n-tab-pane name="time" tab="时间工具">
-            <div class="flex flex-col items-center justify-center py-20 text-gray-400 dark:text-gray-500">
-              <span class="text-6xl mb-4">⏰</span>
-              <p class="text-lg">即将推出</p>
-              <p class="text-sm mt-2">时间戳转换、日期计算等功能正在开发中</p>
-            </div>
-          </n-tab-pane>
-
-          <!-- 编解码工具 -->
-          <n-tab-pane name="codec" tab="编解码工具">
-            <div class="flex flex-col items-center justify-center py-20 text-gray-400 dark:text-gray-500">
-              <span class="text-6xl mb-4">🔐</span>
-              <p class="text-lg">即将推出</p>
-              <p class="text-sm mt-2">URL 编解码、Base64、哈希计算等功能正在开发中</p>
             </div>
           </n-tab-pane>
         </n-tabs>
