@@ -12,6 +12,9 @@ const router = createRouter({
     { path: '/notes/:id', component: () => import('@/views/NoteDetailView.vue'), meta: { requiresAuth: true } },
     { path: '/chat', component: () => import('@/views/ChatView.vue'), meta: { requiresAuth: true } },
     { path: '/chat/:id', component: () => import('@/views/ChatView.vue'), meta: { requiresAuth: true } },
+    { path: '/toolbox', component: () => import('@/views/ToolboxView.vue'), meta: { requiresAuth: true } },
+    { path: '/toolbox/json', component: () => import('@/views/tools/JsonToolView.vue'), meta: { requiresAuth: true } },
+    { path: '/toolbox/image-base64', component: () => import('@/views/tools/ImageBase64ToolView.vue'), meta: { requiresAuth: true } },
     { path: '/settings', component: () => import('@/views/SettingsView.vue'), meta: { requiresAuth: true } }
   ]
 })

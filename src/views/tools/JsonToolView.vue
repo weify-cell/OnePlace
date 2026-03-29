@@ -1,0 +1,248 @@
+<script setup lang="ts">
+import { ref, computed } from 'vue'
+import { useRouter } from 'vue-router'
+import { useMessage } from 'naive-ui'
+import AppLayout from '@/components/common/AppLayout.vue'
+import JsonEditor from '@/components/toolbox/JsonEditor.vue'
+
+const router = useRouter()
+const message = useMessage()
+
+const inputValue = ref('')
+const outputValue = ref('')
+const validationError = ref('')
+const isDark = ref(document.documentElement.classList.contains('dark'))
+
+const inputEditorRef = ref<InstanceType<typeof JsonEditor>>()
+const outputEditorRef = ref<InstanceType<typeof JsonEditor>>()
+
+const charCount = computed(() => inputValue.value.length)
+const lineCount = computed(() => inputValue.value.split('\n').length)
+
+function formatJson() {
+  try {
+    if (!inputValue.value.trim()) {
+      message.warning('请输入 JSON 内容')
+      return
+    }
+    const parsed = JSON.parse(inputValue.value)
+    outputValue.value = JSON.stringify(parsed, null, 2)
+    validationError.value = ''
+  } catch (e: any) {
+    validationError.value = e.message
+    message.error('JSON 格式错误: ' + e.message)
+  }
+}
+
+function compressJson() {
+  try {
+    if (!inputValue.value.trim()) {
+      message.warning('请输入 JSON 内容')
+      return
+    }
+    const parsed = JSON.parse(inputValue.value)
+    outputValue.value = JSON.stringify(parsed)
+    validationError.value = ''
+  } catch (e: any) {
+    validationError.value = e.message
+    message.error('JSON 格式错误: ' + e.message)
+  }
+}
+
+function validateJson() {
+  try {
+    if (!inputValue.value.trim()) {
+      message.warning('请输入 JSON 内容')
+      return
+    }
+    JSON.parse(inputValue.value)
+    validationError.value = ''
+    message.success('JSON 格式有效')
+  } catch (e: any) {
+    validationError.value = e.message
+    message.error('JSON 格式错误: ' + e.message)
+  }
+}
+
+function escapeJson() {
+  try {
+    if (!inputValue.value.trim()) {
+      message.warning('请输入 JSON 内容')
+      return
+    }
+    outputValue.value = JSON.stringify(inputValue.value).slice(1, -1)
+  } catch (e: any) {
+    message.error('转义失败: ' + e.message)
+  }
+}
+
+function unescapeJson() {
+  try {
+    if (!inputValue.value.trim()) {
+      message.warning('请输入 JSON 内容')
+      return
+    }
+    const wrapped = '"' + inputValue.value + '"'
+    outputValue.value = JSON.parse(wrapped)
+  } catch (e: any) {
+    message.error('去转义失败: ' + e.message)
+  }
+}
+
+async function copyResult() {
+  if (!outputValue.value) {
+    message.warning('没有可复制的内容')
+    return
+  }
+  try {
+    await navigator.clipboard.writeText(outputValue.value)
+    message.success('已复制到剪贴板')
+  } catch {
+    message.error('复制失败')
+  }
+}
+
+async function pasteInput() {
+  try {
+    const text = await navigator.clipboard.readText()
+    inputValue.value = text
+    message.success('已粘贴')
+  } catch {
+    message.error('无法读取剪贴板')
+  }
+}
+
+function clearInput() {
+  inputValue.value = ''
+  outputValue.value = ''
+  validationError.value = ''
+}
+
+async function handleDrop(e: DragEvent) {
+  e.preventDefault()
+  const file = e.dataTransfer?.files[0]
+  if (file && file.type === 'application/json') {
+    const text = await file.text()
+    inputValue.value = text
+    message.success(`已加载文件: ${file.name}`)
+  } else {
+    message.warning('请上传 JSON 文件')
+  }
+}
+
+function goBack() {
+  router.push('/toolbox')
+}
+</script>
+
+<template>
+  <AppLayout>
+    <div class="h-full flex flex-col">
+      <!-- Header -->
+      <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center gap-4 bg-white dark:bg-gray-800">
+        <n-button quaternary circle @click="goBack">
+          <template #icon>
+            <span>←</span>
+          </template>
+        </n-button>
+        <div>
+          <h1 class="text-xl font-bold text-gray-900 dark:text-white">JSON 格式化工具</h1>
+        </div>
+      </div>
+
+      <!-- Toolbar -->
+      <div class="px-6 py-3 border-b border-gray-200 dark:border-gray-700 flex flex-wrap gap-2 bg-white dark:bg-gray-800">
+        <n-button type="primary" size="small" @click="formatJson">
+          <template #icon>
+            <span>✨</span>
+          </template>
+          格式化
+        </n-button>
+        <n-button size="small" @click="compressJson">
+          <template #icon>
+            <span>🗜️</span>
+          </template>
+          压缩
+        </n-button>
+        <n-button size="small" @click="validateJson">
+          <template #icon>
+            <span>✓</span>
+          </template>
+          验证
+        </n-button>
+        <n-button size="small" @click="escapeJson">
+          <template #icon>
+            <span>\</span>
+          </template>
+          转义
+        </n-button>
+        <n-button size="small" @click="unescapeJson">
+          <template #icon>
+            <span>/</span>
+          </template>
+          去转义
+        </n-button>
+        <n-divider vertical />
+        <n-button size="small" @click="pasteInput">
+          <template #icon>
+            <span>📋</span>
+          </template>
+          粘贴
+        </n-button>
+        <n-button size="small" @click="clearInput">
+          <template #icon>
+            <span>🗑️</span>
+          </template>
+          清空
+        </n-button>
+        <n-button type="info" size="small" @click="copyResult" :disabled="!outputValue">
+          <template #icon>
+            <span>📄</span>
+          </template>
+          复制结果
+        </n-button>
+      </div>
+
+      <!-- Editors -->
+      <div class="flex-1 flex overflow-hidden">
+        <!-- Input -->
+        <div class="flex-1 flex flex-col border-r border-gray-200 dark:border-gray-700">
+          <div class="px-4 py-2 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">输入</span>
+            <span class="text-xs text-gray-500 dark:text-gray-400">{{ charCount }} 字符 | {{ lineCount }} 行</span>
+          </div>
+          <div class="flex-1 p-2" @drop.prevent="handleDrop" @dragover.prevent>
+            <JsonEditor
+              ref="inputEditorRef"
+              v-model="inputValue"
+              :theme="isDark ? 'vs-dark' : 'vs'"
+            />
+          </div>
+        </div>
+
+        <!-- Output -->
+        <div class="flex-1 flex flex-col">
+          <div class="px-4 py-2 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">输出</span>
+            <n-tag v-if="validationError" type="error" size="small">格式错误</n-tag>
+            <n-tag v-else-if="outputValue" type="success" size="small">有效</n-tag>
+          </div>
+          <div class="flex-1 p-2">
+            <JsonEditor
+              ref="outputEditorRef"
+              v-model="outputValue"
+              :theme="isDark ? 'vs-dark' : 'vs'"
+              readonly
+            />
+          </div>
+        </div>
+      </div>
+
+      <!-- Status Bar -->
+      <div class="px-4 py-2 bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400">
+        <span v-if="validationError" class="text-red-500">{{ validationError }}</span>
+        <span v-else>支持拖拽 JSON 文件到输入区域</span>
+      </div>
+    </div>
+  </AppLayout>
+</template>
