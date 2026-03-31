@@ -1,4 +1,4 @@
-import { diffChars, type Change } from 'diff'
+import { diffChars, diffLines, type Change } from 'diff'
 
 export interface DiffOptions {
   maxRealtimeLength?: number  // 超过此长度切换为手动模式
@@ -25,6 +25,27 @@ export interface DiffPosition {
   type: 'added' | 'removed' | 'unchanged'
 }
 
+// 行级别的差异结果（v1.7 新增）
+export interface DiffChar {
+  type: 'equal' | 'delete' | 'insert'
+  content: string
+}
+
+export interface DiffLine {
+  type: 'equal' | 'delete' | 'insert'
+  content: string
+  chars: DiffChar[]
+}
+
+export interface LineDiffResult {
+  left: DiffLine[]    // 原文差异行
+  right: DiffLine[]   // 对比文差异行
+  stats: {
+    deletions: number
+    additions: number
+  }
+}
+
 // 将字符偏移转换为行号和列号
 export function offsetToLineCol(text: string, offset: number): { line: number; col: number } {
   const lines = text.substring(0, offset).split('\n')
@@ -34,7 +55,91 @@ export function offsetToLineCol(text: string, offset: number): { line: number; c
   }
 }
 
-// 计算 diff
+// 计算逐行 diff（v1.7 新增）
+export function computeLineDiff(original: string, modified: string): LineDiffResult {
+  const origLines = original.split('\n')
+  const modLines = modified.split('\n')
+  const left: DiffLine[] = []
+  const right: DiffLine[] = []
+  let deletions = 0
+  let additions = 0
+
+  // 空白行视为 equal，不计入统计
+  const isBlankLine = (text: string) => text.trim() === ''
+
+  // 字符级 diff（原始视角）：removed -> delete, added -> 跳过
+  const charDiffLeft = (orig: string, mod: string): DiffChar[] => {
+    const changes = diffChars(orig, mod)
+    const chars: DiffChar[] = []
+    for (const change of changes) {
+      if (change.removed) {
+        chars.push({ type: 'delete', content: change.value })
+      } else if (!change.added) {
+        chars.push({ type: 'equal', content: change.value })
+      }
+    }
+    return chars
+  }
+
+  // 字符级 diff（对比视角）：added -> insert, removed -> 跳过
+  const charDiffRight = (orig: string, mod: string): DiffChar[] => {
+    const changes = diffChars(orig, mod)
+    const chars: DiffChar[] = []
+    for (const change of changes) {
+      if (change.added) {
+        chars.push({ type: 'insert', content: change.value })
+      } else if (!change.removed) {
+        chars.push({ type: 'equal', content: change.value })
+      }
+    }
+    return chars
+  }
+
+  // 简单逐行比较：对应位置比较
+  const maxLen = Math.max(origLines.length, modLines.length)
+  for (let i = 0; i < maxLen; i++) {
+    const origLine = origLines[i] ?? ''
+    const modLine = modLines[i] ?? ''
+    // 每行末尾加换行符（除了最后一行）
+    const lf = i < maxLen - 1 ? '\n' : ''
+
+    if (origLine === modLine) {
+      // 完全相同
+      left.push({ type: 'equal', content: origLine + lf, chars: charDiffLeft(origLine, modLine) })
+      right.push({ type: 'equal', content: modLine + lf, chars: charDiffRight(origLine, modLine) })
+    } else if (i >= origLines.length) {
+      // 原文没有这一行
+      if (!isBlankLine(modLine)) {
+        additions++
+      }
+      left.push({ type: 'equal', content: lf, chars: [] })
+      right.push({ type: 'insert', content: modLine + lf, chars: charDiffRight('', modLine) })
+    } else if (i >= modLines.length) {
+      // 对比文没有这一行
+      if (!isBlankLine(origLine)) {
+        deletions++
+      }
+      left.push({ type: 'delete', content: origLine + lf, chars: charDiffLeft(origLine, '') })
+      right.push({ type: 'equal', content: lf, chars: [] })
+    } else {
+      // 两边都有但内容不同 - 字符级比较
+      const lineDiffs = diffChars(origLine, modLine)
+      for (const change of lineDiffs) {
+        if (change.added) {
+          additions++
+        } else if (change.removed) {
+          deletions++
+        }
+      }
+      left.push({ type: 'delete', content: origLine + lf, chars: charDiffLeft(origLine, modLine) })
+      right.push({ type: 'insert', content: modLine + lf, chars: charDiffRight(origLine, modLine) })
+    }
+  }
+
+  return { left, right, stats: { deletions, additions } }
+}
+
+// 计算 diff（逐字符，保留向后兼容）
 export function computeDiff(original: string, compare: string, options: DiffOptions = {}): DiffResult {
   const maxRealtimeLength = options.maxRealtimeLength ?? 10000
   const maxLength = options.maxLength ?? 50000
@@ -136,6 +241,29 @@ export function generateReport(
     lines.push(`类型：${typeLabel}`)
     lines.push('------------------')
   })
+
+  return lines.join('\n')
+}
+
+// 生成行差异格式的复制文本（v1.7 新增）
+export function generateLineDiffReport(lineResult: LineDiffResult): string {
+  const lines: string[] = []
+
+  lineResult.left.forEach((line, i) => {
+    if (line.type === 'delete') {
+      lines.push(`【删除】第 ${i + 1} 行`)
+      lines.push(`- ${line.content}`)
+    }
+  })
+
+  lineResult.right.forEach((line, i) => {
+    if (line.type === 'insert') {
+      lines.push(`【新增】第 ${i + 1} 行`)
+      lines.push(`+ ${line.content}`)
+    }
+  })
+
+  lines.push(`--- 共 ${lineResult.stats.deletions} 处字符删除，${lineResult.stats.additions} 处字符新增 ---`)
 
   return lines.join('\n')
 }

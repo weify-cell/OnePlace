@@ -2,17 +2,17 @@
 
 ## 当前迭代
 
-- 迭代目标：百宝箱 - 文本比较工具（逐字符 diff）
-- 版本号：v1.6
+- 迭代目标：百宝箱 - 文本比较工具交互重构（内联高亮）
+- 版本号：v1.7
 - 模块名：toolbox-text-diff
 - 启动日期：2026-03-29
 
 ## 阶段完成状态
 
-- [x] 需求分析    → docs/handoff/pm-output.md
-- [x] 架构设计    → docs/handoff/architect-output.md
-- [x] 前端开发    → docs/handoff/frontend-output.md
-- [x] 测试验收    → 通过（BUG-007 已修复）
+- [x] 需求分析    → docs/handoff/pm-output.md（已完成）
+- [x] 架构设计    → docs/prd/text-compare-architecture.md（已完成）
+- [x] 前端开发    → docs/handoff/frontend-output.md（已完成）
+- [x] 测试验收    → docs/handoff/tester-output.md（已完成）
 
 ## 上一迭代
 
