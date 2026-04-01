@@ -1,23 +1,38 @@
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, computed } from 'vue'
+import { onMounted, onBeforeUnmount, computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useMessage, useDialog } from 'naive-ui'
 import { useNoteStore } from '@/stores/note.store'
 import { useDebounceFn } from '@vueuse/core'
 import AppLayout from '@/components/common/AppLayout.vue'
 import TiptapEditor from '@/components/notes/TiptapEditor.vue'
+import CodeMirrorMarkdownEditor from '@/components/notes/CodeMirrorMarkdownEditor.vue'
 import TagInput from '@/components/common/TagInput.vue'
+import { tiptapToMarkdown } from '@/components/editor/TiptapToMarkdown'
 
 const route = useRoute()
 const router = useRouter()
 const noteStore = useNoteStore()
+const message = useMessage()
+const dialog = useDialog()
 
 const noteId = computed(() => Number(route.params.id))
 const note = computed(() => noteStore.currentNote)
+const showMigrationDialog = ref(false)
+const isMigrating = ref(false)
 
 const folderOptions = computed(() => [
   { label: '无文件夹', value: null },
   ...noteStore.folders.map(f => ({ label: f.name, value: f.id }))
 ])
+
+const isMarkdownNote = computed(() => {
+  return note.value?.content_format === 'markdown'
+})
+
+const isLegacyNote = computed(() => {
+  return note.value?.content_format === 'tiptap' || !note.value?.content_format
+})
 
 onMounted(async () => {
   await noteStore.fetchNote(noteId.value)
@@ -30,7 +45,7 @@ onBeforeUnmount(() => {
   noteStore.currentNote = null
 })
 
-const debouncedSave = useDebounceFn(async (data: { title?: string; content?: string; tags?: string[] }) => {
+const debouncedSave = useDebounceFn(async (data: { title?: string; content?: string; content_format?: string; tags?: string[] }) => {
   if (!note.value) return
   await noteStore.updateNote(note.value.id, data)
 }, 1000)
@@ -42,7 +57,7 @@ function onTitleChange(title: string) {
 
 function onContentChange(content: string) {
   if (!note.value) return
-  debouncedSave({ content })
+  debouncedSave({ content, content_format: 'markdown' })
 }
 
 function onTagsChange(tags: string[]) {
@@ -53,6 +68,33 @@ function onTagsChange(tags: string[]) {
 function onFolderChange(folder_id: number | null) {
   if (!note.value) return
   noteStore.updateNote(note.value.id, { folder_id })
+}
+
+function handleEditLegacyNote() {
+  if (!note.value) return
+
+  dialog.warning({
+    title: '迁移笔记格式',
+    content: '此笔记为旧格式（Tiptap），首次编辑将自动转换为 Markdown 格式。是否继续？',
+    positiveText: '确定',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      isMigrating.value = true
+      try {
+        const markdownContent = tiptapToMarkdown(note.value!.content)
+        await noteStore.updateNote(note.value!.id, {
+          content: markdownContent,
+          content_format: 'markdown'
+        })
+        await noteStore.fetchNote(noteId.value)
+        message.success('笔记已转换为 Markdown 格式')
+      } catch {
+        message.error('迁移失败')
+      } finally {
+        isMigrating.value = false
+      }
+    }
+  })
 }
 </script>
 
@@ -139,11 +181,40 @@ function onFolderChange(folder_id: number | null) {
           <!-- Divider -->
           <div class="note-editor-divider" />
 
-          <!-- Editor -->
-          <TiptapEditor
-            :content="note.content"
-            @update:content="onContentChange"
-          />
+          <!-- Legacy Tiptap Note (read-only with migration) -->
+          <div v-if="isLegacyNote && !isMarkdownNote" class="legacy-note-notice">
+            <div class="legacy-note-notice__content">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="12" y1="16" x2="12" y2="12"/>
+                <line x1="12" y1="8" x2="12.01" y2="8"/>
+              </svg>
+              <div>
+                <p class="legacy-note-notice__title">此笔记为旧格式</p>
+                <p class="legacy-note-notice__desc">点击「编辑笔记」后将自动转换为 Markdown 格式</p>
+              </div>
+            </div>
+            <n-button type="primary" :loading="isMigrating" @click="handleEditLegacyNote">
+              编辑笔记
+            </n-button>
+          </div>
+
+          <!-- Tiptap Editor for legacy notes (read-only display) -->
+          <div v-else-if="isLegacyNote" class="note-editor-legacy">
+            <TiptapEditor
+              :content="note.content"
+              @update:content="() => {}"
+            />
+          </div>
+
+          <!-- CodeMirror Markdown Editor for new format -->
+          <div v-else class="note-editor-markdown">
+            <CodeMirrorMarkdownEditor
+              :content="note.content"
+              :note-id="note.id"
+              @update:content="onContentChange"
+            />
+          </div>
         </div>
       </div>
     </div>
@@ -245,9 +316,71 @@ function onFolderChange(folder_id: number | null) {
 }
 
 .note-editor-inner {
-  max-width: 760px;
+  max-width: 100%;
   margin: 0 auto;
   padding: 36px 40px 60px;
+}
+
+.note-editor-markdown {
+  height: calc(100vh - 280px);
+  min-height: 400px;
+}
+
+.note-editor-legacy {
+  min-height: 400px;
+}
+
+/* Legacy notice */
+.legacy-note-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  background: #fef3c7;
+  border: 1px solid #fcd34d;
+  border-radius: 12px;
+  margin-bottom: 24px;
+}
+
+.dark .legacy-note-notice {
+  background: #78350f;
+  border-color: #b45309;
+}
+
+.legacy-note-notice__content {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.legacy-note-notice__content svg {
+  color: #d97706;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.dark .legacy-note-notice__content svg {
+  color: #fbbf24;
+}
+
+.legacy-note-notice__title {
+  font-weight: 600;
+  color: #92400e;
+  margin: 0 0 4px;
+}
+
+.dark .legacy-note-notice__title {
+  color: #fde68a;
+}
+
+.legacy-note-notice__desc {
+  font-size: 0.875rem;
+  color: #a16207;
+  margin: 0;
+}
+
+.dark .legacy-note-notice__desc {
+  color: #fcd34d;
 }
 
 /* ---- Title input ---- */

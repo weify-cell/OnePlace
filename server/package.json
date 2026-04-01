@@ -10,23 +10,25 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "express": "^4.21.2",
+    "bcryptjs": "^3.0.2",
     "better-sqlite3": "^12.8.0",
-    "openai": "^4.90.0",
-    "zod": "^3.24.2",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
+    "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
-    "bcryptjs": "^3.0.2"
+    "multer": "^2.1.1",
+    "openai": "^4.90.0",
+    "zod": "^3.24.2"
   },
   "devDependencies": {
-    "typescript": "^5.8.2",
-    "tsx": "^4.19.3",
-    "@types/express": "^5.0.1",
+    "@types/bcryptjs": "^2.4.6",
     "@types/better-sqlite3": "^7.6.13",
     "@types/cors": "^2.8.17",
-    "@types/node": "^22.13.14",
+    "@types/express": "^5.0.1",
     "@types/jsonwebtoken": "^9.0.9",
-    "@types/bcryptjs": "^2.4.6"
+    "@types/multer": "^2.1.0",
+    "@types/node": "^22.13.14",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2"
   }
 }

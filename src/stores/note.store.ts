@@ -37,7 +37,7 @@ export const useNoteStore = defineStore('notes', () => {
   }
 
   async function createNote() {
-    const payload: Record<string, unknown> = {}
+    const payload: Record<string, unknown> = { content_format: 'markdown' }
     if (currentFolderId.value !== null) payload.folder_id = currentFolderId.value
     const res = await notesApi.create(payload)
     return res.data

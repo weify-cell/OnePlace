@@ -5,6 +5,7 @@ export interface Note {
   title: string
   content: string
   content_text: string
+  content_format: 'tiptap' | 'markdown'
   tags: string[]
   folder_id: number | null
   is_pinned: boolean
@@ -19,6 +20,7 @@ interface NoteRow {
   title: string
   content: string
   content_text: string
+  content_format: string
   tags: string
   folder_id: number | null
   is_pinned: number
@@ -31,6 +33,7 @@ interface NoteRow {
 function rowToNote(row: NoteRow): Note {
   return {
     ...row,
+    content_format: row.content_format as 'tiptap' | 'markdown',
     tags: JSON.parse(row.tags || '[]'),
     folder_id: row.folder_id ?? null,
     is_pinned: row.is_pinned === 1,
@@ -40,7 +43,11 @@ function rowToNote(row: NoteRow): Note {
 }
 
 // Extract plain text from Tiptap JSON content
-function extractText(content: string): string {
+function extractText(content: string, contentFormat: 'tiptap' | 'markdown' = 'tiptap'): string {
+  if (contentFormat === 'markdown') {
+    return extractTextFromMarkdown(content)
+  }
+  // Tiptap JSON parsing
   try {
     const doc = JSON.parse(content)
     const texts: string[] = []
@@ -53,6 +60,16 @@ function extractText(content: string): string {
   } catch {
     return content.slice(0, 500)
   }
+}
+
+// Extract plain text from Markdown content
+function extractTextFromMarkdown(markdown: string): string {
+  return markdown
+    .replace(/!\[.*?\]\(.*?\)/g, '') // 去除图片语法
+    .replace(/\[.*?\]\(.*?\)/g, '$1') // 去除链接，保留文本
+    .replace(/[#*`_~[\]]/g, '')       // 去除标题/加粗/斜体等符号
+    .replace(/\n+/g, ' ')             // 合并换行
+    .slice(0, 500)
 }
 
 export interface NoteQuery {
@@ -103,7 +120,7 @@ export function createNote(data?: { folder_id?: number | null }): Note {
   const db = connectDatabase()
   const folderId = data?.folder_id ?? null
   const result = db.prepare(
-    `INSERT INTO notes (title, content, content_text, tags, folder_id) VALUES ('无标题', '', '', '[]', ?)`
+    `INSERT INTO notes (title, content, content_text, tags, folder_id, content_format) VALUES ('无标题', '', '', '[]', ?, 'markdown')`
   ).run(folderId)
   return getNoteById(result.lastInsertRowid as number)!
 }
@@ -119,12 +136,14 @@ export function updateNote(id: number, data: Partial<Note>): Note | null {
   if (data.title !== undefined) { updates.push('title = ?'); params.push(data.title) }
   if (data.content !== undefined) {
     updates.push('content = ?', 'content_text = ?')
-    params.push(data.content, extractText(data.content))
+    const format = data.content_format ?? existing.content_format
+    params.push(data.content, extractText(data.content, format))
   }
   if (data.tags !== undefined) { updates.push('tags = ?'); params.push(JSON.stringify(data.tags)) }
   if (data.is_pinned !== undefined) { updates.push('is_pinned = ?'); params.push(data.is_pinned ? 1 : 0) }
   if (data.is_archived !== undefined) { updates.push('is_archived = ?'); params.push(data.is_archived ? 1 : 0) }
   if ('folder_id' in data) { updates.push('folder_id = ?'); params.push(data.folder_id ?? null) }
+  if (data.content_format !== undefined) { updates.push('content_format = ?'); params.push(data.content_format) }
 
   if (updates.length === 0) return existing
 

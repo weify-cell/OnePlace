@@ -50,6 +50,7 @@ export interface Note {
   title: string
   content: string
   content_text: string
+  content_format?: 'tiptap' | 'markdown'
   tags: string[]
   folder_id?: number | null
   is_pinned: boolean
@@ -57,6 +58,12 @@ export interface Note {
   is_deleted: boolean
   created_at: string
   updated_at: string
+}
+
+export interface NoteImage {
+  filename: string
+  url: string
+  used_in_content: boolean
 }
 
 export interface NotesResponse {

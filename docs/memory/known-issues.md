@@ -79,6 +79,14 @@
 
 ---
 
+## BUG-010 [已解决]
+**文件**：`src/components/notes/CodeMirrorMarkdownEditor.vue:4`
+**描述**：CodeMirror Markdown 编辑器加载失败。`import { EditorView, keymap, placeholder, image } from '@codemirror/view'` - `image` 不是 `@codemirror/view` v6.36.5 的有效导出名，导致运行时 `SyntaxError: The requested module '/node_modules/.vite/deps/@codemirror_view.js?v=0d24426e' does not provide an export named 'image'`。编辑器完全无法加载，所有 Markdown 编辑功能不可用。
+**修复方式**：移除 `image` 从 `@codemirror/view` 的导入。CodeMirror 6 的 `image` 扩展可能需要从其他包（如 `@codemirror/lang-markdown`）或使用自定义扩展实现图片粘贴功能。
+**回归验收**：2026-04-01 - CodeMirror 编辑器正常加载，语法高亮和实时预览正常，无控制台错误
+
+---
+
 ## NOTE-001 [已接受]
 **文件**：`docs/handoff/frontend-output.md`
 **描述**：frontend-output.md 仍记录 v1.4 内容，v1.5 前端开发工作（合并单元格、多 Sheet 选择）未在 handoff 文件中体现。但实际代码实现已包含 v1.5 功能。

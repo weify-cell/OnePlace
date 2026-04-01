@@ -1,5 +1,6 @@
 import { Request, Response } from 'express'
 import * as notesService from '../services/notes.service.js'
+import * as uploadService from '../services/upload.service.js'
 
 export function getNotes(req: Request, res: Response): void {
   const { tag, search, is_archived, is_pinned, page, pageSize, folder_id } = req.query
@@ -61,4 +62,17 @@ export function archiveNote(req: Request, res: Response): void {
 
 export function getNoteTags(req: Request, res: Response): void {
   res.json(notesService.getAllNoteTags())
+}
+
+export function getNoteImages(req: Request, res: Response): void {
+  const noteId = Number(req.params.id)
+  const note = notesService.getNoteById(noteId)
+
+  if (!note) {
+    res.status(404).json({ error: 'NotFound' })
+    return
+  }
+
+  const images = uploadService.getNoteImages(noteId, note.content)
+  res.json({ images })
 }
