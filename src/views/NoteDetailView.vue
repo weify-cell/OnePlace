@@ -389,6 +389,9 @@ function handleEditLegacyNote() {
   max-width: 100%;
   margin: 0 auto;
   padding: 36px 40px 60px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .note-editor-markdown {
@@ -397,7 +400,10 @@ function handleEditLegacyNote() {
 }
 
 .note-editor-preview {
-  min-height: 400px;
+  width: 100%;
+  max-width: 900px;
+  margin: 0 auto;
+  flex: 1;
   background: white;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
