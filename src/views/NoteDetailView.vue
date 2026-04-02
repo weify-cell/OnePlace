@@ -7,6 +7,7 @@ import { useDebounceFn } from '@vueuse/core'
 import AppLayout from '@/components/common/AppLayout.vue'
 import TiptapEditor from '@/components/notes/TiptapEditor.vue'
 import CodeMirrorMarkdownEditor from '@/components/notes/CodeMirrorMarkdownEditor.vue'
+import MarkdownPreview from '@/components/notes/MarkdownPreview.vue'
 import TagInput from '@/components/common/TagInput.vue'
 import { tiptapToMarkdown } from '@/components/editor/TiptapToMarkdown'
 
@@ -20,6 +21,12 @@ const noteId = computed(() => Number(route.params.id))
 const note = computed(() => noteStore.currentNote)
 const showMigrationDialog = ref(false)
 const isMigrating = ref(false)
+
+// Preview/Edit mode state
+const isEditing = ref(false)
+const hasUnsavedChanges = ref(false)
+const pendingTitle = ref('')
+const pendingContent = ref('')
 
 const folderOptions = computed(() => [
   { label: '无文件夹', value: null },
@@ -52,12 +59,60 @@ const debouncedSave = useDebounceFn(async (data: { title?: string; content?: str
 
 function onTitleChange(title: string) {
   if (!note.value) return
-  debouncedSave({ title })
+  if (isEditing.value) {
+    pendingTitle.value = title
+    hasUnsavedChanges.value = title !== note.value.title || pendingContent.value !== note.value.content
+  } else {
+    debouncedSave({ title })
+  }
 }
 
 function onContentChange(content: string) {
   if (!note.value) return
-  debouncedSave({ content, content_format: 'markdown' })
+  if (isEditing.value) {
+    pendingContent.value = content
+    hasUnsavedChanges.value = content !== note.value.content || pendingTitle.value !== note.value.title
+  } else {
+    debouncedSave({ content, content_format: 'markdown' })
+  }
+}
+
+// ---- Preview/Edit mode ----
+function enterEditMode() {
+  if (!note.value) return
+  pendingTitle.value = note.value.title
+  pendingContent.value = note.value.content
+  hasUnsavedChanges.value = false
+  isEditing.value = true
+}
+
+function handleCancelEdit() {
+  if (hasUnsavedChanges.value) {
+    dialog.warning({
+      title: '放弃更改',
+      content: '有未保存的更改，确定要放弃吗？',
+      positiveText: '放弃',
+      negativeText: '继续编辑',
+      onPositiveClick: () => {
+        isEditing.value = false
+        hasUnsavedChanges.value = false
+      }
+    })
+  } else {
+    isEditing.value = false
+  }
+}
+
+async function handleDoneEdit() {
+  if (!note.value) return
+  await noteStore.updateNote(note.value.id, {
+    title: pendingTitle.value || note.value.title,
+    content: pendingContent.value,
+    content_format: 'markdown'
+  })
+  isEditing.value = false
+  hasUnsavedChanges.value = false
+  message.success('笔记已保存')
 }
 
 function onTagsChange(tags: string[]) {
@@ -110,29 +165,36 @@ function handleEditLegacyNote() {
           返回笔记
         </button>
         <div class="note-toolbar__right">
-          <span :class="['note-save-status', noteStore.saving && 'note-save-status--saving']">
-            <svg v-if="noteStore.saving" class="w-3.5 h-3.5 animate-spin" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
-            </svg>
-            <svg v-else class="w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="20 6 9 17 4 12"/>
-            </svg>
-            {{ noteStore.saving ? '保存中...' : '已自动保存' }}
-          </span>
-          <n-button
-            size="small"
-            :type="note.is_pinned ? 'warning' : 'default'"
-            secondary
-            @click="noteStore.togglePin(note.id)"
-          >
-            <template #icon>
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5">
-                <line x1="12" y1="17" x2="12" y2="22"/>
-                <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24z"/>
+          <template v-if="!isEditing">
+            <span :class="['note-save-status', noteStore.saving && 'note-save-status--saving']">
+              <svg v-if="noteStore.saving" class="w-3.5 h-3.5 animate-spin" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
               </svg>
-            </template>
-            {{ note.is_pinned ? '取消置顶' : '置顶' }}
-          </n-button>
+              <svg v-else class="w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+              {{ noteStore.saving ? '保存中...' : '已自动保存' }}
+            </span>
+            <n-button size="small" type="primary" @click="enterEditMode">编辑</n-button>
+            <n-button
+              size="small"
+              :type="note.is_pinned ? 'warning' : 'default'"
+              secondary
+              @click="noteStore.togglePin(note.id)"
+            >
+              <template #icon>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5">
+                  <line x1="12" y1="17" x2="12" y2="22"/>
+                  <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24z"/>
+                </svg>
+              </template>
+              {{ note.is_pinned ? '取消置顶' : '置顶' }}
+            </n-button>
+          </template>
+          <template v-else>
+            <n-button size="small" type="primary" @click="handleDoneEdit">完成编辑</n-button>
+            <n-button size="small" @click="handleCancelEdit">取消编辑</n-button>
+          </template>
         </div>
       </div>
 
@@ -141,10 +203,13 @@ function handleEditLegacyNote() {
         <div class="note-editor-inner">
           <!-- Title -->
           <input
-            :value="note.title"
+            :value="isEditing ? pendingTitle : note.title"
             class="note-title-input"
+            :class="!isEditing && 'note-title-input--clickable'"
             placeholder="无标题"
+            :readonly="!isEditing"
             @input="onTitleChange(($event.target as HTMLInputElement).value)"
+            @click="!isEditing && !isLegacyNote && enterEditMode()"
           />
 
           <!-- Meta: folder + tags -->
@@ -207,10 +272,15 @@ function handleEditLegacyNote() {
             />
           </div>
 
-          <!-- CodeMirror Markdown Editor for new format -->
+          <!-- Markdown Note: Preview Mode (read-only) -->
+          <div v-else-if="!isEditing" class="note-editor-preview">
+            <MarkdownPreview :content="note.content" />
+          </div>
+
+          <!-- Markdown Note: Edit Mode (CodeMirror + Preview split) -->
           <div v-else class="note-editor-markdown">
             <CodeMirrorMarkdownEditor
-              :content="note.content"
+              :content="isEditing ? pendingContent : note.content"
               :note-id="note.id"
               @update:content="onContentChange"
             />
@@ -326,6 +396,18 @@ function handleEditLegacyNote() {
   min-height: 400px;
 }
 
+.note-editor-preview {
+  min-height: 400px;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+.dark .note-editor-preview {
+  background: #111827;
+  border-color: #374151;
+}
+
 .note-editor-legacy {
   min-height: 400px;
 }
@@ -399,6 +481,14 @@ function handleEditLegacyNote() {
 
 .note-title-input::placeholder {
   color: #d1d5db;
+}
+
+.note-title-input--clickable {
+  cursor: pointer;
+}
+
+.note-title-input--clickable:hover {
+  color: #6366f1;
 }
 
 .dark .note-title-input {

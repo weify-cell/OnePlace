@@ -2,22 +2,21 @@
 
 ## 当前迭代
 
-- 迭代目标：笔记模块 - Markdown 富文本编辑
-- 版本号：v1.8
-- 模块名：notes-markdown
+- 迭代目标：笔记模块 - 预览/编辑双模式
+- 版本号：v1.9
+- 模块名：notes-preview-mode
 - 启动日期：2026-04-01
 
 ## 阶段完成状态
 
-- [x] 需求分析    → docs/prd/notes-markdown.md（已完成）
-- [x] 架构设计    → docs/prd/notes-markdown-architecture.md（已完成）
-- [x] 后端开发    → docs/handoff/backend-output.md（已完成）
+- [x] 需求分析    → docs/handoff/pm-output.md（已完成）
+- [x] 架构设计    → docs/prd/notes-preview-mode-architecture.md（已完成）
 - [x] 前端开发    → docs/handoff/frontend-output.md（已完成）
-- [x] 测试验收    → docs/handoff/tester-output.md（已完成）
+- [x] 测试验收    → docs/handoff/tester-output.md（已通过）
 
 ## 上一迭代
 
-- v1.8 | 笔记模块 - Markdown 富文本编辑 | 2026-04-01 | docs/archive/v1.8-notes-markdown/
+- v1.9 | 笔记模块 - 预览/编辑双模式 | 2026-04-02 | docs/archive/v1.9-notes-preview-mode/
 
 ## 归档索引
 

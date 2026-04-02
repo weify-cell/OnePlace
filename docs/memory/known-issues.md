@@ -91,3 +91,14 @@
 **文件**：`docs/handoff/frontend-output.md`
 **描述**：frontend-output.md 仍记录 v1.4 内容，v1.5 前端开发工作（合并单元格、多 Sheet 选择）未在 handoff 文件中体现。但实际代码实现已包含 v1.5 功能。
 **状态说明**：代码实现已完成且通过测试，仅文档未更新。不影响功能。
+
+---
+
+## BUG-011 [已解决]
+**文件**：`src/views/NotesView.vue:214,223`
+**描述**：笔记列表视图模式（卡片/列表）切换后不持久化到 localStorage。点击「列表视图」按钮切换到列表模式后，刷新页面或从笔记详情返回，视图会恢复为默认的卡片模式。按钮使用 `@click="viewMode = 'card'"` 和 `@click="viewMode = 'list'"` 直接赋值，未调用 `localStorage.setItem()`。
+**修复方式**：引入 `toggleViewMode()` 函数统一处理视图切换，该函数在切换后调用 `localStorage.setItem('notes_view_mode', viewMode.value)` 持久化。两个按钮的 `@click` 均改为调用 `toggleViewMode()`。
+**回归验收**：2026-04-02
+- `npm test` 通过（36 tests）
+- `npm run typecheck` 通过
+- 代码审查：NotesView.vue 第 13 行从 localStorage 读取默认值，第 15-18 行 toggleViewMode 正确持久化，第 214、223 行按钮调用 toggleViewMode()

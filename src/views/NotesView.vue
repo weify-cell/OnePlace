@@ -9,6 +9,14 @@ import EmptyState from '@/components/common/EmptyState.vue'
 const router = useRouter()
 const noteStore = useNoteStore()
 
+// View mode toggle (card | list)
+const viewMode = ref(localStorage.getItem('notes_view_mode') as 'card' | 'list' || 'card')
+
+function toggleViewMode() {
+  viewMode.value = viewMode.value === 'card' ? 'list' : 'card'
+  localStorage.setItem('notes_view_mode', viewMode.value)
+}
+
 // Folder state
 const creatingFolder = ref(false)
 const newFolderName = ref('')
@@ -70,6 +78,20 @@ const currentFolderLabel = computed(() => {
 function onTagFilter(tag: string | null) {
   noteStore.filters.tag = tag ?? ''
   noteStore.fetchNotes()
+}
+
+function formatTime(isoString: string) {
+  const d = new Date(isoString)
+  const now = new Date()
+  const diffMs = now.getTime() - d.getTime()
+  const diffMins = Math.floor(diffMs / 60000)
+  const diffHours = Math.floor(diffMs / 3600000)
+  const diffDays = Math.floor(diffMs / 86400000)
+  if (diffMins < 1) return '刚刚'
+  if (diffMins < 60) return `${diffMins} 分钟前`
+  if (diffHours < 24) return `${diffHours} 小时前`
+  if (diffDays < 7) return `${diffDays} 天前`
+  return d.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
 }
 </script>
 
@@ -183,7 +205,30 @@ function onTagFilter(tag: string | null) {
               <h1 class="text-2xl font-bold text-gray-900 dark:text-white">{{ currentFolderLabel }}</h1>
               <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">共 {{ noteStore.items.length }} 篇笔记</p>
             </div>
-            <n-button type="primary" @click="createNote">+ 新建笔记</n-button>
+            <div class="flex items-center gap-3">
+              <!-- View mode toggle -->
+              <div class="view-toggle">
+                <button
+                  :class="['view-toggle__btn', viewMode === 'card' && 'view-toggle__btn--active']"
+                  title="卡片视图"
+                  @click="toggleViewMode()"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+                  </svg>
+                </button>
+                <button
+                  :class="['view-toggle__btn', viewMode === 'list' && 'view-toggle__btn--active']"
+                  title="列表视图"
+                  @click="toggleViewMode()"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
+                  </svg>
+                </button>
+              </div>
+              <n-button type="primary" @click="createNote">+ 新建笔记</n-button>
+            </div>
           </div>
 
           <!-- Filters -->
@@ -218,7 +263,7 @@ function onTagFilter(tag: string | null) {
             </n-checkbox>
           </div>
 
-          <!-- Note grid -->
+          <!-- Note grid / list -->
           <n-spin :show="noteStore.loading">
             <EmptyState
               v-if="!noteStore.loading && noteStore.items.length === 0"
@@ -227,8 +272,21 @@ function onTagFilter(tag: string | null) {
               action-label="新建笔记"
               @action="createNote"
             />
-            <div v-else class="notes-grid">
+            <!-- Card view -->
+            <div v-else-if="viewMode === 'card'" class="notes-grid">
               <NoteCard v-for="note in noteStore.items" :key="note.id" :note="note" />
+            </div>
+            <!-- List view -->
+            <div v-else class="notes-list">
+              <div
+                v-for="note in noteStore.items"
+                :key="note.id"
+                class="note-list-item"
+                @click="router.push(`/notes/${note.id}`)"
+              >
+                <span class="note-list-item__title">{{ note.title || '无标题' }}</span>
+                <span class="note-list-item__time">{{ formatTime(note.updated_at) }}</span>
+              </div>
             </div>
           </n-spin>
         </div>
@@ -509,5 +567,113 @@ function onTagFilter(tag: string | null) {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 14px;
+}
+
+/* ---- View toggle ---- */
+.view-toggle {
+  display: flex;
+  align-items: center;
+  background: #f3f4f6;
+  border-radius: 8px;
+  padding: 2px;
+  gap: 1px;
+}
+
+.dark .view-toggle {
+  background: #1f2937;
+}
+
+.view-toggle__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #6b7280;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.view-toggle__btn:hover {
+  color: #374151;
+}
+
+.dark .view-toggle__btn {
+  color: #9ca3af;
+}
+
+.dark .view-toggle__btn:hover {
+  color: #e5e7eb;
+}
+
+.view-toggle__btn--active {
+  background: white;
+  color: #6366f1;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+
+.dark .view-toggle__btn--active {
+  background: #374151;
+  color: #818cf8;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.3);
+}
+
+/* ---- Notes list view ---- */
+.notes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.note-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.note-list-item:hover {
+  background: #f9fafb;
+  border-color: #d1d5db;
+}
+
+.dark .note-list-item {
+  background: #111827;
+  border-color: #1f2937;
+}
+
+.dark .note-list-item:hover {
+  background: #1f2937;
+  border-color: #374151;
+}
+
+.note-list-item__title {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #374151;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.dark .note-list-item__title {
+  color: #e5e7eb;
+}
+
+.note-list-item__time {
+  font-size: 0.75rem;
+  color: #9ca3af;
+  flex-shrink: 0;
+  margin-left: 12px;
 }
 </style>
