@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { useTodoStore } from '@/stores/todo.store'
 import AppLayout from '@/components/common/AppLayout.vue'
+import TodoTabs from '@/components/todos/TodoTabs.vue'
 import TodoFilters from '@/components/todos/TodoFilters.vue'
 import TodoList from '@/components/todos/TodoList.vue'
 import TodoCreateModal from '@/components/todos/TodoCreateModal.vue'
@@ -12,6 +13,7 @@ const showCreateModal = ref(false)
 onMounted(() => {
   todoStore.fetchTodos()
   todoStore.fetchAllTags()
+  todoStore.fetchTodoCounts()
 })
 </script>
 
@@ -26,6 +28,9 @@ onMounted(() => {
         </div>
         <n-button type="primary" @click="showCreateModal = true">+ 新建待办</n-button>
       </div>
+
+      <!-- Tabs -->
+      <TodoTabs class="mb-4" />
 
       <!-- Filters -->
       <TodoFilters class="mb-4" />

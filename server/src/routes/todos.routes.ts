@@ -4,6 +4,8 @@ import * as todosController from '../controllers/todos.controller.js'
 export const todosRouter = Router()
 
 todosRouter.get('/tags', todosController.getTodoTags)
+todosRouter.get('/counts', todosController.getTodoCounts)
+todosRouter.get('/pending-count', todosController.getPendingCount)
 todosRouter.get('/', todosController.getTodos)
 todosRouter.post('/', todosController.createTodo)
 todosRouter.get('/:id', todosController.getTodo)

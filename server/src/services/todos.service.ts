@@ -10,6 +10,7 @@ export interface Todo {
   due_date: string | null
   tags: string[]
   is_deleted: boolean
+  completed_at: string | null
   created_at: string
   updated_at: string
 }
@@ -24,6 +25,7 @@ interface TodoRow {
   due_date: string | null
   tags: string
   is_deleted: number
+  completed_at: string | null
   created_at: string
   updated_at: string
 }
@@ -32,7 +34,8 @@ function rowToTodo(row: TodoRow): Todo {
   return {
     ...row,
     tags: JSON.parse(row.tags || '[]'),
-    is_deleted: row.is_deleted === 1
+    is_deleted: row.is_deleted === 1,
+    completed_at: row.completed_at || null
   } as Todo
 }
 
@@ -50,7 +53,7 @@ export interface TodoQuery {
 
 export function getTodos(query: TodoQuery) {
   const db = connectDatabase()
-  const { status, priority, type, tag, search, page = 1, pageSize = 20, sortBy = 'created_at', sortOrder = 'desc' } = query
+  const { status, priority, type, tag, search, page = 1, pageSize = 20 } = query
 
   const conditions: string[] = ['t.is_deleted = 0']
   const params: (string | number)[] = []
@@ -62,11 +65,19 @@ export function getTodos(query: TodoQuery) {
   if (tag) { conditions.push(`EXISTS (SELECT 1 FROM json_each(t.tags) WHERE value = ?)`); params.push(tag) }
 
   const where = conditions.join(' AND ')
-  const validSort = ['created_at', 'updated_at', 'due_date', 'priority', 'title'].includes(sortBy) ? sortBy : 'created_at'
-  const order = sortOrder === 'asc' ? 'ASC' : 'DESC'
+
+  // Determine sort based on status
+  let orderBy: string
+  if (status === 'done') {
+    // completed tasks sorted by completed_at desc, nulls last
+    orderBy = `CASE WHEN t.completed_at IS NULL THEN 1 ELSE 0 END, t.completed_at DESC`
+  } else {
+    // other tasks sorted by due_date asc, nulls last
+    orderBy = `CASE WHEN t.due_date IS NULL THEN 1 ELSE 0 END, t.due_date ASC`
+  }
 
   const countRow = db.prepare(`SELECT COUNT(*) as total FROM todos t WHERE ${where}`).get(...params) as { total: number }
-  const rows = db.prepare(`SELECT * FROM todos t WHERE ${where} ORDER BY t.${validSort} ${order} LIMIT ? OFFSET ?`)
+  const rows = db.prepare(`SELECT * FROM todos t WHERE ${where} ORDER BY ${orderBy} LIMIT ? OFFSET ?`)
     .all(...params, pageSize, (page - 1) * pageSize) as TodoRow[]
 
   return { items: rows.map(rowToTodo), total: countRow.total, page, pageSize }
@@ -106,10 +117,20 @@ export function updateTodo(id: number, data: Partial<Todo>): Todo | null {
   if (data.title !== undefined) { updates.push('title = ?'); params.push(data.title) }
   if (data.description !== undefined) { updates.push('description = ?'); params.push(data.description) }
   if (data.priority !== undefined) { updates.push('priority = ?'); params.push(data.priority) }
-  if (data.status !== undefined) { updates.push('status = ?'); params.push(data.status) }
   if (data.type !== undefined) { updates.push('type = ?'); params.push(data.type) }
   if (data.due_date !== undefined) { updates.push('due_date = ?'); params.push(data.due_date) }
   if (data.tags !== undefined) { updates.push('tags = ?'); params.push(JSON.stringify(data.tags)) }
+
+  // Handle status change and completed_at
+  if (data.status !== undefined) {
+    updates.push('status = ?')
+    params.push(data.status)
+    if (data.status === 'done') {
+      updates.push("completed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')")
+    } else {
+      updates.push('completed_at = NULL')
+    }
+  }
 
   if (updates.length === 0) return existing
 
@@ -135,4 +156,22 @@ export function getAllTodoTags(): string[] {
     ORDER BY tag
   `).all() as { tag: string }[]
   return rows.map(r => r.tag)
+}
+
+export function getTodoCounts() {
+  const db = connectDatabase()
+  const counts = {
+    all: (db.prepare('SELECT COUNT(*) as count FROM todos WHERE is_deleted = 0').get() as { count: number }).count,
+    todo: (db.prepare("SELECT COUNT(*) as count FROM todos WHERE is_deleted = 0 AND status = 'todo'").get() as { count: number }).count,
+    in_progress: (db.prepare("SELECT COUNT(*) as count FROM todos WHERE is_deleted = 0 AND status = 'in_progress'").get() as { count: number }).count,
+    done: (db.prepare("SELECT COUNT(*) as count FROM todos WHERE is_deleted = 0 AND status = 'done'").get() as { count: number }).count,
+    cancelled: (db.prepare("SELECT COUNT(*) as count FROM todos WHERE is_deleted = 0 AND status = 'cancelled'").get() as { count: number }).count,
+  }
+  return counts
+}
+
+export function getPendingCount(): number {
+  const db = connectDatabase()
+  const result = db.prepare("SELECT COUNT(*) as count FROM todos WHERE is_deleted = 0 AND status = 'todo'").get() as { count: number }
+  return result.count
 }

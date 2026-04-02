@@ -2,6 +2,16 @@ import { defineStore } from 'pinia'
 import { todosApi } from '@/api/todos.api'
 import type { Todo, TodoFilters, TodoStatus } from '@/types'
 
+export type TodoTabName = 'all' | 'todo' | 'in_progress' | 'done' | 'cancelled'
+
+export interface TodoCounts {
+  all: number
+  todo: number
+  in_progress: number
+  done: number
+  cancelled: number
+}
+
 export const useTodoStore = defineStore('todos', () => {
   const items = ref<Todo[]>([])
   const total = ref(0)
@@ -9,6 +19,8 @@ export const useTodoStore = defineStore('todos', () => {
   const allTags = ref<string[]>([])
   const filters = ref<TodoFilters>({ status: null, priority: null, type: null, tag: null, search: '' })
   const pagination = ref({ page: 1, pageSize: 20 })
+  const counts = ref<TodoCounts>({ all: 0, todo: 0, in_progress: 0, done: 0, cancelled: 0 })
+  const activeTab = ref<TodoTabName>('all')
 
   async function fetchTodos() {
     loading.value = true
@@ -58,11 +70,33 @@ export const useTodoStore = defineStore('todos', () => {
     allTags.value = res.data
   }
 
+  async function fetchTodoCounts() {
+    const res = await todosApi.getCounts()
+    counts.value = res.data
+  }
+
+  async function fetchPendingCount() {
+    const res = await todosApi.getPendingCount()
+    return res.data
+  }
+
   function setFilter(key: keyof TodoFilters, value: unknown) {
     ;(filters.value as Record<string, unknown>)[key] = value
     pagination.value.page = 1
     fetchTodos()
   }
 
-  return { items, total, loading, allTags, filters, pagination, fetchTodos, createTodo, updateTodo, deleteTodo, toggleStatus, fetchAllTags, setFilter }
+  function setActiveTab(tab: TodoTabName) {
+    activeTab.value = tab
+    if (tab === 'all') {
+      filters.value.status = null
+    } else {
+      filters.value.status = tab
+    }
+    pagination.value.page = 1
+    fetchTodos()
+    fetchTodoCounts()
+  }
+
+  return { items, total, loading, allTags, filters, pagination, counts, activeTab, fetchTodos, createTodo, updateTodo, deleteTodo, toggleStatus, fetchAllTags, fetchTodoCounts, fetchPendingCount, setFilter, setActiveTab }
 })

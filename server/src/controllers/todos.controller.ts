@@ -43,3 +43,11 @@ export function deleteTodo(req: Request, res: Response): void {
 export function getTodoTags(req: Request, res: Response): void {
   res.json(todosService.getAllTodoTags())
 }
+
+export function getTodoCounts(req: Request, res: Response): void {
+  res.json(todosService.getTodoCounts())
+}
+
+export function getPendingCount(req: Request, res: Response): void {
+  res.json({ count: todosService.getPendingCount() })
+}

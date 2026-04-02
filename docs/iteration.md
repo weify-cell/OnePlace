@@ -2,21 +2,21 @@
 
 ## 当前迭代
 
-- 迭代目标：笔记模块 - 预览/编辑双模式
-- 版本号：v1.9
-- 模块名：notes-preview-mode
-- 启动日期：2026-04-01
+- 迭代目标：Todo 模块状态Tab重构
+- 版本号：v1.10
+- 模块名：todo-status-tabs
+- 启动日期：2026-04-02
 
 ## 阶段完成状态
 
-- [x] 需求分析    → docs/handoff/pm-output.md（已完成）
-- [x] 架构设计    → docs/prd/notes-preview-mode-architecture.md（已完成）
-- [x] 前端开发    → docs/handoff/frontend-output.md（已完成）
-- [x] 测试验收    → docs/handoff/tester-output.md（已通过）
+- [x] 需求分析    → docs/prd/todo-status-tabs-redesign.md（已完成）
+- [x] 架构设计    → docs/prd/todo-status-tabs-architecture.md（已完成）
+- [x] 前端开发    → （已完成）
+- [x] 测试验收    → （已完成）
 
 ## 上一迭代
 
-- v1.9 | 笔记模块 - 预览/编辑双模式 | 2026-04-02 | docs/archive/v1.9-notes-preview-mode/
+- v1.10 | 代办模块 - 状态Tab重构 | 2026-04-02 | docs/archive/v1.10-todo-status-tabs/
 
 ## 归档索引
 

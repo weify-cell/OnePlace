@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useSettingsStore } from '@/stores/settings.store'
 import { useAuthStore } from '@/stores/auth.store'
 import { darkTheme, lightTheme } from 'naive-ui'
+import LoginReminderModal from '@/components/common/LoginReminderModal.vue'
 
 const settingsStore = useSettingsStore()
 const authStore = useAuthStore()
@@ -13,6 +14,10 @@ function shouldLoadSettings(): boolean {
   if (!authStore.token) return false
   return route.path !== '/login' && route.path !== '/setup'
 }
+
+const showReminderModal = computed(() => {
+  return authStore.isAuthenticated && route.path !== '/login' && route.path !== '/setup'
+})
 
 onMounted(() => {
   if (shouldLoadSettings()) {
@@ -50,6 +55,7 @@ watch(isDark, (val) => {
       <n-dialog-provider>
         <n-notification-provider>
           <router-view />
+          <LoginReminderModal v-if="showReminderModal" />
         </n-notification-provider>
       </n-dialog-provider>
     </n-message-provider>

@@ -1,13 +1,9 @@
 <script setup lang="ts">
 import { useTodoStore } from '@/stores/todo.store'
-import { TODO_STATUS_LABELS, TODO_PRIORITY_LABELS, TODO_TYPE_LABELS } from '@/types'
+import { TODO_PRIORITY_LABELS, TODO_TYPE_LABELS } from '@/types'
 
 const todoStore = useTodoStore()
 
-const statusOptions = [
-  { label: '全部状态', value: null },
-  ...Object.entries(TODO_STATUS_LABELS).map(([value, label]) => ({ label, value }))
-]
 const priorityOptions = [
   { label: '全部优先级', value: null },
   ...Object.entries(TODO_PRIORITY_LABELS).map(([value, label]) => ({ label, value }))
@@ -28,13 +24,6 @@ const typeOptions = [
       @update:value="todoStore.setFilter('search', $event)"
     />
     <n-select
-      :value="todoStore.filters.status"
-      :options="statusOptions"
-      placeholder="全部状态"
-      class="w-36"
-      @update:value="todoStore.setFilter('status', $event)"
-    />
-    <n-select
       :value="todoStore.filters.priority"
       :options="priorityOptions"
       placeholder="全部优先级"
@@ -49,9 +38,9 @@ const typeOptions = [
       @update:value="todoStore.setFilter('type', $event)"
     />
     <n-button
-      v-if="todoStore.filters.status || todoStore.filters.priority || todoStore.filters.type || todoStore.filters.search"
+      v-if="todoStore.filters.priority || todoStore.filters.type || todoStore.filters.search"
       size="small"
-      @click="() => { todoStore.setFilter('status', null); todoStore.setFilter('priority', null); todoStore.setFilter('type', null); todoStore.setFilter('search', '') }"
+      @click="() => { todoStore.setFilter('priority', null); todoStore.setFilter('type', null); todoStore.setFilter('search', '') }"
     >
       清除筛选
     </n-button>
