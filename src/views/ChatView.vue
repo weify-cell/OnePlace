@@ -40,8 +40,8 @@ watch(() => route.params.id, async (id) => {
     <div class="h-full flex">
       <!-- Sidebar: conversation list -->
       <div class="w-64 flex-shrink-0 border-r border-gray-200 dark:border-gray-700 flex flex-col">
-        <div class="p-3 border-b border-gray-200 dark:border-gray-700">
-          <n-button type="primary" block size="small" @click="newConversation">+ 新对话</n-button>
+        <div class="p-3 pt-6 border-b border-gray-200 dark:border-gray-700">
+          <n-button type="primary" block @click="newConversation">+ 新对话</n-button>
         </div>
         <ConversationList />
       </div>
