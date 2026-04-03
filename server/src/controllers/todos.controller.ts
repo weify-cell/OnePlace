@@ -51,3 +51,7 @@ export function getTodoCounts(req: Request, res: Response): void {
 export function getPendingCount(req: Request, res: Response): void {
   res.json({ count: todosService.getPendingCount() })
 }
+
+export function getUrgentCount(req: Request, res: Response): void {
+  res.json({ count: todosService.getUrgentCount() })
+}

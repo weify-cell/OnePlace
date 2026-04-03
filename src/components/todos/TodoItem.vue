@@ -11,6 +11,20 @@ const dialog = useDialog()
 
 const showEditModal = ref(false)
 
+const dueDateStatus = computed(() => {
+  if (!props.todo.due_date) return null
+  const now = new Date()
+  now.setHours(0, 0, 0, 0)
+  const due = new Date(props.todo.due_date)
+  due.setHours(0, 0, 0, 0)
+  const diffDays = (due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
+
+  if (diffDays < 0) return { label: '已逾期', colorClass: 'due-date--overdue' }
+  if (diffDays < 1) return { label: '今日到期', colorClass: 'due-date--urgent' }
+  if (diffDays < 4) return { label: '即将到期', colorClass: 'due-date--warning' }
+  return null
+})
+
 async function toggleStatus() {
   await todoStore.toggleStatus(props.todo.id)
 }
@@ -60,8 +74,9 @@ function confirmDelete() {
       <p v-if="todo.description" class="text-sm text-gray-500 mt-1 truncate">{{ todo.description }}</p>
 
       <div class="flex items-center gap-2 mt-2 flex-wrap">
+        <span v-if="dueDateStatus" :class="['text-xs', dueDateStatus.colorClass]">📅 {{ dueDateStatus.label }} {{ todo.due_date }}</span>
+        <span v-else-if="todo.due_date" class="text-xs text-gray-400">📅 {{ todo.due_date }}</span>
         <n-tag v-for="tag in todo.tags" :key="tag" size="tiny" type="info">{{ tag }}</n-tag>
-        <span v-if="todo.due_date" class="text-xs text-gray-400">📅 {{ todo.due_date }}</span>
         <span class="text-xs text-gray-400 ml-auto">{{ TODO_STATUS_LABELS[todo.status] }}</span>
       </div>
     </div>
@@ -86,3 +101,41 @@ function confirmDelete() {
     :todo="todo"
   />
 </template>
+
+<style scoped>
+.due-date--overdue {
+  color: #dc2626;
+  background-color: #fef2f2;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.due-date--urgent {
+  color: #dc2626;
+  background-color: #fef2f2;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.due-date--warning {
+  color: #d97706;
+  background-color: #fffbeb;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.dark .due-date--overdue {
+  background-color: #7f1d1d;
+  color: #fecaca;
+}
+
+.dark .due-date--urgent {
+  background-color: #7f1d1d;
+  color: #fecaca;
+}
+
+.dark .due-date--warning {
+  background-color: #78350f;
+  color: #fde68a;
+}
+</style>

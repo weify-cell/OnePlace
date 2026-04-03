@@ -175,3 +175,22 @@ export function getPendingCount(): number {
   const result = db.prepare("SELECT COUNT(*) as count FROM todos WHERE is_deleted = 0 AND status = 'todo'").get() as { count: number }
   return result.count
 }
+
+export function getUrgentCount(): number {
+  const db = connectDatabase()
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const threeDaysLater = new Date(today.getTime() + 3 * 24 * 60 * 60 * 1000)
+  const todayStr = today.toISOString().split('T')[0]
+  const threeDaysLaterStr = threeDaysLater.toISOString().split('T')[0]
+
+  const result = db.prepare(`
+    SELECT COUNT(*) as count FROM todos
+    WHERE is_deleted = 0
+      AND status NOT IN ('done', 'cancelled')
+      AND due_date IS NOT NULL
+      AND due_date <= ?
+  `).get(threeDaysLaterStr) as { count: number }
+
+  return result.count
+}

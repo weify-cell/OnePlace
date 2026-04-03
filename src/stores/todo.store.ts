@@ -80,6 +80,11 @@ export const useTodoStore = defineStore('todos', () => {
     return res.data
   }
 
+  async function fetchUrgentCount() {
+    const res = await todosApi.getUrgentCount()
+    return res.data
+  }
+
   function setFilter(key: keyof TodoFilters, value: unknown) {
     ;(filters.value as Record<string, unknown>)[key] = value
     pagination.value.page = 1
@@ -98,5 +103,5 @@ export const useTodoStore = defineStore('todos', () => {
     fetchTodoCounts()
   }
 
-  return { items, total, loading, allTags, filters, pagination, counts, activeTab, fetchTodos, createTodo, updateTodo, deleteTodo, toggleStatus, fetchAllTags, fetchTodoCounts, fetchPendingCount, setFilter, setActiveTab }
+  return { items, total, loading, allTags, filters, pagination, counts, activeTab, fetchTodos, createTodo, updateTodo, deleteTodo, toggleStatus, fetchAllTags, fetchTodoCounts, fetchPendingCount, fetchUrgentCount, setFilter, setActiveTab }
 })

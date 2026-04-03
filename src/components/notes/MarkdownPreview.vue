@@ -7,7 +7,7 @@ const props = defineProps<{
 }>()
 
 // Configure marked for synchronous rendering
-marked.setOptions({ async: false })
+marked.setOptions({ async: false, breaks: true })
 
 const renderedHtml = computed(() => {
   if (!props.content) return ''

@@ -17,11 +17,13 @@ declare module 'vue' {
     ImageManager: typeof import('./components/notes/ImageManager.vue')['default']
     InlineDiffEditor: typeof import('./components/toolbox/InlineDiffEditor.vue')['default']
     JsonEditor: typeof import('./components/toolbox/JsonEditor.vue')['default']
+    LoginReminderModal: typeof import('./components/common/LoginReminderModal.vue')['default']
     MarkdownPreview: typeof import('./components/notes/MarkdownPreview.vue')['default']
     MessageBubble: typeof import('./components/chat/MessageBubble.vue')['default']
     MessageInput: typeof import('./components/chat/MessageInput.vue')['default']
     MessageList: typeof import('./components/chat/MessageList.vue')['default']
     NAlert: typeof import('naive-ui')['NAlert']
+    NBadge: typeof import('naive-ui')['NBadge']
     NButton: typeof import('naive-ui')['NButton']
     NCard: typeof import('naive-ui')['NCard']
     NCheckbox: typeof import('naive-ui')['NCheckbox']
@@ -60,6 +62,7 @@ declare module 'vue' {
     TodoFilters: typeof import('./components/todos/TodoFilters.vue')['default']
     TodoItem: typeof import('./components/todos/TodoItem.vue')['default']
     TodoList: typeof import('./components/todos/TodoList.vue')['default']
+    TodoTabs: typeof import('./components/todos/TodoTabs.vue')['default']
     ToolCard: typeof import('./components/toolbox/ToolCard.vue')['default']
   }
 }

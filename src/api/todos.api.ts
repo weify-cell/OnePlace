@@ -10,5 +10,6 @@ export const todosApi = {
   delete: (id: number) => api.delete(`/todos/${id}`),
   getTags: () => api.get<string[]>('/todos/tags'),
   getCounts: () => api.get<TodoCounts>('/todos/counts'),
-  getPendingCount: () => api.get<{ count: number }>('/todos/pending-count')
+  getPendingCount: () => api.get<{ count: number }>('/todos/pending-count'),
+  getUrgentCount: () => api.get<{ count: number }>('/todos/urgent-count')
 }

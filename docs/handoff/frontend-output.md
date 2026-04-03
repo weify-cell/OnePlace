@@ -1,93 +1,115 @@
-# 前端开发输出 - 笔记预览/编辑模式 v1.9
+# 前端开发输出 - Todo 模块状态Tab重构 v1.10
 
 ## 迭代信息
 
 | 字段 | 值 |
 |------|-----|
-| 版本号 | v1.9 |
-| 模块标识 | notes-preview-mode |
-| 迭代目标 | 笔记详情页增加预览/编辑双模式 + 笔记列表卡片/列表切换视图 |
-| 完成日期 | 2026-04-01 |
+| 版本号 | v1.10 |
+| 模块标识 | todo-status-tabs |
+| 迭代目标 | 待办页面顶部新增 5 个状态 Tab，支持角标显示各状态数量 |
+| 完成日期 | 2026-04-02 |
 
 ---
 
 ## 已完成工作
 
-### 1. NoteDetailView.vue - 预览/编辑双模式
+### 1. todo.store.ts - 新增状态筛选和计数管理
 
-**文件**: `src/views/NoteDetailView.vue`
+**文件**: `src/stores/todo.store.ts`
+
+#### 新增类型
+```typescript
+export type TodoTabName = 'all' | 'todo' | 'in_progress' | 'done' | 'cancelled'
+
+export interface TodoCounts {
+  all: number
+  todo: number
+  in_progress: number
+  done: number
+  cancelled: number
+}
+```
 
 #### 新增状态
 ```typescript
-const isEditing = ref(false)           // 默认预览模式
-const hasUnsavedChanges = ref(false)   // 追踪未保存更改
-const pendingTitle = ref('')           // 编辑中的标题暂存
-const pendingContent = ref('')         // 编辑中的内容暂存
+const counts = ref<TodoCounts>({ all: 0, todo: 0, in_progress: 0, done: 0, cancelled: 0 })
+const activeTab = ref<TodoTabName>('all')
 ```
 
-#### 模式行为
+#### 新增方法
 
-**预览模式**（默认）:
-- 只显示 `MarkdownPreview` 组件（纯阅读，无编辑器）
-- 标题显示当前笔记标题，hover 时指针变为点击样式，click 进入编辑模式
-- 工具栏按钮：「编辑」（主按钮）+「置顶」
-- 自动保存指示器正常显示
-
-**编辑模式**:
-- 显示 `CodeMirrorMarkdownEditor`（左侧编辑 + 右侧预览分屏）
-- 标题变为可编辑 input，实时同步到 `pendingTitle`
-- 工具栏按钮：「完成编辑」（主按钮）+「取消编辑」
-- 内容变更通过 `onContentChange` 同步到 `pendingContent`
-
-#### 核心函数
-
-| 函数 | 说明 |
+| 方法 | 说明 |
 |------|------|
-| `enterEditMode()` | 初始化 `pendingTitle/pendingContent`，设置 `isEditing = true` |
-| `handleDoneEdit()` | 调用 `updateNote` 保存，切换回预览模式，显示成功消息 |
-| `handleCancelEdit()` | 若 `hasUnsavedChanges` 为 true，弹出确认对话框；否则直接退出编辑模式 |
-
-#### 脏状态追踪
-- `hasUnsavedChanges` 在以下情况变为 `true`：
-  - `pendingTitle !== note.title`
-  - `pendingContent !== note.content`
-- 取消确认对话框使用 `useDialog` 的 `dialog.warning()`
-- 确认「放弃」后重置 `isEditing` 和 `hasUnsavedChanges`
-
-#### 兼容性
-- 存量 Tiptap 笔记（`isLegacyNote`）保持原有迁移流程不变
-- 非 Markdown 笔记（`isMarkdownNote`）不响应标题点击进入编辑
+| `fetchTodoCounts()` | 调用 `GET /api/todos/counts` 获取各状态数量 |
+| `fetchPendingCount()` | 调用 `GET /api/todos/pending-count` 获取待办数量（用于登录弹窗） |
+| `setActiveTab(tab)` | 切换 Tab 时调用，设置 filter.status 并重新 fetchTodos 和 fetchTodoCounts |
 
 ---
 
-### 2. NotesView.vue - 卡片/列表切换
+### 2. todos.api.ts - 新增 API 方法
 
-**文件**: `src/views/NotesView.vue`
+**文件**: `src/api/todos.api.ts`
 
-#### 新增状态
 ```typescript
-const viewMode = ref(localStorage.getItem('notes_view_mode') as 'card' | 'list' || 'card')
+getCounts: () => api.get<TodoCounts>('/todos/counts'),
+getPendingCount: () => api.get<{ count: number }>('/todos/pending-count')
 ```
 
-#### localStorage 持久化
-- Key: `'notes_view_mode'`
-- 值: `'card'` | `'list'`
-- 切换时同步写入
+---
 
-#### 视图切换按钮
-- 位于页面标题右侧，新建笔记按钮左侧
-- 两个图标按钮：卡片图标 / 列表图标
-- 选中状态有背景高亮和颜色变化
-- 深色模式适配
+### 3. TodoTabs.vue - 新增 Tab 标签组件
 
-#### 列表视图样式
-- 紧凑单行：标题（flex: 1，左侧） + 相对时间（右侧）
-- 标题截断（text-overflow: ellipsis）
-- 点击整行导航到笔记详情页 `/notes/:id`
-- 相对时间格式化（刚刚/X分钟前/X小时前/X天前/具体日期）
+**文件**: `src/components/todos/TodoTabs.vue`
 
-#### 卡片视图
-- 原有 `notes-grid` 布局不变
+- 5 个 Tab：全部 / 待办 / 进行中 / 已完成 / 已取消
+- 每个 Tab 右侧显示 NBadge 角标（仅数量 > 0 时显示）
+- Tab 切换调用 `todoStore.setActiveTab()`
+
+---
+
+### 4. TodosView.vue - 集成 TodoTabs
+
+**文件**: `src/views/TodosView.vue`
+
+- 引入 TodoTabs 组件
+- 在 TodoFilters 上方渲染 TodoTabs
+- `onMounted` 中增加 `todoStore.fetchTodoCounts()` 调用
+
+---
+
+### 5. TodoFilters.vue - 移除状态筛选
+
+**文件**: `src/components/todos/TodoFilters.vue`
+
+- 移除 `status` 筛选项（由 TodoTabs 替代）
+- 保留 `priority`、`type`、`search` 筛选项
+- 清除按钮逻辑同步更新
+
+---
+
+### 6. LoginReminderModal.vue - 新增登录弹窗组件
+
+**文件**: `src/components/common/LoginReminderModal.vue`
+
+#### 功能逻辑
+1. `onMounted` 时检查 `localStorage` 的 `todo_reminder_date`
+2. 若当天未提醒，调用 `GET /api/todos/pending-count`
+3. 若 `pendingCount > 0`，显示弹窗
+4. 用户勾选「今天不再提醒」后，写入 `todo_reminder_date` 到 localStorage
+5. 点击「查看待办」跳转到 `/todos`
+
+#### localStorage Key
+- `todo_reminder_date`: `YYYY-MM-DD` 格式
+
+---
+
+### 7. App.vue - 集成登录弹窗
+
+**文件**: `src/App.vue`
+
+- 引入 LoginReminderModal
+- 新增 `showReminderModal` computed 属性：仅在已登录且非登录/设置页面时为 true
+- 在 `<router-view />` 下方条件渲染 LoginReminderModal
 
 ---
 
@@ -95,71 +117,38 @@ const viewMode = ref(localStorage.getItem('notes_view_mode') as 'card' | 'list' 
 
 | 文件 | 变更类型 |
 |------|---------|
-| `src/views/NoteDetailView.vue` | 修改 |
-| `src/views/NotesView.vue` | 修改 |
-
----
-
-## 技术实现细节
-
-### NoteDetailView 模式状态机
-```
-Page Load
-    │
-    ▼
-[Preview Mode]
-    │
-    ├─ Click "编辑" ───────────────────────────┐
-    │  or Click title (non-legacy note)        │
-    ▼                                          │
-[Edit Mode]                                     │
-    │                                          │
-    ├─ Click "完成编辑" ───────────────────────┤
-    │   → saveNote() → isEditing = false       │
-    │                                          │
-    ├─ Click "取消编辑"                        │
-    │   → if dirty: confirm dialog()           │
-    │   → isEditing = false                  │
-    │                                          │
-    └─────────────────────────────────────────┘
-```
-
-### NotesView 相对时间格式化
-```typescript
-function formatTime(isoString: string) {
-  // < 1min → 刚刚
-  // < 60min → X 分钟前
-  // < 24h → X 小时前
-  // < 7d → X 天前
-  // else → 10月20日
-}
-```
+| `src/stores/todo.store.ts` | 修改 |
+| `src/api/todos.api.ts` | 修改 |
+| `src/components/todos/TodoTabs.vue` | 新增 |
+| `src/views/TodosView.vue` | 修改 |
+| `src/components/todos/TodoFilters.vue` | 修改 |
+| `src/components/common/LoginReminderModal.vue` | 新增 |
+| `src/App.vue` | 修改 |
 
 ---
 
 ## 待验证
 
-- [ ] 笔记详情页默认进入预览模式（MarkdownPreview）
-- [ ] 点击「编辑」按钮进入编辑模式（CodeMirrorMarkdownEditor + 预览分屏）
-- [ ] 点击标题进入编辑模式（非 legacy 笔记）
-- [ ] 编辑模式修改内容后，「取消编辑」弹出确认框（仅在有更改时）
-- [ ] 「完成编辑」保存并切换回预览模式
-- [ ] 预览模式标题 hover 有颜色和指针变化
-- [ ] 笔记列表右上角显示卡片/列表切换按钮
-- [ ] 切换列表视图后刷新页面，视图偏好保持
-- [ ] 列表视图显示标题 + 相对时间
-- [ ] 列表视图点击行跳转到笔记详情页
+- [ ] 待办页面顶部显示 5 个 Tab（全部/待办/进行中/已完成/已取消）
+- [ ] Tab 切换时筛选对应状态的任务
+- [ ] 各 Tab 右侧显示正确的数量角标
+- [ ] 状态变更后 Tab 角标数量同步更新
+- [ ] 登录后（非登录/设置页面）弹出待办提醒弹窗
+- [ ] 勾选「今天不再提醒」后，当天不再弹出
+- [ ] 点击「查看待办」跳转到待办页面
+- [ ] 类型检查通过 (`npm run typecheck`)
+- [ ] 构建成功 (`npm run build`)
 
 ---
 
 ## 注意事项
 
-- 编辑模式的「完成编辑」使用同步保存（不等 debounce），立即生效
-- 预览模式的标题/内容变更仍走 debouncedSave（1000ms 防抖）
-- legacy Tiptap 笔记不响应标题点击进入编辑（保持只读 + 迁移流程）
+- Tab 角标数量需要在 `TodosView.onMounted` 和每次状态变更后刷新
+- `LoginReminderModal` 仅在已认证用户访问业务页面时显示
+- `pendingCount` 接口返回的 count 字段位于 response.data（API 响应包装）
 
 ---
 
 ## 上一迭代
 
-- v1.8 | 笔记 Markdown 编辑器 | 2026-04-02 | docs/handoff/frontend-output.md
+- v1.9 | 笔记模块 - 预览/编辑双模式 | 2026-04-02 | docs/archive/v1.9-notes-preview-mode/
