@@ -11,7 +11,7 @@ const todoStore = useTodoStore()
 const showCreateModal = ref(false)
 
 onMounted(() => {
-  todoStore.fetchTodos()
+  todoStore.setActiveTab(todoStore.activeTab)
   todoStore.fetchAllTags()
   todoStore.fetchTodoCounts()
 })
