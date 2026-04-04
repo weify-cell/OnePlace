@@ -20,7 +20,7 @@ export const useTodoStore = defineStore('todos', () => {
   const filters = ref<TodoFilters>({ status: null, priority: null, type: null, tag: null, search: '' })
   const pagination = ref({ page: 1, pageSize: 20 })
   const counts = ref<TodoCounts>({ all: 0, todo: 0, in_progress: 0, done: 0, cancelled: 0 })
-  const activeTab = ref<TodoTabName>('all')
+  const activeTab = ref<TodoTabName>('todo')
 
   async function fetchTodos() {
     loading.value = true
