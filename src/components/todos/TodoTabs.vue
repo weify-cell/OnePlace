@@ -5,11 +5,11 @@ import type { TodoTabName } from '@/stores/todo.store'
 const todoStore = useTodoStore()
 
 const tabs: { name: TodoTabName; label: string }[] = [
-  { name: 'all', label: '全部' },
   { name: 'todo', label: '待办' },
   { name: 'in_progress', label: '进行中' },
   { name: 'done', label: '已完成' },
-  { name: 'cancelled', label: '已取消' }
+  { name: 'cancelled', label: '已取消' },
+  { name: 'all', label: '全部' }
 ]
 </script>
 
