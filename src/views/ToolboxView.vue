@@ -54,9 +54,18 @@ const tools: Tool[] = [
     name: '时间戳转换',
     description: 'Unix 时间戳与日期时间互转',
     icon: '⏰',
-    path: '',
+    path: '/toolbox/timestamp',
     category: 'time',
-    status: 'coming-soon'
+    status: 'available'
+  },
+  {
+    id: 'crontab',
+    name: 'Cron 表达式',
+    description: 'Cron 表达式与时间互转，可视化下次执行时间',
+    icon: '🔄',
+    path: '/toolbox/crontab',
+    category: 'time',
+    status: 'available'
   },
   {
     id: 'date-calc',

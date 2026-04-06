@@ -16,6 +16,8 @@ const router = createRouter({
     { path: '/toolbox/json', component: () => import('@/views/tools/JsonToolView.vue'), meta: { requiresAuth: true } },
     { path: '/toolbox/image-base64', component: () => import('@/views/tools/ImageBase64ToolView.vue'), meta: { requiresAuth: true } },
     { path: '/toolbox/text-diff', component: () => import('@/views/tools/TextDiffToolView.vue'), meta: { requiresAuth: true } },
+    { path: '/toolbox/timestamp', component: () => import('@/views/tools/TimestampToolView.vue'), meta: { requiresAuth: true } },
+    { path: '/toolbox/crontab', component: () => import('@/views/tools/CrontabToolView.vue'), meta: { requiresAuth: true } },
     { path: '/settings', component: () => import('@/views/SettingsView.vue'), meta: { requiresAuth: true } }
   ]
 })
