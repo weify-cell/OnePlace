@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
-import AppLayout from '@/components/common/AppLayout.vue'
+import ToolLayout from '@/components/toolbox/ToolLayout.vue'
 import JsonEditor from '@/components/toolbox/JsonEditor.vue'
 import SheetSelectorDialog from '@/components/toolbox/SheetSelectorDialog.vue'
 import {
@@ -14,13 +13,12 @@ import {
   type SheetInfo
 } from '@/utils/excel'
 
-const router = useRouter()
 const message = useMessage()
 
 const inputValue = ref('')
 const outputValue = ref('')
 const validationError = ref('')
-const isDark = ref(document.documentElement.classList.contains('dark'))
+const isDark = ref(typeof document !== 'undefined' ? document.documentElement.classList.contains('dark') : false)
 const fileInputRef = ref<HTMLInputElement>()
 
 // Sheet 选择器状态
@@ -41,6 +39,11 @@ const canExport = computed(() => {
   } catch {
     return false
   }
+})
+
+const statusText = computed(() => {
+  if (validationError.value) return validationError.value
+  return '支持拖拽 JSON 或 Excel 文件到输入区域'
 })
 
 function formatJson() {
@@ -174,26 +177,18 @@ async function handleFileChange(e: Event) {
   }
 
   await handleExcelFile(file)
-
-  // 重置 input 以便可以重复选择同一文件
   target.value = ''
 }
 
-// 处理 Excel 文件（支持多 Sheet 选择）
 async function handleExcelFile(file: File) {
   try {
-    // 1. 预览所有 Sheet
     const sheets = await previewExcelSheets(file)
 
     if (sheets.length === 1) {
-      // 单 Sheet 直接导入
-      const result = await parseExcelFile(file, {
-        selectedSheetIndexes: [0]
-      })
+      const result = await parseExcelFile(file, { selectedSheetIndexes: [0] })
       inputValue.value = JSON.stringify(result.data, null, 2)
       message.success(`已导入 Excel: ${file.name}`)
     } else {
-      // 多 Sheet 显示选择器
       sheetList.value = sheets
       pendingFile.value = file
       showSheetSelector.value = true
@@ -203,7 +198,6 @@ async function handleExcelFile(file: File) {
   }
 }
 
-// Sheet 选择确认
 async function onSheetSelectConfirmed(selectedIndexes: number[]) {
   if (!pendingFile.value) return
 
@@ -220,7 +214,6 @@ async function onSheetSelectConfirmed(selectedIndexes: number[]) {
   }
 }
 
-// Sheet 选择取消
 function onSheetSelectCancel() {
   showSheetSelector.value = false
   pendingFile.value = null
@@ -245,136 +238,94 @@ function exportExcel() {
     message.error(e.message || '导出失败')
   }
 }
-
-function goBack() {
-  router.push('/toolbox')
-}
 </script>
 
 <template>
-  <AppLayout>
-    <div class="h-full flex flex-col">
-      <!-- Header -->
-      <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center gap-4 bg-white dark:bg-gray-800">
-        <n-button quaternary circle @click="goBack">
-          <template #icon>
-            <span>←</span>
-          </template>
-        </n-button>
-        <div>
-          <h1 class="text-xl font-bold text-gray-900 dark:text-white">JSON 格式化工具</h1>
-        </div>
+  <ToolLayout title="JSON 格式化" :status="statusText">
+    <!-- Toolbar -->
+    <template #toolbar>
+      <n-button type="primary" size="small" @click="formatJson">
+        <template #icon><span>✨</span></template>
+        格式化
+      </n-button>
+      <n-button size="small" @click="compressJson">
+        <template #icon><span>🗜️</span></template>
+        压缩
+      </n-button>
+      <n-button size="small" @click="validateJson">
+        <template #icon><span>✓</span></template>
+        验证
+      </n-button>
+      <n-button size="small" @click="escapeJson">
+        <template #icon><span>\</span></template>
+        转义
+      </n-button>
+      <n-button size="small" @click="unescapeJson">
+        <template #icon><span>/</span></template>
+        去转义
+      </n-button>
+      <n-divider vertical />
+      <n-button size="small" @click="importExcel">
+        <template #icon><span>📥</span></template>
+        导入 Excel
+      </n-button>
+      <n-button size="small" @click="exportExcel" :disabled="!canExport">
+        <template #icon><span>📤</span></template>
+        导出 Excel
+      </n-button>
+      <n-divider vertical />
+      <n-button size="small" @click="pasteInput">
+        <template #icon><span>📋</span></template>
+        粘贴
+      </n-button>
+      <n-button size="small" @click="clearInput">
+        <template #icon><span>🗑️</span></template>
+        清空
+      </n-button>
+      <n-button type="info" size="small" @click="copyResult" :disabled="!outputValue">
+        <template #icon><span>📄</span></template>
+        复制结果
+      </n-button>
+    </template>
+
+    <!-- Input -->
+    <template #input-header>
+      <div class="flex items-center justify-between w-full">
+        <span class="text-sm font-medium text-gray-700 dark:text-gray-300">输入</span>
+        <span class="text-xs text-gray-500 dark:text-gray-400">{{ charCount }} 字符 | {{ lineCount }} 行</span>
       </div>
+    </template>
 
-      <!-- Toolbar -->
-      <div class="px-6 py-3 border-b border-gray-200 dark:border-gray-700 flex flex-wrap gap-2 bg-white dark:bg-gray-800">
-        <n-button type="primary" size="small" @click="formatJson">
-          <template #icon>
-            <span>✨</span>
-          </template>
-          格式化
-        </n-button>
-        <n-button size="small" @click="compressJson">
-          <template #icon>
-            <span>🗜️</span>
-          </template>
-          压缩
-        </n-button>
-        <n-button size="small" @click="validateJson">
-          <template #icon>
-            <span>✓</span>
-          </template>
-          验证
-        </n-button>
-        <n-button size="small" @click="escapeJson">
-          <template #icon>
-            <span>\</span>
-          </template>
-          转义
-        </n-button>
-        <n-button size="small" @click="unescapeJson">
-          <template #icon>
-            <span>/</span>
-          </template>
-          去转义
-        </n-button>
-        <n-divider vertical />
-        <n-button size="small" @click="importExcel">
-          <template #icon>
-            <span>📥</span>
-          </template>
-          导入 Excel
-        </n-button>
-        <n-button size="small" @click="exportExcel" :disabled="!canExport">
-          <template #icon>
-            <span>📤</span>
-          </template>
-          导出 Excel
-        </n-button>
-        <n-divider vertical />
-        <n-button size="small" @click="pasteInput">
-          <template #icon>
-            <span>📋</span>
-          </template>
-          粘贴
-        </n-button>
-        <n-button size="small" @click="clearInput">
-          <template #icon>
-            <span>🗑️</span>
-          </template>
-          清空
-        </n-button>
-        <n-button type="info" size="small" @click="copyResult" :disabled="!outputValue">
-          <template #icon>
-            <span>📄</span>
-          </template>
-          复制结果
-        </n-button>
+    <template #input>
+      <div class="h-full" @drop.prevent="handleDrop" @dragover.prevent>
+        <JsonEditor
+          ref="inputEditorRef"
+          v-model="inputValue"
+          :theme="isDark ? 'vs-dark' : 'vs'"
+        />
       </div>
+    </template>
 
-      <!-- Editors -->
-      <div class="flex-1 flex overflow-hidden">
-        <!-- Input -->
-        <div class="flex-1 flex flex-col border-r border-gray-200 dark:border-gray-700">
-          <div class="px-4 py-2 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
-            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">输入</span>
-            <span class="text-xs text-gray-500 dark:text-gray-400">{{ charCount }} 字符 | {{ lineCount }} 行</span>
-          </div>
-          <div class="flex-1 p-2" @drop.prevent="handleDrop" @dragover.prevent>
-            <JsonEditor
-              ref="inputEditorRef"
-              v-model="inputValue"
-              :theme="isDark ? 'vs-dark' : 'vs'"
-            />
-          </div>
-        </div>
+    <!-- Output -->
+    <template #output-header>
+      <span class="text-sm font-medium text-gray-700 dark:text-gray-300">输出</span>
+    </template>
 
-        <!-- Output -->
-        <div class="flex-1 flex flex-col">
-          <div class="px-4 py-2 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
-            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">输出</span>
-            <n-tag v-if="validationError" type="error" size="small">格式错误</n-tag>
-            <n-tag v-else-if="outputValue" type="success" size="small">有效</n-tag>
-          </div>
-          <div class="flex-1 p-2">
-            <JsonEditor
-              ref="outputEditorRef"
-              v-model="outputValue"
-              :theme="isDark ? 'vs-dark' : 'vs'"
-              readonly
-            />
-          </div>
-        </div>
-      </div>
+    <template #output-actions>
+      <n-tag v-if="validationError" type="error" size="small">格式错误</n-tag>
+      <n-tag v-else-if="outputValue" type="success" size="small">有效</n-tag>
+    </template>
 
-      <!-- Status Bar -->
-      <div class="px-4 py-2 bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400">
-        <span v-if="validationError" class="text-red-500">{{ validationError }}</span>
-        <span v-else>支持拖拽 JSON 或 Excel 文件到输入区域</span>
-      </div>
-    </div>
+    <template #output>
+      <JsonEditor
+        ref="outputEditorRef"
+        v-model="outputValue"
+        :theme="isDark ? 'vs-dark' : 'vs'"
+        readonly
+      />
+    </template>
 
-    <!-- Hidden file input for Excel import -->
+    <!-- Hidden file input -->
     <input
       ref="fileInputRef"
       type="file"
@@ -390,5 +341,5 @@ function goBack() {
       @confirm="onSheetSelectConfirmed"
       @cancel="onSheetSelectCancel"
     />
-  </AppLayout>
+  </ToolLayout>
 </template>

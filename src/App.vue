@@ -50,14 +50,30 @@ watch(isDark, (val) => {
 </script>
 
 <template>
-  <n-config-provider :theme="naiveTheme">
+  <n-config-provider :theme="naiveTheme" class="h-full">
     <n-message-provider>
       <n-dialog-provider>
         <n-notification-provider>
-          <router-view />
+          <router-view v-slot="{ Component, route }">
+            <transition name="fade" mode="out-in">
+              <component :is="Component" :key="route.path" />
+            </transition>
+          </router-view>
           <LoginReminderModal v-if="showReminderModal" />
         </n-notification-provider>
       </n-dialog-provider>
     </n-message-provider>
   </n-config-provider>
 </template>
+
+<style>
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+</style>

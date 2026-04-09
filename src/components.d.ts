@@ -25,6 +25,7 @@ declare module 'vue' {
     NAlert: typeof import('naive-ui')['NAlert']
     NBadge: typeof import('naive-ui')['NBadge']
     NButton: typeof import('naive-ui')['NButton']
+    NButtonGroup: typeof import('naive-ui')['NButtonGroup']
     NCard: typeof import('naive-ui')['NCard']
     NCheckbox: typeof import('naive-ui')['NCheckbox']
     NCollapse: typeof import('naive-ui')['NCollapse']
@@ -38,6 +39,7 @@ declare module 'vue' {
     NForm: typeof import('naive-ui')['NForm']
     NFormItem: typeof import('naive-ui')['NFormItem']
     NInput: typeof import('naive-ui')['NInput']
+    NInputNumber: typeof import('naive-ui')['NInputNumber']
     NMessageProvider: typeof import('naive-ui')['NMessageProvider']
     NModal: typeof import('naive-ui')['NModal']
     NNotificationProvider: typeof import('naive-ui')['NNotificationProvider']
@@ -64,5 +66,7 @@ declare module 'vue' {
     TodoList: typeof import('./components/todos/TodoList.vue')['default']
     TodoTabs: typeof import('./components/todos/TodoTabs.vue')['default']
     ToolCard: typeof import('./components/toolbox/ToolCard.vue')['default']
+    ToolLayout: typeof import('./components/toolbox/ToolLayout.vue')['default']
+    ToolSearchDialog: typeof import('./components/toolbox/ToolSearchDialog.vue')['default']
   }
 }
