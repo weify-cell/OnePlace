@@ -6,10 +6,25 @@ const collapsed = ref(false)
 </script>
 
 <template>
-  <div class="h-screen flex overflow-hidden bg-gray-100 dark:bg-gray-900">
+  <div class="app-layout">
     <AppSidebar :collapsed="collapsed" @toggle="collapsed = !collapsed" />
-    <main class="flex-1 overflow-auto">
+    <main class="app-layout__main">
       <slot />
     </main>
   </div>
 </template>
+
+<style scoped>
+.app-layout {
+  height: 100%;
+  display: flex;
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+
+.app-layout__main {
+  flex: 1;
+  overflow: auto;
+  min-width: 0;
+}
+</style>

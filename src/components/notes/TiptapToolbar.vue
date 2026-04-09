@@ -5,7 +5,7 @@ defineProps<{ editor: Editor }>()
 </script>
 
 <template>
-  <div class="flex flex-wrap gap-1 p-2 border-b border-gray-200 dark:border-gray-700 mb-2 sticky top-0 bg-white dark:bg-gray-800 z-10">
+  <div class="tiptap-toolbar">
     <n-button
       size="tiny"
       :type="editor.isActive('bold') ? 'primary' : 'default'"
@@ -74,3 +74,18 @@ defineProps<{ editor: Editor }>()
     <n-button size="tiny" @click="editor.chain().focus().redo().run()">↪ 重做</n-button>
   </div>
 </template>
+
+<style scoped>
+.tiptap-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-card);
+  margin-bottom: 8px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+</style>

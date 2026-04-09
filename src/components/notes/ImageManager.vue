@@ -90,14 +90,9 @@ defineExpose({ refresh: fetchImages })
 <style scoped>
 .image-manager {
   padding: 12px;
-  background: #f9fafb;
+  background: var(--bg-secondary);
   border-radius: 8px;
-  border: 1px solid #e5e7eb;
-}
-
-.dark .image-manager {
-  background: #1f2937;
-  border-color: #374151;
+  border: 1px solid var(--border-subtle);
 }
 
 .image-manager__header {
@@ -136,14 +131,9 @@ defineExpose({ refresh: fetchImages })
   align-items: center;
   gap: 10px;
   padding: 8px;
-  background: white;
+  background: var(--bg-card);
   border-radius: 6px;
-  border: 1px solid #e5e7eb;
-}
-
-.dark .image-item {
-  background: #111827;
-  border-color: #374151;
+  border: 1px solid var(--border-subtle);
 }
 
 .image-item__thumb {
@@ -164,14 +154,11 @@ defineExpose({ refresh: fetchImages })
 
 .image-item__name {
   font-size: 0.75rem;
-  color: #374151;
+  color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-
-.dark .image-item__name {
-  color: #d1d5db;
 }
 
 .image-item__status {
@@ -182,22 +169,22 @@ defineExpose({ refresh: fetchImages })
 }
 
 .image-item__status--used {
-  background: #dcfce7;
-  color: #166534;
+  background: rgba(22, 163, 74, 0.1);
+  color: #16a34a;
 }
 
 .image-item__status--unused {
-  background: #fef3c7;
-  color: #92400e;
+  background: rgba(245, 158, 11, 0.1);
+  color: var(--accent-primary);
 }
 
 .dark .image-item__status--used {
-  background: #14532d;
-  color: #bbf7d0;
+  background: rgba(74, 222, 128, 0.1);
+  color: #4ade80;
 }
 
 .dark .image-item__status--unused {
-  background: #78350f;
-  color: #fde68a;
+  background: rgba(251, 191, 36, 0.1);
+  color: #fbbf24;
 }
 </style>

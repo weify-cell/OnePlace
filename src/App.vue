@@ -44,13 +44,37 @@ const isDark = computed(() => {
 
 const naiveTheme = computed(() => isDark.value ? darkTheme : lightTheme)
 
+const naiveThemeOverrides = computed(() => ({
+  common: {
+    inputColor: isDark.value ? '#292524' : '#fffbeb',
+    inputColorDisabled: isDark.value ? '#1c1917' : '#fef3c7',
+    actionColor: isDark.value ? '#292524' : '#fffbeb',
+  },
+  Input: {
+    color: isDark.value ? '#292524' : '#fffbeb',
+    colorDisabled: isDark.value ? '#1c1917' : '#fef3c7',
+    border: '1px solid var(--border-subtle)',
+    borderHover: '1px solid var(--accent-primary)',
+    borderFocus: '1px solid var(--accent-primary)',
+    boxShadowFocus: '0 0 0 2px rgba(245, 158, 11, 0.2)',
+  },
+  Select: {
+    peers: {
+      InternalInput: {
+        color: isDark.value ? '#292524' : '#fffbeb',
+        colorDisabled: isDark.value ? '#1c1917' : '#fef3c7',
+      }
+    }
+  }
+}))
+
 watch(isDark, (val) => {
   document.documentElement.classList.toggle('dark', val)
 }, { immediate: true })
 </script>
 
 <template>
-  <n-config-provider :theme="naiveTheme" class="h-full">
+  <n-config-provider :theme="naiveTheme" :theme-overrides="naiveThemeOverrides" class="h-full">
     <n-message-provider>
       <n-dialog-provider>
         <n-notification-provider>

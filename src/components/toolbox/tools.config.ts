@@ -18,7 +18,6 @@ export const CATEGORIES: CategoryConfig[] = [
   { id: 'dev', name: '开发辅助', icon: '🔧' },
   { id: 'text', name: '文本处理', icon: '📝' },
   { id: 'image', name: '图片处理', icon: '🖼️' },
-  { id: 'codec', name: '编码转换', icon: '🔄' },
   { id: 'coming', name: '即将推出', icon: '🚧' }
 ]
 

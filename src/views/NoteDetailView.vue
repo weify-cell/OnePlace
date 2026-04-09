@@ -175,11 +175,14 @@ function handleEditLegacyNote() {
               </svg>
               {{ noteStore.saving ? '保存中...' : '已自动保存' }}
             </span>
-            <n-button size="small" type="primary" @click="enterEditMode">编辑</n-button>
+            <n-button size="small" type="primary" class="note-toolbar__btn" @click="enterEditMode">
+              编辑
+            </n-button>
             <n-button
               size="small"
               :type="note.is_pinned ? 'warning' : 'default'"
               secondary
+              class="note-toolbar__btn"
               @click="noteStore.togglePin(note.id)"
             >
               <template #icon>
@@ -192,8 +195,12 @@ function handleEditLegacyNote() {
             </n-button>
           </template>
           <template v-else>
-            <n-button size="small" type="primary" @click="handleDoneEdit">完成编辑</n-button>
-            <n-button size="small" @click="handleCancelEdit">取消编辑</n-button>
+            <n-button size="small" type="primary" class="note-toolbar__btn" @click="handleDoneEdit">
+              完成编辑
+            </n-button>
+            <n-button size="small" @click="handleCancelEdit">
+              取消编辑
+            </n-button>
           </template>
         </div>
       </div>
@@ -259,7 +266,7 @@ function handleEditLegacyNote() {
                 <p class="legacy-note-notice__desc">点击「编辑笔记」后将自动转换为 Markdown 格式</p>
               </div>
             </div>
-            <n-button type="primary" :loading="isMigrating" @click="handleEditLegacyNote">
+            <n-button type="primary" :loading="isMigrating" class="legacy-note-notice__btn" @click="handleEditLegacyNote">
               编辑笔记
             </n-button>
           </div>
@@ -300,6 +307,7 @@ function handleEditLegacyNote() {
   height: 100%;
   display: flex;
   flex-direction: column;
+  background: var(--bg-primary);
 }
 
 /* ---- Toolbar ---- */
@@ -308,14 +316,10 @@ function handleEditLegacyNote() {
   align-items: center;
   justify-content: space-between;
   padding: 10px 24px;
-  border-bottom: 1px solid #e5e7eb;
-  background: white;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-card);
   flex-shrink: 0;
-}
-
-.dark .note-toolbar {
-  background: #111827;
-  border-bottom-color: #1f2937;
+  box-shadow: var(--shadow-sm);
 }
 
 .note-toolbar__back {
@@ -323,33 +327,35 @@ function handleEditLegacyNote() {
   align-items: center;
   gap: 5px;
   font-size: 0.8125rem;
-  color: #6b7280;
+  color: var(--text-secondary);
   background: transparent;
   border: none;
   cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 6px;
-  transition: background-color 0.15s ease, color 0.15s ease;
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
+  transition: all 0.15s ease;
 }
 
 .note-toolbar__back:hover {
-  background: #f3f4f6;
-  color: #111827;
-}
-
-.dark .note-toolbar__back {
-  color: #9ca3af;
-}
-
-.dark .note-toolbar__back:hover {
-  background: #1f2937;
-  color: #e2e8f0;
+  background: var(--bg-secondary);
+  color: var(--accent-primary);
 }
 
 .note-toolbar__right {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+}
+
+.note-toolbar__btn {
+  background: var(--accent-gradient) !important;
+  border: none !important;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.25);
+  font-weight: 600;
+}
+
+.note-toolbar__btn:hover {
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.35);
 }
 
 /* Save status indicator */
@@ -358,31 +364,19 @@ function handleEditLegacyNote() {
   align-items: center;
   gap: 5px;
   font-size: 0.75rem;
-  color: #22c55e;
+  color: var(--success);
   transition: color 0.2s ease;
 }
 
 .note-save-status--saving {
-  color: #9ca3af;
-}
-
-.dark .note-save-status {
-  color: #4ade80;
-}
-
-.dark .note-save-status--saving {
-  color: #6b7280;
+  color: var(--text-muted);
 }
 
 /* ---- Editor area ---- */
 .note-editor-area {
   flex: 1;
   overflow-y: auto;
-  background: #fafafa;
-}
-
-.dark .note-editor-area {
-  background: #0f172a;
+  background: var(--bg-primary);
 }
 
 .note-editor-inner {
@@ -404,14 +398,10 @@ function handleEditLegacyNote() {
   max-width: 900px;
   margin: 0 auto;
   flex: 1;
-  background: white;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-}
-
-.dark .note-editor-preview {
-  background: #111827;
-  border-color: #374151;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
 }
 
 .note-editor-legacy {
@@ -423,16 +413,11 @@ function handleEditLegacyNote() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 20px 24px;
-  background: #fef3c7;
-  border: 1px solid #fcd34d;
-  border-radius: 12px;
+  padding: 16px 20px;
+  background: rgba(251, 191, 36, 0.08);
+  border: 1px solid rgba(251, 191, 36, 0.25);
+  border-radius: var(--radius-md);
   margin-bottom: 24px;
-}
-
-.dark .legacy-note-notice {
-  background: #78350f;
-  border-color: #b45309;
 }
 
 .legacy-note-notice__content {
@@ -442,51 +427,49 @@ function handleEditLegacyNote() {
 }
 
 .legacy-note-notice__content svg {
-  color: #d97706;
+  color: var(--accent-primary);
   flex-shrink: 0;
   margin-top: 2px;
 }
 
-.dark .legacy-note-notice__content svg {
-  color: #fbbf24;
-}
-
 .legacy-note-notice__title {
   font-weight: 600;
-  color: #92400e;
+  color: var(--text-primary);
   margin: 0 0 4px;
-}
-
-.dark .legacy-note-notice__title {
-  color: #fde68a;
+  font-size: 0.875rem;
 }
 
 .legacy-note-notice__desc {
-  font-size: 0.875rem;
-  color: #a16207;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
   margin: 0;
 }
 
-.dark .legacy-note-notice__desc {
-  color: #fcd34d;
+.legacy-note-notice__btn {
+  background: var(--accent-gradient) !important;
+  border: none !important;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.25);
+  font-weight: 600;
+  flex-shrink: 0;
 }
 
 /* ---- Title input ---- */
 .note-title-input {
   width: 100%;
   font-size: 2rem;
-  font-weight: 700;
+  font-weight: 800;
   line-height: 1.3;
   border: none;
   outline: none;
   background: transparent;
-  color: #111827;
-  margin-bottom: 24px;
-  caret-color: #6366f1;
+  color: var(--text-primary);
+  margin-bottom: 20px;
+  caret-color: var(--accent-primary);
+  letter-spacing: -0.02em;
 }
 
 .note-title-input::placeholder {
-  color: #d1d5db;
+  color: var(--text-muted);
 }
 
 .note-title-input--clickable {
@@ -494,15 +477,7 @@ function handleEditLegacyNote() {
 }
 
 .note-title-input--clickable:hover {
-  color: #6366f1;
-}
-
-.dark .note-title-input {
-  color: #f1f5f9;
-}
-
-.dark .note-title-input::placeholder {
-  color: #374151;
+  color: var(--accent-primary);
 }
 
 /* ---- Meta section ---- */
@@ -510,7 +485,7 @@ function handleEditLegacyNote() {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
 }
 
 .note-meta__row {
@@ -524,25 +499,17 @@ function handleEditLegacyNote() {
   align-items: center;
   gap: 5px;
   font-size: 0.75rem;
-  font-weight: 500;
-  color: #9ca3af;
+  font-weight: 600;
+  color: var(--text-muted);
   width: 56px;
   flex-shrink: 0;
-}
-
-.dark .note-meta__label {
-  color: #4b5563;
 }
 
 /* ---- Divider ---- */
 .note-editor-divider {
   height: 1px;
-  background: #e5e7eb;
+  background: var(--border-subtle);
   margin-bottom: 24px;
-}
-
-.dark .note-editor-divider {
-  background: #1f2937;
 }
 
 /* Spinner animation */

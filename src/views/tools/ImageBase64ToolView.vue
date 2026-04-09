@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import AppLayout from '@/components/common/AppLayout.vue'
@@ -56,7 +56,6 @@ async function processImage(file: File) {
   try {
     const dataUrl = await fileToBase64(file)
 
-    // 获取图片尺寸
     const img = new Image()
     img.onload = () => {
       fileInfo.value = {
@@ -70,7 +69,6 @@ async function processImage(file: File) {
     }
     img.src = dataUrl
 
-    // 设置输出
     if (outputFormat.value === 'raw') {
       base64Output.value = dataUrl.split(',')[1]
     } else {
@@ -79,7 +77,7 @@ async function processImage(file: File) {
 
     imagePreview.value = dataUrl
     message.success('转换成功')
-  } catch (e) {
+  } catch {
     message.error('图片处理失败')
   }
 }
@@ -126,12 +124,10 @@ function convertBase64ToImage() {
   try {
     let dataUrl = base64Input.value.trim()
 
-    // 如果没有 data-uri 前缀，添加默认前缀
     if (!dataUrl.startsWith('data:')) {
       dataUrl = 'data:image/png;base64,' + dataUrl
     }
 
-    // 验证 Base64
     const img = new Image()
     img.onload = () => {
       fileInfo.value = {
@@ -148,7 +144,7 @@ function convertBase64ToImage() {
       message.error('无效的 Base64 图片数据')
     }
     img.src = dataUrl
-  } catch (e) {
+  } catch {
     message.error('解码失败')
   }
 }
@@ -205,21 +201,19 @@ onUnmounted(() => {
 
 <template>
   <AppLayout>
-    <div class="h-full flex flex-col" @paste="handlePaste">
+    <div class="img64-page" @paste="handlePaste">
       <!-- Header -->
-      <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center gap-4 bg-white dark:bg-gray-800">
+      <div class="img64-header">
         <n-button quaternary circle @click="goBack">
           <template #icon>
             <span>←</span>
           </template>
         </n-button>
-        <div>
-          <h1 class="text-xl font-bold text-gray-900 dark:text-white">图片 Base64 互转</h1>
-        </div>
+        <h1 class="img64-header__title">图片 Base64 互转</h1>
       </div>
 
       <!-- Mode Switch -->
-      <div class="px-6 py-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+      <div class="img64-modebar">
         <n-radio-group v-model:value="mode" size="medium">
           <n-radio-button
             v-for="option in modeOptions"
@@ -231,9 +225,9 @@ onUnmounted(() => {
       </div>
 
       <!-- Content -->
-      <div class="flex-1 overflow-auto p-6 bg-gray-50 dark:bg-gray-900">
+      <div class="img64-content">
         <!-- Image to Base64 Mode -->
-        <div class="max-w-4xl mx-auto space-y-6 mode-container" :class="{ 'mode-active': mode === 'image-to-base64' }">
+        <div class="img64-mode" :class="{ 'img64-mode--active': mode === 'image-to-base64' }">
           <!-- Drop Zone -->
           <ImageDropZone
             :is-dragging="isDragging"
@@ -242,16 +236,16 @@ onUnmounted(() => {
           />
 
           <!-- Preview -->
-          <div class="preview-section" :class="{ 'has-content': imagePreview }">
-            <h3 class="text-sm font-medium mb-2 text-gray-900 dark:text-white">图片预览</h3>
-            <div class="preview-container">
-              <img v-if="imagePreview" :src="imagePreview" alt="Preview" class="preview-image" />
+          <div class="img64-section" :class="{ 'img64-section--visible': imagePreview }">
+            <h3 class="img64-section__title">图片预览</h3>
+            <div class="img64-preview">
+              <img v-if="imagePreview" :src="imagePreview" alt="Preview" class="img64-preview__image" />
             </div>
           </div>
 
           <!-- Output Format -->
-          <div class="format-section" :class="{ 'has-content': base64Output }">
-            <span class="text-sm font-medium mr-4 text-gray-900 dark:text-white">输出格式:</span>
+          <div class="img64-section" :class="{ 'img64-section--visible': base64Output }">
+            <span class="img64-section__label">输出格式:</span>
             <n-radio-group v-model:value="outputFormat" size="small">
               <n-radio
                 v-for="option in formatOptions"
@@ -263,13 +257,11 @@ onUnmounted(() => {
           </div>
 
           <!-- Output -->
-          <div class="output-section" :class="{ 'has-content': base64Output }">
-            <div class="flex justify-between items-center mb-2">
-              <h3 class="text-sm font-medium text-gray-900 dark:text-white">转换结果</h3>
+          <div class="img64-section" :class="{ 'img64-section--visible': base64Output }">
+            <div class="img64-section__header">
+              <h3 class="img64-section__title">转换结果</h3>
               <n-button size="small" @click="copyResult">
-                <template #icon>
-                  <span>📋</span>
-                </template>
+                <template #icon><span>📋</span></template>
                 复制
               </n-button>
             </div>
@@ -278,13 +270,13 @@ onUnmounted(() => {
               type="textarea"
               :rows="6"
               readonly
-              class="font-mono text-xs"
+              class="img64-mono"
             />
           </div>
 
           <!-- File Info -->
-          <div class="info-section" :class="{ 'has-content': fileInfo }">
-            <h3 class="text-sm font-medium mb-2 text-gray-900 dark:text-white">文件信息</h3>
+          <div class="img64-section" :class="{ 'img64-section--visible': fileInfo }">
+            <h3 class="img64-section__title">文件信息</h3>
             <n-descriptions :column="2" size="small" bordered>
               <n-descriptions-item label="文件名">{{ fileInfo?.name }}</n-descriptions-item>
               <n-descriptions-item label="格式">{{ fileInfo?.type }}</n-descriptions-item>
@@ -295,15 +287,13 @@ onUnmounted(() => {
         </div>
 
         <!-- Base64 to Image Mode -->
-        <div class="max-w-4xl mx-auto space-y-6 mode-container" :class="{ 'mode-active': mode === 'base64-to-image' }">
+        <div class="img64-mode" :class="{ 'img64-mode--active': mode === 'base64-to-image' }">
           <!-- Input -->
-          <div class="input-section">
-            <div class="flex justify-between items-center mb-2">
-              <h3 class="text-sm font-medium text-gray-900 dark:text-white">Base64 输入</h3>
+          <div class="img64-section">
+            <div class="img64-section__header">
+              <h3 class="img64-section__title">Base64 输入</h3>
               <n-button size="small" @click="clearAll">
-                <template #icon>
-                  <span>🗑️</span>
-                </template>
+                <template #icon><span>🗑️</span></template>
                 清空
               </n-button>
             </div>
@@ -312,40 +302,36 @@ onUnmounted(() => {
               type="textarea"
               :rows="6"
               placeholder="粘贴 Base64 编码或 Data URI..."
-              class="font-mono text-xs"
+              class="img64-mono"
             />
             <n-button
               type="primary"
-              class="mt-3"
+              class="img64-convert-btn"
               @click="convertBase64ToImage"
               :disabled="!base64Input.trim()"
             >
-              <template #icon>
-                <span>🔄</span>
-              </template>
+              <template #icon><span>🔄</span></template>
               转换
             </n-button>
           </div>
 
           <!-- Preview -->
-          <div class="preview-section" :class="{ 'has-content': imagePreview }">
-            <div class="flex justify-between items-center mb-2">
-              <h3 class="text-sm font-medium text-gray-900 dark:text-white">图片预览</h3>
+          <div class="img64-section" :class="{ 'img64-section--visible': imagePreview }">
+            <div class="img64-section__header">
+              <h3 class="img64-section__title">图片预览</h3>
               <n-button type="info" size="small" @click="downloadImage">
-                <template #icon>
-                  <span>💾</span>
-                </template>
+                <template #icon><span>💾</span></template>
                 下载图片
               </n-button>
             </div>
-            <div class="preview-container">
-              <img v-if="imagePreview" :src="imagePreview" alt="Preview" class="preview-image" />
+            <div class="img64-preview">
+              <img v-if="imagePreview" :src="imagePreview" alt="Preview" class="img64-preview__image" />
             </div>
           </div>
 
           <!-- File Info -->
-          <div class="info-section" :class="{ 'has-content': fileInfo }">
-            <h3 class="text-sm font-medium mb-2 text-gray-900 dark:text-white">图片信息</h3>
+          <div class="img64-section" :class="{ 'img64-section--visible': fileInfo }">
+            <h3 class="img64-section__title">图片信息</h3>
             <n-descriptions :column="2" size="small" bordered>
               <n-descriptions-item label="格式">{{ fileInfo?.type }}</n-descriptions-item>
               <n-descriptions-item label="大小">{{ fileInfo?.size }}</n-descriptions-item>
@@ -359,31 +345,64 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.mode-container {
-  position: absolute;
-  width: 100%;
-  max-width: 56rem;
-  opacity: 0;
-  max-height: 0;
-  overflow: hidden;
-  transition: opacity 0.3s ease, max-height 0.3s ease;
-  pointer-events: none;
+.img64-page {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-primary);
 }
 
-.mode-container.mode-active {
+/* Header */
+.img64-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-card);
+  flex-shrink: 0;
+}
+
+.img64-header__title {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+/* Mode bar */
+.img64-modebar {
+  padding: 10px 24px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-card);
+  flex-shrink: 0;
+}
+
+/* Content */
+.img64-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
   position: relative;
-  opacity: 1;
-  max-height: 9999px;
-  pointer-events: auto;
 }
 
-.preview-section,
-.input-section,
-.output-section,
-.info-section,
-.format-section {
-  background: var(--n-color);
-  border-radius: 8px;
+/* Mode panels */
+.img64-mode {
+  max-width: 56rem;
+  margin: 0 auto;
+  display: none;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.img64-mode--active {
+  display: flex;
+}
+
+/* Sections */
+.img64-section {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
   padding: 16px;
   opacity: 0;
   max-height: 0;
@@ -391,29 +410,66 @@ onUnmounted(() => {
   transition: opacity 0.3s ease, max-height 0.3s ease, padding 0.3s ease;
 }
 
-.preview-section.has-content,
-.input-section.has-content,
-.output-section.has-content,
-.info-section.has-content,
-.format-section.has-content {
+.img64-section--visible {
   opacity: 1;
   max-height: 9999px;
 }
 
-.preview-container {
+.img64-section__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.img64-section__title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.img64-section__header + * {
+  margin-top: 0;
+}
+
+.img64-section__label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-right: 16px;
+}
+
+/* Preview */
+.img64-preview {
   display: flex;
   justify-content: center;
   align-items: center;
   min-height: 200px;
   max-height: 400px;
-  background: var(--n-color-modal);
-  border-radius: 8px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
   overflow: hidden;
 }
 
-.preview-image {
+.img64-preview__image {
   max-width: 100%;
   max-height: 380px;
   object-fit: contain;
+}
+
+/* Monospace input */
+.img64-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.75rem;
+}
+
+/* Convert button */
+.img64-convert-btn {
+  margin-top: 12px;
+  background: var(--accent-gradient) !important;
+  border: none !important;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);
+  font-weight: 600;
 }
 </style>

@@ -16,7 +16,6 @@ const searchQuery = ref('')
 const selectedIndex = ref(0)
 const inputRef = ref<HTMLInputElement>()
 
-// 模糊搜索
 const searchResults = computed(() => {
   if (!searchQuery.value.trim()) {
     return TOOLS
@@ -30,7 +29,6 @@ const searchResults = computed(() => {
   )
 })
 
-// 按分类分组
 const groupedResults = computed(() => {
   const groups: Record<string, ToolConfig[]> = {}
 
@@ -90,7 +88,6 @@ watch(searchQuery, () => {
   selectedIndex.value = 0
 })
 
-// 全局 ⌘K 快捷键
 function handleGlobalKeydown(e: KeyboardEvent) {
   if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
     e.preventDefault()
@@ -173,15 +170,15 @@ onUnmounted(() => {
 .search-input-wrapper {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  background: var(--n-color);
-  border: 1px solid var(--n-border-color);
-  border-radius: 8px;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-md);
 }
 
 .search-icon {
-  font-size: 16px;
+  font-size: 1rem;
   opacity: 0.6;
 }
 
@@ -189,35 +186,37 @@ onUnmounted(() => {
   flex: 1;
   border: none;
   background: transparent;
-  font-size: 15px;
+  font-size: 0.9375rem;
   outline: none;
-  color: var(--n-text-color);
+  color: var(--text-primary);
 }
 
 .search-input::placeholder {
-  color: var(--n-placeholder-color);
+  color: var(--text-muted);
 }
 
 .search-hint {
-  padding: 2px 6px;
-  font-size: 11px;
-  background: var(--n-color);
-  border: 1px solid var(--n-border-color);
+  padding: 2px 7px;
+  font-size: 0.6875rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
   border-radius: 4px;
-  color: var(--n-text-color-3);
+  color: var(--text-muted);
+  font-family: inherit;
 }
 
 .search-results {
   max-height: 400px;
   overflow-y: auto;
-  margin: -16px;
+  margin: -8px;
   padding: 8px;
 }
 
 .search-empty {
-  padding: 24px;
+  padding: 32px 16px;
   text-align: center;
-  color: var(--n-text-color-3);
+  color: var(--text-muted);
+  font-size: 0.875rem;
 }
 
 .search-group {
@@ -226,9 +225,11 @@ onUnmounted(() => {
 
 .search-group-title {
   padding: 8px 12px 4px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--n-text-color-3);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
 }
 
 .search-item {
@@ -236,14 +237,18 @@ onUnmounted(() => {
   align-items: center;
   gap: 12px;
   padding: 10px 12px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: background 0.15s;
+  transition: all 0.12s ease;
 }
 
 .search-item:hover,
 .search-item.is-selected {
-  background: var(--n-color-hover);
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.search-item.is-selected {
+  border-left: 2px solid var(--accent-primary);
 }
 
 .search-item.is-disabled {
@@ -252,8 +257,9 @@ onUnmounted(() => {
 }
 
 .search-item-icon {
-  font-size: 24px;
+  font-size: 1.5rem;
   line-height: 1;
+  flex-shrink: 0;
 }
 
 .search-item-content {
@@ -263,14 +269,15 @@ onUnmounted(() => {
 
 .search-item-name {
   display: block;
-  font-weight: 500;
-  color: var(--n-text-color);
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
 }
 
 .search-item-desc {
   display: block;
-  font-size: 12px;
-  color: var(--n-text-color-3);
+  font-size: 0.75rem;
+  color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -279,16 +286,17 @@ onUnmounted(() => {
 .search-footer {
   display: flex;
   gap: 16px;
-  font-size: 12px;
-  color: var(--n-text-color-3);
+  font-size: 0.75rem;
+  color: var(--text-muted);
 }
 
 .search-footer kbd {
   padding: 2px 5px;
-  background: var(--n-color);
-  border: 1px solid var(--n-border-color);
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
   border-radius: 3px;
-  font-size: 11px;
+  font-size: 0.6875rem;
   margin-right: 4px;
+  font-family: inherit;
 }
 </style>

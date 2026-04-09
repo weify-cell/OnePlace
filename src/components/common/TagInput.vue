@@ -29,7 +29,7 @@ function handleKeydown(e: KeyboardEvent) {
 
 <template>
   <div
-    class="flex flex-wrap gap-2 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg min-h-[38px] cursor-text"
+    class="tag-input"
     @click="($el as HTMLElement).querySelector('input')?.focus()"
   >
     <n-tag
@@ -41,10 +41,45 @@ function handleKeydown(e: KeyboardEvent) {
     >{{ tag }}</n-tag>
     <input
       v-model="inputValue"
-      class="flex-1 min-w-24 outline-none text-sm bg-transparent dark:text-gray-200"
+      class="tag-input__field"
       :placeholder="tags.length ? '' : (placeholder || '输入标签，回车确认')"
       @keydown="handleKeydown"
       @blur="addTag"
     />
   </div>
 </template>
+
+<style scoped>
+.tag-input {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-sm);
+  min-height: 38px;
+  cursor: text;
+  background: var(--bg-primary);
+  transition: border-color 0.15s ease;
+}
+
+.tag-input:focus-within {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.1);
+}
+
+.tag-input__field {
+  flex: 1;
+  min-width: 80px;
+  outline: none;
+  border: none;
+  background: transparent;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  padding: 2px 0;
+}
+
+.tag-input__field::placeholder {
+  color: var(--text-muted);
+}
+</style>

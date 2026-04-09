@@ -6,7 +6,6 @@ import AppLayout from '@/components/common/AppLayout.vue'
 import ConversationList from '@/components/chat/ConversationList.vue'
 import MessageList from '@/components/chat/MessageList.vue'
 import MessageInput from '@/components/chat/MessageInput.vue'
-import EmptyState from '@/components/common/EmptyState.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -37,39 +36,231 @@ watch(() => route.params.id, async (id) => {
 
 <template>
   <AppLayout>
-    <div class="h-full flex">
-      <!-- Sidebar: conversation list -->
-      <div class="w-64 flex-shrink-0 border-r border-gray-200 dark:border-gray-700 flex flex-col">
-        <div class="p-3 pt-6 border-b border-gray-200 dark:border-gray-700">
-          <n-button type="primary" block @click="newConversation">+ 新对话</n-button>
+    <div class="chat-page">
+      <!-- Sidebar -->
+      <div class="chat-sidebar">
+        <!-- Header -->
+        <div class="chat-sidebar__header">
+          <n-button
+            type="primary"
+            block
+            class="chat-sidebar__new-btn"
+            @click="newConversation"
+          >
+            <template #icon>
+              <span>✨</span>
+            </template>
+            新对话
+          </n-button>
         </div>
+
+        <!-- Conversation list -->
         <ConversationList />
       </div>
 
-      <!-- Main: messages -->
-      <div class="flex-1 flex flex-col min-w-0">
+      <!-- Main content -->
+      <div class="chat-main">
         <template v-if="chatStore.currentConversation">
-          <!-- Header -->
-          <div class="flex-between px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-            <h2 class="font-medium text-gray-900 dark:text-white truncate">
-              {{ chatStore.currentConversation.title }}
-            </h2>
-            <span class="text-xs text-gray-400 flex-shrink-0">
-              {{ chatStore.currentConversation.provider }} / {{ chatStore.currentConversation.model }}
-            </span>
+          <!-- Chat header -->
+          <div class="chat-header">
+            <div class="chat-header__inner">
+              <div class="chat-header__meta">
+                <!-- Model badge -->
+                <div class="chat-header__badge">
+                  <span class="chat-header__badge-icon">🤖</span>
+                  <span class="chat-header__badge-text">
+                    {{ chatStore.currentConversation.model }}
+                  </span>
+                </div>
+                <span class="chat-header__provider">
+                  {{ chatStore.currentConversation.provider }}
+                </span>
+              </div>
+
+              <!-- Title -->
+              <h2 class="chat-header__title">
+                {{ chatStore.currentConversation.title }}
+              </h2>
+            </div>
           </div>
-          <MessageList class="flex-1" />
+
+          <!-- Messages area -->
+          <MessageList class="chat-main__messages" />
+
+          <!-- Input area -->
           <MessageInput />
         </template>
-        <div v-else class="flex-1 flex-center">
-          <EmptyState
-            title="选择或创建对话"
-            description="从左侧选择一个对话，或点击「新对话」开始"
-            action-label="新建对话"
-            @action="newConversation"
-          />
+
+        <!-- Empty state -->
+        <div v-else class="chat-empty">
+          <div class="chat-empty__content">
+            <div class="chat-empty__icon">💭</div>
+            <h3 class="chat-empty__title">开始新对话</h3>
+            <p class="chat-empty__desc">与 AI 助手展开对话，探索无限可能</p>
+            <n-button
+              type="primary"
+              size="large"
+              class="chat-empty__btn"
+              @click="newConversation"
+            >
+              <template #icon>
+                <span>✨</span>
+              </template>
+              创建对话
+            </n-button>
+          </div>
         </div>
       </div>
     </div>
   </AppLayout>
 </template>
+
+<style scoped>
+.chat-page {
+  height: 100%;
+  display: flex;
+  background: var(--bg-primary);
+}
+
+/* Sidebar */
+.chat-sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border-subtle);
+}
+
+.chat-sidebar__header {
+  padding: 16px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.chat-sidebar__new-btn {
+  background: var(--accent-gradient) !important;
+  border: none !important;
+  box-shadow: 0 4px 14px rgba(245, 158, 11, 0.3);
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.chat-sidebar__new-btn:hover {
+  box-shadow: 0 6px 20px rgba(245, 158, 11, 0.4);
+  transform: translateY(-1px);
+}
+
+/* Main */
+.chat-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.chat-main__messages {
+  flex: 1;
+}
+
+/* Header */
+.chat-header {
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-card);
+  flex-shrink: 0;
+}
+
+.chat-header__inner {
+  max-width: 4xl;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.chat-header__meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.chat-header__badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: var(--radius-full);
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+.chat-header__badge-icon {
+  font-size: 0.875rem;
+}
+
+.chat-header__badge-text {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--accent-primary);
+}
+
+.chat-header__provider {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+.chat-header__title {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Empty state */
+.chat-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-content-gradient);
+}
+
+.chat-empty__content {
+  text-align: center;
+  padding: 24px;
+}
+
+.chat-empty__icon {
+  font-size: 4rem;
+  margin-bottom: 16px;
+}
+
+.chat-empty__title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.chat-empty__desc {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  margin-bottom: 24px;
+}
+
+.chat-empty__btn {
+  background: var(--accent-gradient) !important;
+  border: none !important;
+  box-shadow: 0 4px 14px rgba(245, 158, 11, 0.3);
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.chat-empty__btn:hover {
+  box-shadow: 0 6px 20px rgba(245, 158, 11, 0.4);
+  transform: translateY(-1px);
+}
+</style>

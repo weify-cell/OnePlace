@@ -13,7 +13,6 @@ function goBack() {
   router.push('/toolbox')
 }
 
-// Ctrl+Enter / Cmd+Enter shortcut
 function handleKeydown(e: KeyboardEvent) {
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
     e.preventDefault()
@@ -31,59 +30,57 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="h-full flex flex-col">
+  <div class="tool-layout">
     <!-- Header -->
-    <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center gap-4 bg-white dark:bg-gray-800">
+    <div class="tool-layout__header">
       <n-button quaternary circle @click="goBack">
         <template #icon>
           <span>←</span>
         </template>
       </n-button>
-      <div class="flex-1">
-        <div class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-          <router-link to="/toolbox" class="hover:text-primary">百宝箱</router-link>
-          <span>/</span>
-          <span class="text-gray-900 dark:text-white">{{ title }}</span>
-        </div>
+      <div class="tool-layout__breadcrumb">
+        <router-link to="/toolbox" class="tool-layout__breadcrumb-link">百宝箱</router-link>
+        <span class="tool-layout__breadcrumb-sep">/</span>
+        <span class="tool-layout__breadcrumb-current">{{ title }}</span>
       </div>
       <slot name="header" />
     </div>
 
     <!-- Toolbar -->
-    <div v-if="$slots.toolbar" class="px-6 py-3 border-b border-gray-200 dark:border-gray-700 flex flex-wrap gap-2 bg-white dark:bg-gray-800">
+    <div v-if="$slots.toolbar" class="tool-layout__toolbar">
       <slot name="toolbar" />
     </div>
 
     <!-- Content -->
-    <div class="flex-1 flex overflow-hidden">
+    <div class="tool-layout__content">
       <!-- Input -->
-      <div class="flex-1 flex flex-col border-r border-gray-200 dark:border-gray-700">
-        <div class="px-4 py-2 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+      <div class="tool-layout__pane tool-layout__pane--input">
+        <div class="tool-layout__pane-header">
           <slot name="input-header">
-            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">输入</span>
+            <span class="tool-layout__pane-title">输入</span>
           </slot>
         </div>
-        <div class="flex-1 p-2 overflow-auto">
+        <div class="tool-layout__pane-body">
           <slot name="input" />
         </div>
       </div>
 
       <!-- Output -->
-      <div class="flex-1 flex flex-col">
-        <div class="px-4 py-2 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+      <div class="tool-layout__pane tool-layout__pane--output">
+        <div class="tool-layout__pane-header">
           <slot name="output-header">
-            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">输出</span>
+            <span class="tool-layout__pane-title">输出</span>
           </slot>
           <slot name="output-actions" />
         </div>
-        <div class="flex-1 p-2 overflow-auto">
+        <div class="tool-layout__pane-body">
           <slot name="output" />
         </div>
       </div>
     </div>
 
     <!-- Status Bar -->
-    <div class="px-4 py-2 bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400">
+    <div class="tool-layout__status">
       <slot name="status">
         <span v-if="status">{{ status }}</span>
         <span v-else>按 ⌘+Enter 执行操作</span>
@@ -91,3 +88,112 @@ onUnmounted(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.tool-layout {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-primary);
+}
+
+/* Header */
+.tool-layout__header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-card);
+  flex-shrink: 0;
+}
+
+.tool-layout__breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  font-size: 0.875rem;
+}
+
+.tool-layout__breadcrumb-link {
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+.tool-layout__breadcrumb-link:hover {
+  color: var(--accent-primary);
+}
+
+.tool-layout__breadcrumb-sep {
+  color: var(--text-muted);
+}
+
+.tool-layout__breadcrumb-current {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* Toolbar */
+.tool-layout__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 24px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-card);
+  flex-shrink: 0;
+}
+
+/* Content */
+.tool-layout__content {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+/* Panes */
+.tool-layout__pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.tool-layout__pane--input {
+  border-right: 1px solid var(--border-subtle);
+}
+
+.tool-layout__pane-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.tool-layout__pane-title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.tool-layout__pane-body {
+  flex: 1;
+  padding: 12px;
+  overflow: auto;
+}
+
+/* Status bar */
+.tool-layout__status {
+  padding: 8px 16px;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-subtle);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+</style>

@@ -9,21 +9,21 @@ defineProps<{
 
 <template>
   <div
-    class="tool-card group"
-    :class="{ 'cursor-pointer': status === 'available', 'opacity-60': status === 'coming-soon' }"
+    class="tool-card"
+    :class="{ 'tool-card--available': status === 'available', 'tool-card--disabled': status === 'coming-soon' }"
   >
-    <div class="tool-icon">{{ icon }}</div>
-    <div class="tool-name">{{ name }}</div>
-    <div class="tool-desc">{{ description }}</div>
+    <div class="tool-card__icon">{{ icon }}</div>
+    <div class="tool-card__name">{{ name }}</div>
+    <div class="tool-card__desc">{{ description }}</div>
     <div
       v-if="status === 'coming-soon'"
-      class="mt-3 px-2 py-1 text-xs rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400"
+      class="tool-card__badge tool-card__badge--coming"
     >
       即将推出
     </div>
     <div
       v-else-if="status === 'available'"
-      class="mt-3 px-2 py-1 text-xs rounded bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400"
+      class="tool-card__badge tool-card__badge--available"
     >
       已上线
     </div>
@@ -35,35 +35,62 @@ defineProps<{
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 24px;
-  background: var(--n-color);
-  border: 1px solid var(--n-border-color);
-  border-radius: 12px;
+  padding: 20px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  text-align: center;
   transition: all 0.2s ease;
 }
 
-.tool-card:hover:not(.opacity-60) {
+.tool-card--available {
+  cursor: pointer;
+}
+
+.tool-card--available:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
-  border-color: var(--n-primary-color);
+  box-shadow: var(--shadow-md);
+  border-color: rgba(251, 191, 36, 0.4);
 }
 
-.tool-icon {
-  font-size: 40px;
+.tool-card--disabled {
+  opacity: 0.55;
+}
+
+.tool-card__icon {
+  font-size: 2.25rem;
   line-height: 1;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 
-.tool-name {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--n-text-color);
+.tool-card__name {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: var(--text-primary);
   margin-bottom: 4px;
 }
 
-.tool-desc {
-  font-size: 13px;
-  color: var(--n-text-color-3);
-  text-align: center;
+.tool-card__desc {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.tool-card__badge {
+  margin-top: 10px;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  font-size: 0.6875rem;
+  font-weight: 600;
+}
+
+.tool-card__badge--available {
+  background: rgba(245, 158, 11, 0.1);
+  color: var(--accent-primary);
+}
+
+.tool-card__badge--coming {
+  background: var(--bg-secondary);
+  color: var(--text-muted);
 }
 </style>

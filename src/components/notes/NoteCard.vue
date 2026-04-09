@@ -33,7 +33,7 @@ function confirmDelete() {
 
 <template>
   <div
-    class="note-card"
+    class="note-card animate-fadeIn"
     @click="router.push(`/notes/${note.id}`)"
   >
     <!-- Header: title + actions -->
@@ -100,31 +100,32 @@ function confirmDelete() {
 <style scoped>
 .note-card {
   position: relative;
-  background: white;
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
   padding: 14px 16px;
   cursor: pointer;
-  transition: box-shadow 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+  transition: all 0.2s ease;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  box-shadow: var(--shadow-sm);
 }
 
 .note-card:hover {
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
-  border-color: #d1d5db;
-  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+  border-color: rgba(251, 191, 36, 0.4);
+  transform: translateY(-2px);
 }
 
-.dark .note-card {
-  background: #1e2433;
-  border-color: #2d3748;
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-.dark .note-card:hover {
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.32);
-  border-color: #3d4a5e;
+.animate-fadeIn {
+  animation: fadeIn 0.35s ease-out forwards;
+  opacity: 0;
 }
 
 /* Header */
@@ -139,7 +140,7 @@ function confirmDelete() {
   font-size: 0.9375rem;
   font-weight: 600;
   line-height: 1.4;
-  color: #111827;
+  color: var(--text-primary);
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -147,14 +148,10 @@ function confirmDelete() {
   word-break: break-all;
 }
 
-.dark .note-card__title {
-  color: #f1f5f9;
-}
-
 .note-card__pin-icon {
   display: inline-flex;
   align-items: center;
-  color: #f59e0b;
+  color: var(--accent-primary);
   margin-right: 4px;
   vertical-align: middle;
 }
@@ -179,66 +176,42 @@ function confirmDelete() {
   justify-content: center;
   width: 26px;
   height: 26px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   border: none;
   background: transparent;
-  color: #9ca3af;
+  color: var(--text-muted);
   cursor: pointer;
-  transition: background-color 0.15s ease, color 0.15s ease;
+  transition: all 0.15s ease;
 }
 
 .note-card__action-btn:hover {
-  background: #f3f4f6;
-  color: #4b5563;
+  background: var(--bg-secondary);
+  color: var(--accent-primary);
 }
 
 .note-card__action-btn--active {
-  color: #f59e0b;
+  color: var(--accent-primary);
 }
 
 .note-card__action-btn--active:hover {
-  background: #fef3c7;
-  color: #d97706;
+  background: rgba(245, 158, 11, 0.1);
 }
 
 .note-card__action-btn--danger:hover {
-  background: #fee2e2;
+  background: rgba(239, 68, 68, 0.08);
   color: #ef4444;
-}
-
-.dark .note-card__action-btn:hover {
-  background: #2d3748;
-  color: #e2e8f0;
-}
-
-.dark .note-card__action-btn--active {
-  color: #fbbf24;
-}
-
-.dark .note-card__action-btn--active:hover {
-  background: rgba(251, 191, 36, 0.15);
-  color: #fbbf24;
-}
-
-.dark .note-card__action-btn--danger:hover {
-  background: rgba(239, 68, 68, 0.15);
-  color: #f87171;
 }
 
 /* Preview */
 .note-card__preview {
   font-size: 0.8125rem;
   line-height: 1.6;
-  color: #6b7280;
+  color: var(--text-secondary);
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   min-height: 2.6em;
-}
-
-.dark .note-card__preview {
-  color: #94a3b8;
 }
 
 /* Footer */
@@ -263,16 +236,11 @@ function confirmDelete() {
   align-items: center;
   gap: 4px;
   font-size: 0.6875rem;
-  color: #9ca3af;
-  background: #f3f4f6;
-  border-radius: 4px;
+  color: var(--text-muted);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
   padding: 2px 6px;
   white-space: nowrap;
-}
-
-.dark .note-card__folder {
-  color: #94a3b8;
-  background: #2d3748;
 }
 
 .note-card__tags {
@@ -283,26 +251,17 @@ function confirmDelete() {
 
 .note-card__tag {
   font-size: 0.6875rem;
-  color: #6366f1;
-  background: #eef2ff;
-  border-radius: 4px;
+  color: var(--accent-primary);
+  background: rgba(245, 158, 11, 0.08);
+  border-radius: var(--radius-sm);
   padding: 2px 6px;
   white-space: nowrap;
 }
 
-.dark .note-card__tag {
-  color: #a5b4fc;
-  background: rgba(99, 102, 241, 0.15);
-}
-
 .note-card__date {
   font-size: 0.6875rem;
-  color: #9ca3af;
+  color: var(--text-muted);
   flex-shrink: 0;
   white-space: nowrap;
-}
-
-.dark .note-card__date {
-  color: #64748b;
 }
 </style>
