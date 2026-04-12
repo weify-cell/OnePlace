@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed } from 'vue'
 import { useMessage, NButton, NButtonGroup, NCheckbox, NInput, NTag, NDataTable, NModal, NCard, NSpace, NDivider } from 'naive-ui'
 import ToolLayout from '@/components/toolbox/ToolLayout.vue'
 
@@ -10,6 +10,7 @@ type EncodeMode = 'component' | 'standard'
 
 const textInput = ref('')
 const encodeResult = ref('')
+const decodeResult = ref('')
 const mode = ref<TransformMode>('encode')
 const encodeMode = ref<EncodeMode>('component')
 const error = ref('')
@@ -121,8 +122,6 @@ function decodeText() {
     message.error('解码失败：无效的编码字符串')
   }
 }
-
-const decodeResult = ref('')
 
 const isEncodeMode = computed(() => mode.value === 'encode')
 const isDecodeMode = computed(() => mode.value === 'decode')
