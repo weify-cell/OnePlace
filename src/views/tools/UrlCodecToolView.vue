@@ -273,7 +273,7 @@ function swapContent() {
 const statusText = computed(() => {
   if (error.value) return error.value
   if (mode.value === 'parse') return 'URL 解析模式'
-  return encodeMode.value === 'component' ? 'Component 模式（编码特殊字符）' : 'Standard 模式（保留 URI 合法字符）'
+  return encodeMode.value === 'component' ? '特殊字符模式（编码所有特殊字符）' : '标准模式（保留 URI 合法字符）'
 })
 
 loadHistory()
@@ -315,14 +315,14 @@ loadHistory()
           size="small"
           @click="encodeMode = 'component'"
         >
-          Component
+          特殊字符
         </n-button>
         <n-button
           :type="encodeMode === 'standard' ? 'primary' : 'default'"
           size="small"
           @click="encodeMode = 'standard'"
         >
-          Standard
+          标准模式
         </n-button>
       </n-button-group>
 
@@ -336,7 +336,7 @@ loadHistory()
       </n-button>
 
       <n-button
-        v-if="mode !== 'parse' && ((isEncodeMode && encodeResult) || (isDecodeMode && decodeResult))"
+        v-if="mode !== 'parse'"
         size="small"
         @click="swapContent"
       >
