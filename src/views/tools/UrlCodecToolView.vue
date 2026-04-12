@@ -260,17 +260,17 @@ function clearAll() {
 
 function swapContent() {
   if (isEncodeMode.value && encodeResult.value) {
-    // 编码结果作为解码输入
     textInput.value = encodeResult.value
     encodeResult.value = ''
     mode.value = 'decode'
     decodeText()
   } else if (isDecodeMode.value && decodeResult.value) {
-    // 解码结果作为编码输入
     textInput.value = decodeResult.value
     decodeResult.value = ''
     mode.value = 'encode'
     encodeText()
+  } else {
+    message.warning('先生成编码或解码结果后再互换')
   }
 }
 
