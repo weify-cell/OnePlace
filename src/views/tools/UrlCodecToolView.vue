@@ -183,6 +183,7 @@ function removeQueryParam(index: number) {
 
 function addQueryParam() {
   queryParams.value.push({ key: '', value: '' })
+  updateUrlPreview()
 }
 
 const queryColumns = [
