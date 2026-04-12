@@ -88,11 +88,11 @@ export const TOOLS: ToolConfig[] = [
   {
     id: 'url-codec',
     name: 'URL 编解码',
-    description: 'URL 编码和解码',
-    category: 'coming',
-    status: 'coming-soon',
+    description: 'URL 编码和解码，支持 encodeURIComponent 与 encodeURI 两种模式',
+    category: 'dev',
+    status: 'available',
     icon: '🔗',
-    routePath: ''
+    routePath: '/toolbox/url-codec'
   },
   {
     id: 'hash',
