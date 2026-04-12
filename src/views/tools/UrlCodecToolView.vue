@@ -260,13 +260,17 @@ function clearAll() {
 
 function swapContent() {
   if (isEncodeMode.value && encodeResult.value) {
-    mode.value = 'decode'
+    // 编码结果作为解码输入
     textInput.value = encodeResult.value
     encodeResult.value = ''
+    mode.value = 'decode'
+    decodeText()
   } else if (isDecodeMode.value && decodeResult.value) {
-    mode.value = 'encode'
+    // 解码结果作为编码输入
     textInput.value = decodeResult.value
     decodeResult.value = ''
+    mode.value = 'encode'
+    encodeText()
   }
 }
 
