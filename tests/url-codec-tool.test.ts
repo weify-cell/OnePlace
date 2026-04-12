@@ -177,8 +177,8 @@ describe.skip('UrlCodecToolView Integration', () => {
 
     await new Promise(r => setTimeout(r, 100))
     expect(wrapper.text()).toContain('example.com')
-    expect(wrapper.text()).toContain('protocol')
-    expect(wrapper.text()).toContain('host')
+    expect(wrapper.text()).toContain('协议')
+    expect(wrapper.text()).toContain('主机')
   })
 
   it('shows warning for empty input', async () => {
@@ -199,7 +199,7 @@ describe.skip('UrlCodecToolView Integration', () => {
     await encodeButton?.trigger('click')
 
     await new Promise(r => setTimeout(r, 100))
-    expect(mockMessage.error).toHaveBeenCalled()
+    expect(mockMessage.warning).toHaveBeenCalled()
   })
 
   it('writes to history after successful encoding', async () => {
