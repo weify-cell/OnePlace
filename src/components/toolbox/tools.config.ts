@@ -79,11 +79,11 @@ export const TOOLS: ToolConfig[] = [
   {
     id: 'base64-codec',
     name: 'Base64 编解码',
-    description: '文本 Base64 编码和解码',
-    category: 'coming',
-    status: 'coming-soon',
+    description: '文本 Base64 编码和解码，支持 URL-safe 模式',
+    category: 'dev',
+    status: 'available',
     icon: '🔐',
-    routePath: ''
+    routePath: '/toolbox/base64-codec'
   },
   {
     id: 'url-codec',

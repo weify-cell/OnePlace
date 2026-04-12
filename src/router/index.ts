@@ -18,6 +18,7 @@ const router = createRouter({
     { path: '/toolbox/text-diff', component: () => import('@/views/tools/TextDiffToolView.vue'), meta: { requiresAuth: true } },
     { path: '/toolbox/timestamp', component: () => import('@/views/tools/TimestampToolView.vue'), meta: { requiresAuth: true } },
     { path: '/toolbox/crontab', component: () => import('@/views/tools/CrontabToolView.vue'), meta: { requiresAuth: true } },
+    { path: '/toolbox/base64-codec', component: () => import('@/views/tools/Base64CodecToolView.vue'), meta: { requiresAuth: true } },
     { path: '/settings', component: () => import('@/views/SettingsView.vue'), meta: { requiresAuth: true } }
   ]
 })
