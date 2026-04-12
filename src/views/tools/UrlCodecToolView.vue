@@ -53,7 +53,7 @@ function saveHistory() {
   }
 }
 
-function addToHistory(text: string) {
+function addToHistory(text: string, _type?: 'encode' | 'decode') {
   if (!text.trim()) return
   const idx = history.value.indexOf(text)
   if (idx !== -1) {
@@ -93,7 +93,7 @@ function encodeText() {
     } else {
       encodeResult.value = encodeURI(input)
     }
-    addToHistory(input)
+    addToHistory(encodeResult.value, 'encode')
   } catch (e) {
     error.value = '编码失败'
     message.error('编码失败')
@@ -115,7 +115,7 @@ function decodeText() {
     } else {
       decodeResult.value = decodeURI(input)
     }
-    addToHistory(input)
+    addToHistory(decodeResult.value, 'decode')
   } catch (e) {
     error.value = '解码失败：无效的编码字符串'
     message.error('解码失败：无效的编码字符串')
@@ -174,7 +174,16 @@ function updateUrlPreview() {
   urlPreview.value = `${parsedUrl.value.protocol}://${parsedUrl.value.host}${parsedUrl.value.path}${query}`
 }
 
-watch(queryParams, updateUrlPreview, { deep: true })
+// updateUrlPreview is called manually after queryParams mutations (add/remove/update)
+
+function removeQueryParam(index: number) {
+  queryParams.value.splice(index, 1)
+  updateUrlPreview()
+}
+
+function addQueryParam() {
+  queryParams.value.push({ key: '', value: '' })
+}
 
 const queryColumns = [
   { title: '参数名', key: 'key', width: 150 },
@@ -187,7 +196,7 @@ const queryColumns = [
       return h(NButton, {
         size: 'small',
         type: 'error',
-        onClick: () => queryParams.value.splice(index, 1)
+        onClick: () => removeQueryParam(index)
       }, { default: () => '删除' })
     }
   }
@@ -461,7 +470,7 @@ loadHistory()
               :pagination="false"
               max-height="200"
             />
-            <n-button size="small" block @click="queryParams.push({ key: '', value: '' })">
+            <n-button size="small" block @click="addQueryParam">
               + 添加参数
             </n-button>
             <div>
