@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { useMessage, NButton, NButtonGroup, NCheckbox, NInput, NTag, NDataTable, NModal, NCard, NSpace, NDivider } from 'naive-ui'
+import { ref, computed, h } from 'vue'
+import { useMessage, NButton, NButtonGroup, NCheckbox, NInput, NTag, NDataTable, NDivider } from 'naive-ui'
 import ToolLayout from '@/components/toolbox/ToolLayout.vue'
 
 const message = useMessage()
@@ -16,7 +16,6 @@ const encodeMode = ref<EncodeMode>('component')
 const error = ref('')
 
 // URL Parse state
-const showParseModal = ref(false)
 const parsedUrl = ref({
   protocol: '',
   host: '',
@@ -156,7 +155,6 @@ function parseUrl(url: string) {
     })
 
     updateUrlPreview()
-    showParseModal.value = true
     addToHistory(url)
   } catch (e) {
     error.value = 'URL 解析失败：无效的 URL 格式'
@@ -201,8 +199,6 @@ const queryColumns = [
     }
   }
 ]
-
-import { h } from 'vue'
 
 function handleParseInput() {
   const input = textInput.value.trim()
