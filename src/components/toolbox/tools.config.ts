@@ -97,11 +97,11 @@ export const TOOLS: ToolConfig[] = [
   {
     id: 'hash',
     name: '哈希计算',
-    description: 'MD5、SHA1、SHA256 等哈希算法',
-    category: 'coming',
-    status: 'coming-soon',
+    description: 'MD5、SHA1、SHA256、SHA-3、SM3 等哈希算法，支持文本和文件哈希计算',
+    category: 'dev',
+    status: 'available',
     icon: '#️⃣',
-    routePath: ''
+    routePath: '/toolbox/hash'
   }
 ]
 
