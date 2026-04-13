@@ -20,6 +20,7 @@ const router = createRouter({
     { path: '/toolbox/crontab', component: () => import('@/views/tools/CrontabToolView.vue'), meta: { requiresAuth: true } },
     { path: '/toolbox/base64-codec', component: () => import('@/views/tools/Base64CodecToolView.vue'), meta: { requiresAuth: true } },
     { path: '/toolbox/url-codec', component: () => import('@/views/tools/UrlCodecToolView.vue'), meta: { requiresAuth: true } },
+    { path: '/toolbox/hash', component: () => import('@/views/tools/HashToolView.vue'), meta: { requiresAuth: true } },
     { path: '/settings', component: () => import('@/views/SettingsView.vue'), meta: { requiresAuth: true } }
   ]
 })
