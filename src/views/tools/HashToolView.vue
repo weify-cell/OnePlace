@@ -175,6 +175,26 @@ function formatFileSize(bytes: number): string {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
 
+// Base64 UTF-8 编解码
+function btoaUtf8(str: string): string {
+  return btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, (_, p1) => String.fromCharCode(parseInt(p1, 16))))
+}
+
+function atobUtf8(str: string): string {
+  return decodeURIComponent(atob(str).split('').map(c => '%' + c.charCodeAt(0).toString(16).padStart(2, '0')).join(''))
+}
+
+// Hex 编解码
+function strToHex(str: string): string {
+  return Array.from(new TextEncoder().encode(str)).map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+function hexToStr(hex: string): string {
+  const match = hex.match(/.{2}/g)
+  if (!match) throw new Error('Invalid hex string')
+  return new TextDecoder().decode(new Uint8Array(match.map(b => parseInt(b, 16))))
+}
+
 async function copyResult() {
   if (!hashResult.value) {
     message.warning('没有可复制的内容')
