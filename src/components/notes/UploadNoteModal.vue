@@ -164,7 +164,7 @@ function handleCancel() {
         <n-button
           type="primary"
           :loading="uploading"
-          :disabled="!selectedFile"
+          :disabled="!selectedFile || uploading"
           @click="handleConfirm"
         >
           {{ uploading ? '上传中...' : '确认创建' }}
