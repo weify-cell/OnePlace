@@ -561,5 +561,44 @@ const statusText = computed(() => {
         </div>
       </div>
     </template>
+
+    <!-- Encoding transform output -->
+    <template v-else-if="tabMode === 'encoding'">
+      <div class="h-full flex flex-col justify-center">
+        <n-input
+          v-if="transformMode === 'encode'"
+          v-model:value="encodeResult"
+          type="textarea"
+          :rows="8"
+          readonly
+          class="font-mono text-sm"
+          placeholder="编码结果将显示在这里"
+        />
+        <n-input
+          v-else
+          v-model:value="decodeResult"
+          type="textarea"
+          :rows="8"
+          readonly
+          class="font-mono text-sm"
+          placeholder="解码结果将显示在这里"
+        />
+        <n-button
+          v-if="transformMode === 'encode' ? encodeResult : decodeResult"
+          type="info"
+          size="small"
+          style="margin-top: 12px; align-self: flex-start"
+          @click="transformMode === 'encode' ? copyEncodeResult() : copyDecodeResult()"
+        >
+          <template #icon>
+            <span>📄</span>
+          </template>
+          复制
+        </n-button>
+        <n-tag v-if="encodingError" type="error" size="small" style="margin-top: 8px">
+          {{ encodingError }}
+        </n-tag>
+      </div>
+    </template>
   </ToolLayout>
 </template>
