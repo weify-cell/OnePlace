@@ -58,7 +58,9 @@ const currentTabAlgorithms = computed(() => tabAlgorithms[tabMode.value])
 
 function selectTab(tab: TabMode) {
   tabMode.value = tab
-  selectedAlgorithm.value = tabAlgorithms[tab][0]
+  if (tab !== 'encoding') {
+    selectedAlgorithm.value = tabAlgorithms[tab][0]
+  }
   hashResult.value = ''
   verifyResult.value = null
 }
