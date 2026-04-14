@@ -3,7 +3,9 @@ import { ref, computed } from 'vue'
 import { useMessage } from 'naive-ui'
 import ToolLayout from '@/components/toolbox/ToolLayout.vue'
 import md5 from 'md5'
-import shaJs from 'sha.js'
+import sha1 from 'js-sha1'
+import sha256 from 'js-sha256'
+import { sha512 } from 'js-sha512'
 import { sha3_256, sha3_512 } from 'js-sha3'
 import sm3 from 'sm3'
 
@@ -12,6 +14,7 @@ const message = useMessage()
 type Algorithm = 'md5' | 'sha1' | 'sha256' | 'sha512' | 'sha3-256' | 'sha3-512' | 'sm3'
 type TabMode = 'md5-sha1' | 'sha2' | 'sha3-sm3'
 type InputMode = 'text' | 'file'
+type TransformMode = 'encode' | 'decode'
 
 const tabMode = ref<TabMode>('md5-sha1')
 const inputMode = ref<InputMode>('text')
@@ -24,6 +27,14 @@ const verifyResult = ref<'match' | 'mismatch' | null>(null)
 const selectedFile = ref<File | null>(null)
 const fileProgress = ref(0)
 const isComputing = ref(false)
+
+// Encoding state
+const transformMode = ref<TransformMode>('encode')
+const encodeInput = ref('')
+const encodeResult = ref('')
+const decodeInput = ref('')
+const decodeResult = ref('')
+const encodingError = ref('')
 
 const selectedAlgorithm = ref<Algorithm>('md5')
 
@@ -59,16 +70,15 @@ function selectAlgorithm(algo: Algorithm) {
 }
 
 function computeTextHash(text: string): string {
-  const encoding = 'utf8'
   switch (selectedAlgorithm.value) {
     case 'md5':
       return md5(text)
     case 'sha1':
-      return shaJs('sha1').update(text, encoding).digest('hex')
+      return sha1(text)
     case 'sha256':
-      return shaJs('sha256').update(text, encoding).digest('hex')
+      return sha256(text)
     case 'sha512':
-      return shaJs('sha512').update(text, encoding).digest('hex')
+      return sha512(text)
     case 'sha3-256':
       return sha3_256(text)
     case 'sha3-512':
@@ -95,13 +105,13 @@ function computeFileHash(file: File, onProgress: (pct: number) => void): Promise
           hash = md5(Array.from(uint8))
           break
         case 'sha1':
-          hash = shaJs('sha1').update(Buffer.from(data)).digest('hex')
+          hash = sha1(Array.from(uint8))
           break
         case 'sha256':
-          hash = shaJs('sha256').update(uint8).digest('hex')
+          hash = sha256(Array.from(uint8))
           break
         case 'sha512':
-          hash = shaJs('sha512').update(uint8).digest('hex')
+          hash = sha512(Array.from(uint8))
           break
         case 'sha3-256':
           hash = sha3_256(uint8)
