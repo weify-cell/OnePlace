@@ -430,6 +430,66 @@ const statusText = computed(() => {
             {{ isComputing ? '计算中...' : '计算哈希' }}
           </n-button>
         </template>
+
+        <!-- Encoding transform mode -->
+        <template v-else-if="tabMode === 'encoding'">
+          <div class="h-full flex flex-col justify-center">
+            <!-- Mode toggle -->
+            <n-button-group style="margin-bottom: 16px">
+              <n-button
+                :type="transformMode === 'encode' ? 'primary' : 'default'"
+                size="small"
+                @click="transformMode = 'encode'"
+              >
+                编码
+              </n-button>
+              <n-button
+                :type="transformMode === 'decode' ? 'primary' : 'default'"
+                size="small"
+                @click="transformMode = 'decode'"
+              >
+                解码
+              </n-button>
+            </n-button-group>
+
+            <!-- Input -->
+            <n-input
+              v-if="transformMode === 'encode'"
+              v-model:value="encodeInput"
+              type="textarea"
+              placeholder="请输入文本内容..."
+              :rows="8"
+              class="font-mono text-sm"
+              @keyup.enter.ctrl="encodeText"
+            />
+            <n-input
+              v-else
+              v-model:value="decodeInput"
+              type="textarea"
+              placeholder="请输入 Base64/URL/Hex 字符串..."
+              :rows="8"
+              class="font-mono text-sm"
+              @keyup.enter.ctrl="decodeText"
+            />
+
+            <!-- Action buttons -->
+            <div class="flex gap-2" style="margin-top: 16px">
+              <n-button
+                type="primary"
+                size="large"
+                style="flex: 1"
+                @click="transformMode === 'encode' ? encodeText() : decodeText()"
+              >
+                {{ transformMode === 'encode' ? '编码' : '解码' }}
+              </n-button>
+            </div>
+
+            <!-- Encoding type selector -->
+            <div class="flex gap-2" style="margin-top: 12px">
+              <n-tag type="info" size="small">Base64 / URL / Hex</n-tag>
+            </div>
+          </div>
+        </template>
       </div>
     </template>
 
