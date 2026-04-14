@@ -12,7 +12,7 @@ import sm3 from 'sm3'
 const message = useMessage()
 
 type Algorithm = 'md5' | 'sha1' | 'sha256' | 'sha512' | 'sha3-256' | 'sha3-512' | 'sm3'
-type TabMode = 'md5-sha1' | 'sha2' | 'sha3-sm3'
+type TabMode = 'md5-sha1' | 'sha2' | 'sha3-sm3' | 'encoding'
 type InputMode = 'text' | 'file'
 type TransformMode = 'encode' | 'decode'
 
