@@ -315,6 +315,13 @@ const statusText = computed(() => {
           SHA-3/SM3
         </n-button>
       </n-button-group>
+      <n-button
+        :type="tabMode === 'encoding' ? 'primary' : 'default'"
+        size="small"
+        @click="selectTab('encoding')"
+      >
+        编码转换
+      </n-button>
 
       <n-divider vertical />
 
