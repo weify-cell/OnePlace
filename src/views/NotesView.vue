@@ -5,6 +5,7 @@ import { useNoteStore } from '@/stores/note.store'
 import AppLayout from '@/components/common/AppLayout.vue'
 import NoteCard from '@/components/notes/NoteCard.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
+import UploadNoteModal from '@/components/notes/UploadNoteModal.vue'
 
 const router = useRouter()
 const noteStore = useNoteStore()
@@ -30,6 +31,12 @@ onMounted(async () => {
 async function createNote() {
   const note = await noteStore.createNote()
   router.push(`/notes/${note.id}`)
+}
+
+const showUploadModal = ref(false)
+
+function openUploadModal() {
+  showUploadModal.value = true
 }
 
 function selectFolder(id: number | null) {
@@ -234,6 +241,9 @@ function formatTime(isoString: string) {
                 <n-button type="primary" class="notes-header__btn" @click="createNote">
                   + 新建笔记
                 </n-button>
+                <n-button class="notes-header__btn" @click="openUploadModal">
+                  上传笔记
+                </n-button>
               </div>
             </div>
 
@@ -300,6 +310,7 @@ function formatTime(isoString: string) {
                 </div>
               </div>
             </n-spin>
+            <UploadNoteModal v-model:show="showUploadModal" />
           </div>
         </div>
       </div>
