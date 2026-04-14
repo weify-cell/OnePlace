@@ -222,6 +222,52 @@ function verifyHash() {
   verifyResult.value = expected === actual ? 'match' : 'mismatch'
 }
 
+function encodeText() {
+  encodingError.value = ''
+  const input = encodeInput.value
+  if (!input) {
+    message.warning('请输入文本内容')
+    return
+  }
+  try {
+    encodeResult.value = btoaUtf8(input)
+  } catch {
+    encodingError.value = '编码失败：无效字符'
+    message.error('编码失败')
+  }
+}
+
+function decodeText() {
+  encodingError.value = ''
+  const input = decodeInput.value.trim()
+  if (!input) {
+    message.warning('请输入 Base64 内容')
+    return
+  }
+  try {
+    decodeResult.value = atobUtf8(input)
+  } catch {
+    encodingError.value = '解码失败：无效 Base64 格式'
+    message.error('解码失败：无效 Base64 格式')
+  }
+}
+
+async function copyEncodeResult() {
+  if (!encodeResult.value) { message.warning('没有可复制的内容'); return }
+  try {
+    await navigator.clipboard.writeText(encodeResult.value)
+    message.success('已复制到剪贴板')
+  } catch { message.error('复制失败') }
+}
+
+async function copyDecodeResult() {
+  if (!decodeResult.value) { message.warning('没有可复制的内容'); return }
+  try {
+    await navigator.clipboard.writeText(decodeResult.value)
+    message.success('已复制到剪贴板')
+  } catch { message.error('复制失败') }
+}
+
 function clearAll() {
   textInput.value = ''
   hashResult.value = ''
@@ -229,6 +275,11 @@ function clearAll() {
   verifyResult.value = null
   selectedFile.value = null
   fileProgress.value = 0
+  encodeInput.value = ''
+  encodeResult.value = ''
+  decodeInput.value = ''
+  decodeResult.value = ''
+  encodingError.value = ''
 }
 
 const statusText = computed(() => {
