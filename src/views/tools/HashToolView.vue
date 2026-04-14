@@ -359,14 +359,74 @@ const statusText = computed(() => {
     <!-- Input -->
     <template #input-header>
       <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
-        {{ inputMode === 'text' ? '文本输入' : '文件上传' }}
+        {{ tabMode === 'encoding' ? '编码转换' : (inputMode === 'text' ? '文本输入' : '文件上传') }}
       </span>
     </template>
 
     <template #input>
       <div class="h-full flex flex-col justify-center">
+        <!-- Encoding transform mode -->
+        <template v-if="tabMode === 'encoding'">
+          <div class="h-full flex flex-col justify-center">
+            <!-- Mode toggle -->
+            <n-button-group style="margin-bottom: 16px">
+              <n-button
+                :type="transformMode === 'encode' ? 'primary' : 'default'"
+                size="small"
+                @click="transformMode = 'encode'"
+              >
+                编码
+              </n-button>
+              <n-button
+                :type="transformMode === 'decode' ? 'primary' : 'default'"
+                size="small"
+                @click="transformMode = 'decode'"
+              >
+                解码
+              </n-button>
+            </n-button-group>
+
+            <!-- Input -->
+            <n-input
+              v-if="transformMode === 'encode'"
+              v-model:value="encodeInput"
+              type="textarea"
+              placeholder="请输入文本内容..."
+              :rows="8"
+              class="font-mono text-sm"
+              @keyup.enter.ctrl="encodeText"
+            />
+            <n-input
+              v-else
+              v-model:value="decodeInput"
+              type="textarea"
+              placeholder="请输入 Base64/URL/Hex 字符串..."
+              :rows="8"
+              class="font-mono text-sm"
+              @keyup.enter.ctrl="decodeText"
+            />
+
+            <!-- Action buttons -->
+            <div class="flex gap-2" style="margin-top: 16px">
+              <n-button
+                type="primary"
+                size="large"
+                style="flex: 1"
+                @click="transformMode === 'encode' ? encodeText() : decodeText()"
+              >
+                {{ transformMode === 'encode' ? '编码' : '解码' }}
+              </n-button>
+            </div>
+
+            <!-- Encoding type selector -->
+            <div class="flex gap-2" style="margin-top: 12px">
+              <n-tag type="info" size="small">Base64 / URL / Hex</n-tag>
+            </div>
+          </div>
+        </template>
+
         <!-- Text input mode -->
-        <template v-if="inputMode === 'text'">
+        <template v-else-if="inputMode === 'text'">
           <n-input
             v-model:value="textInput"
             type="textarea"
@@ -430,66 +490,6 @@ const statusText = computed(() => {
             {{ isComputing ? '计算中...' : '计算哈希' }}
           </n-button>
         </template>
-
-        <!-- Encoding transform mode -->
-        <template v-else-if="tabMode === 'encoding'">
-          <div class="h-full flex flex-col justify-center">
-            <!-- Mode toggle -->
-            <n-button-group style="margin-bottom: 16px">
-              <n-button
-                :type="transformMode === 'encode' ? 'primary' : 'default'"
-                size="small"
-                @click="transformMode = 'encode'"
-              >
-                编码
-              </n-button>
-              <n-button
-                :type="transformMode === 'decode' ? 'primary' : 'default'"
-                size="small"
-                @click="transformMode = 'decode'"
-              >
-                解码
-              </n-button>
-            </n-button-group>
-
-            <!-- Input -->
-            <n-input
-              v-if="transformMode === 'encode'"
-              v-model:value="encodeInput"
-              type="textarea"
-              placeholder="请输入文本内容..."
-              :rows="8"
-              class="font-mono text-sm"
-              @keyup.enter.ctrl="encodeText"
-            />
-            <n-input
-              v-else
-              v-model:value="decodeInput"
-              type="textarea"
-              placeholder="请输入 Base64/URL/Hex 字符串..."
-              :rows="8"
-              class="font-mono text-sm"
-              @keyup.enter.ctrl="decodeText"
-            />
-
-            <!-- Action buttons -->
-            <div class="flex gap-2" style="margin-top: 16px">
-              <n-button
-                type="primary"
-                size="large"
-                style="flex: 1"
-                @click="transformMode === 'encode' ? encodeText() : decodeText()"
-              >
-                {{ transformMode === 'encode' ? '编码' : '解码' }}
-              </n-button>
-            </div>
-
-            <!-- Encoding type selector -->
-            <div class="flex gap-2" style="margin-top: 12px">
-              <n-tag type="info" size="small">Base64 / URL / Hex</n-tag>
-            </div>
-          </div>
-        </template>
       </div>
     </template>
 
@@ -516,88 +516,89 @@ const statusText = computed(() => {
 
     <template #output>
       <div class="h-full flex flex-col justify-center space-y-4">
-        <n-input
-          v-model:value="hashResult"
-          type="textarea"
-          :rows="4"
-          readonly
-          class="font-mono text-sm"
-          placeholder="哈希结果将显示在这里"
-        />
+        <!-- Hash output (when not in encoding mode) -->
+        <template v-if="tabMode !== 'encoding'">
+          <n-input
+            v-model:value="hashResult"
+            type="textarea"
+            :rows="4"
+            readonly
+            class="font-mono text-sm"
+            placeholder="哈希结果将显示在这里"
+          />
 
-        <!-- Verify section -->
-        <div>
-          <n-divider>
-            <span class="text-xs text-gray-500">校验</span>
-          </n-divider>
-          <div class="flex gap-2">
-            <n-input
-              v-model:value="verifyInput"
-              type="text"
-              placeholder="输入待校验的哈希值..."
-              class="font-mono text-sm flex-1"
-              @keyup.enter="verifyHash"
-            />
-            <n-button type="primary" size="small" @click="verifyHash">
-              校验
-            </n-button>
+          <!-- Verify section -->
+          <div>
+            <n-divider>
+              <span class="text-xs text-gray-500">校验</span>
+            </n-divider>
+            <div class="flex gap-2">
+              <n-input
+                v-model:value="verifyInput"
+                type="text"
+                placeholder="输入待校验的哈希值..."
+                class="font-mono text-sm flex-1"
+                @keyup.enter="verifyHash"
+              />
+              <n-button type="primary" size="small" @click="verifyHash">
+                校验
+              </n-button>
+            </div>
+            <div v-if="verifyResult" class="mt-2">
+              <n-tag
+                v-if="verifyResult === 'match'"
+                type="success"
+                size="small"
+              >
+                ✓ 匹配
+              </n-tag>
+              <n-tag
+                v-else
+                type="error"
+                size="small"
+              >
+                ✗ 不匹配
+              </n-tag>
+            </div>
           </div>
-          <div v-if="verifyResult" class="mt-2">
-            <n-tag
-              v-if="verifyResult === 'match'"
-              type="success"
-              size="small"
-            >
-              ✓ 匹配
-            </n-tag>
-            <n-tag
-              v-else
-              type="error"
-              size="small"
-            >
-              ✗ 不匹配
-            </n-tag>
-          </div>
-        </div>
-      </div>
-    </template>
+        </template>
 
-    <!-- Encoding transform output -->
-    <template v-else-if="tabMode === 'encoding'">
-      <div class="h-full flex flex-col justify-center">
-        <n-input
-          v-if="transformMode === 'encode'"
-          v-model:value="encodeResult"
-          type="textarea"
-          :rows="8"
-          readonly
-          class="font-mono text-sm"
-          placeholder="编码结果将显示在这里"
-        />
-        <n-input
-          v-else
-          v-model:value="decodeResult"
-          type="textarea"
-          :rows="8"
-          readonly
-          class="font-mono text-sm"
-          placeholder="解码结果将显示在这里"
-        />
-        <n-button
-          v-if="transformMode === 'encode' ? encodeResult : decodeResult"
-          type="info"
-          size="small"
-          style="margin-top: 12px; align-self: flex-start"
-          @click="transformMode === 'encode' ? copyEncodeResult() : copyDecodeResult()"
-        >
-          <template #icon>
-            <span>📄</span>
-          </template>
-          复制
-        </n-button>
-        <n-tag v-if="encodingError" type="error" size="small" style="margin-top: 8px">
-          {{ encodingError }}
-        </n-tag>
+        <!-- Encoding transform output -->
+        <template v-else>
+          <n-input
+            v-if="transformMode === 'encode'"
+            v-model:value="encodeResult"
+            type="textarea"
+            :rows="8"
+            readonly
+            class="font-mono text-sm"
+            placeholder="编码结果将显示在这里"
+          />
+          <n-input
+            v-else
+            v-model:value="decodeResult"
+            type="textarea"
+            :rows="8"
+            readonly
+            class="font-mono text-sm"
+            placeholder="解码结果将显示在这里"
+          />
+          <n-button
+            v-if="transformMode === 'encode' ? encodeResult : decodeResult"
+            type="info"
+            size="small"
+            style="margin-top: 12px; align-self: flex-start"
+            @click="transformMode === 'encode' ? copyEncodeResult() : copyDecodeResult()"
+          >
+            <template #icon>
+              <span>📄</span>
+            </template>
+            复制
+          </n-button>
+          <n-tag v-if="encodingError" type="error" size="small" style="margin-top: 8px">
+            {{ encodingError }}
+          </n-tag>
+        </template>
       </div>
     </template>
   </ToolLayout>
