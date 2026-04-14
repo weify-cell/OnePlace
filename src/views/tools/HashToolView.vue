@@ -12,9 +12,8 @@ import sm3 from 'sm3'
 const message = useMessage()
 
 type Algorithm = 'md5' | 'sha1' | 'sha256' | 'sha512' | 'sha3-256' | 'sha3-512' | 'sm3'
-type TabMode = 'md5-sha1' | 'sha2' | 'sha3-sm3' | 'encoding'
+type TabMode = 'md5-sha1' | 'sha2' | 'sha3-sm3'
 type InputMode = 'text' | 'file'
-type TransformMode = 'encode' | 'decode'
 
 const tabMode = ref<TabMode>('md5-sha1')
 const inputMode = ref<InputMode>('text')
@@ -27,14 +26,6 @@ const verifyResult = ref<'match' | 'mismatch' | null>(null)
 const selectedFile = ref<File | null>(null)
 const fileProgress = ref(0)
 const isComputing = ref(false)
-
-// Encoding state
-const transformMode = ref<TransformMode>('encode')
-const encodeInput = ref('')
-const encodeResult = ref('')
-const decodeInput = ref('')
-const decodeResult = ref('')
-const encodingError = ref('')
 
 const selectedAlgorithm = ref<Algorithm>('md5')
 
@@ -58,9 +49,7 @@ const currentTabAlgorithms = computed(() => tabAlgorithms[tabMode.value])
 
 function selectTab(tab: TabMode) {
   tabMode.value = tab
-  if (tab !== 'encoding') {
-    selectedAlgorithm.value = tabAlgorithms[tab][0]
-  }
+  selectedAlgorithm.value = tabAlgorithms[tab][0]
   hashResult.value = ''
   verifyResult.value = null
 }
@@ -177,26 +166,6 @@ function formatFileSize(bytes: number): string {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
 
-// Base64 UTF-8 编解码
-function btoaUtf8(str: string): string {
-  return btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, (_, p1) => String.fromCharCode(parseInt(p1, 16))))
-}
-
-function atobUtf8(str: string): string {
-  return decodeURIComponent(atob(str).split('').map(c => '%' + c.charCodeAt(0).toString(16).padStart(2, '0')).join(''))
-}
-
-// Hex 编解码
-function strToHex(str: string): string {
-  return Array.from(new TextEncoder().encode(str)).map(b => b.toString(16).padStart(2, '0')).join('')
-}
-
-function hexToStr(hex: string): string {
-  const match = hex.match(/.{2}/g)
-  if (!match) throw new Error('Invalid hex string')
-  return new TextDecoder().decode(new Uint8Array(match.map(b => parseInt(b, 16))))
-}
-
 async function copyResult() {
   if (!hashResult.value) {
     message.warning('没有可复制的内容')
@@ -224,52 +193,6 @@ function verifyHash() {
   verifyResult.value = expected === actual ? 'match' : 'mismatch'
 }
 
-function encodeText() {
-  encodingError.value = ''
-  const input = encodeInput.value
-  if (!input) {
-    message.warning('请输入文本内容')
-    return
-  }
-  try {
-    encodeResult.value = btoaUtf8(input)
-  } catch {
-    encodingError.value = '编码失败：无效字符'
-    message.error('编码失败')
-  }
-}
-
-function decodeText() {
-  encodingError.value = ''
-  const input = decodeInput.value.trim()
-  if (!input) {
-    message.warning('请输入 Base64 内容')
-    return
-  }
-  try {
-    decodeResult.value = atobUtf8(input)
-  } catch {
-    encodingError.value = '解码失败：无效 Base64 格式'
-    message.error('解码失败：无效 Base64 格式')
-  }
-}
-
-async function copyEncodeResult() {
-  if (!encodeResult.value) { message.warning('没有可复制的内容'); return }
-  try {
-    await navigator.clipboard.writeText(encodeResult.value)
-    message.success('已复制到剪贴板')
-  } catch { message.error('复制失败') }
-}
-
-async function copyDecodeResult() {
-  if (!decodeResult.value) { message.warning('没有可复制的内容'); return }
-  try {
-    await navigator.clipboard.writeText(decodeResult.value)
-    message.success('已复制到剪贴板')
-  } catch { message.error('复制失败') }
-}
-
 function clearAll() {
   textInput.value = ''
   hashResult.value = ''
@@ -277,11 +200,6 @@ function clearAll() {
   verifyResult.value = null
   selectedFile.value = null
   fileProgress.value = 0
-  encodeInput.value = ''
-  encodeResult.value = ''
-  decodeInput.value = ''
-  decodeResult.value = ''
-  encodingError.value = ''
 }
 
 const statusText = computed(() => {
@@ -317,13 +235,6 @@ const statusText = computed(() => {
           SHA-3/SM3
         </n-button>
       </n-button-group>
-      <n-button
-        :type="tabMode === 'encoding' ? 'primary' : 'default'"
-        size="small"
-        @click="selectTab('encoding')"
-      >
-        编码转换
-      </n-button>
 
       <n-divider vertical />
 
@@ -361,74 +272,14 @@ const statusText = computed(() => {
     <!-- Input -->
     <template #input-header>
       <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
-        {{ tabMode === 'encoding' ? '编码转换' : (inputMode === 'text' ? '文本输入' : '文件上传') }}
+        {{ inputMode === 'text' ? '文本输入' : '文件上传' }}
       </span>
     </template>
 
     <template #input>
       <div class="h-full flex flex-col justify-center">
-        <!-- Encoding transform mode -->
-        <template v-if="tabMode === 'encoding'">
-          <div class="h-full flex flex-col justify-center">
-            <!-- Mode toggle -->
-            <n-button-group style="margin-bottom: 16px">
-              <n-button
-                :type="transformMode === 'encode' ? 'primary' : 'default'"
-                size="small"
-                @click="transformMode = 'encode'"
-              >
-                编码
-              </n-button>
-              <n-button
-                :type="transformMode === 'decode' ? 'primary' : 'default'"
-                size="small"
-                @click="transformMode = 'decode'"
-              >
-                解码
-              </n-button>
-            </n-button-group>
-
-            <!-- Input -->
-            <n-input
-              v-if="transformMode === 'encode'"
-              v-model:value="encodeInput"
-              type="textarea"
-              placeholder="请输入文本内容..."
-              :rows="8"
-              class="font-mono text-sm"
-              @keyup.enter.ctrl="encodeText"
-            />
-            <n-input
-              v-else
-              v-model:value="decodeInput"
-              type="textarea"
-              placeholder="请输入 Base64/URL/Hex 字符串..."
-              :rows="8"
-              class="font-mono text-sm"
-              @keyup.enter.ctrl="decodeText"
-            />
-
-            <!-- Action buttons -->
-            <div class="flex gap-2" style="margin-top: 16px">
-              <n-button
-                type="primary"
-                size="large"
-                style="flex: 1"
-                @click="transformMode === 'encode' ? encodeText() : decodeText()"
-              >
-                {{ transformMode === 'encode' ? '编码' : '解码' }}
-              </n-button>
-            </div>
-
-            <!-- Encoding type selector -->
-            <div class="flex gap-2" style="margin-top: 12px">
-              <n-tag type="info" size="small">Base64 / URL / Hex</n-tag>
-            </div>
-          </div>
-        </template>
-
         <!-- Text input mode -->
-        <template v-else-if="inputMode === 'text'">
+        <template v-if="inputMode === 'text'">
           <n-input
             v-model:value="textInput"
             type="textarea"
@@ -452,6 +303,7 @@ const statusText = computed(() => {
         <template v-else>
           <div class="flex flex-col items-center justify-center border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-8">
             <input
+              ref="fileInput"
               type="file"
               class="hidden"
               @change="handleFileSelect"
@@ -518,89 +370,49 @@ const statusText = computed(() => {
 
     <template #output>
       <div class="h-full flex flex-col justify-center space-y-4">
-        <!-- Hash output (when not in encoding mode) -->
-        <template v-if="tabMode !== 'encoding'">
-          <n-input
-            v-model:value="hashResult"
-            type="textarea"
-            :rows="4"
-            readonly
-            class="font-mono text-sm"
-            placeholder="哈希结果将显示在这里"
-          />
+        <n-input
+          v-model:value="hashResult"
+          type="textarea"
+          :rows="4"
+          readonly
+          class="font-mono text-sm"
+          placeholder="哈希结果将显示在这里"
+        />
 
-          <!-- Verify section -->
-          <div>
-            <n-divider>
-              <span class="text-xs text-gray-500">校验</span>
-            </n-divider>
-            <div class="flex gap-2">
-              <n-input
-                v-model:value="verifyInput"
-                type="text"
-                placeholder="输入待校验的哈希值..."
-                class="font-mono text-sm flex-1"
-                @keyup.enter="verifyHash"
-              />
-              <n-button type="primary" size="small" @click="verifyHash">
-                校验
-              </n-button>
-            </div>
-            <div v-if="verifyResult" class="mt-2">
-              <n-tag
-                v-if="verifyResult === 'match'"
-                type="success"
-                size="small"
-              >
-                ✓ 匹配
-              </n-tag>
-              <n-tag
-                v-else
-                type="error"
-                size="small"
-              >
-                ✗ 不匹配
-              </n-tag>
-            </div>
+        <!-- Verify section -->
+        <div>
+          <n-divider>
+            <span class="text-xs text-gray-500">校验</span>
+          </n-divider>
+          <div class="flex gap-2">
+            <n-input
+              v-model:value="verifyInput"
+              type="text"
+              placeholder="输入待校验的哈希值..."
+              class="font-mono text-sm flex-1"
+              @keyup.enter="verifyHash"
+            />
+            <n-button type="primary" size="small" @click="verifyHash">
+              校验
+            </n-button>
           </div>
-        </template>
-
-        <!-- Encoding transform output -->
-        <template v-else>
-          <n-input
-            v-if="transformMode === 'encode'"
-            v-model:value="encodeResult"
-            type="textarea"
-            :rows="8"
-            readonly
-            class="font-mono text-sm"
-            placeholder="编码结果将显示在这里"
-          />
-          <n-input
-            v-else
-            v-model:value="decodeResult"
-            type="textarea"
-            :rows="8"
-            readonly
-            class="font-mono text-sm"
-            placeholder="解码结果将显示在这里"
-          />
-          <n-button
-            v-if="transformMode === 'encode' ? encodeResult : decodeResult"
-            type="info"
-            size="small"
-            style="margin-top: 12px; align-self: flex-start"
-            @click="transformMode === 'encode' ? copyEncodeResult() : copyDecodeResult()"
-          >
-            <template #icon>
-              <span>📄</span>
-            </template>
-            复制
-          </n-button>
-          <n-tag v-if="encodingError" type="error" size="small" style="margin-top: 8px">
-            {{ encodingError }}
-          </n-tag>
-        </template>
+          <div v-if="verifyResult" class="mt-2">
+            <n-tag
+              v-if="verifyResult === 'match'"
+              type="success"
+              size="small"
+            >
+              ✓ 匹配
+            </n-tag>
+            <n-tag
+              v-else
+              type="error"
+              size="small"
+            >
+              ✗ 不匹配
+            </n-tag>
+          </div>
+        </div>
       </div>
     </template>
   </ToolLayout>
