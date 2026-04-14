@@ -241,7 +241,7 @@ function formatTime(isoString: string) {
                 <n-button type="primary" class="notes-header__btn" @click="createNote">
                   + 新建笔记
                 </n-button>
-                <n-button class="notes-header__btn" @click="openUploadModal">
+                <n-button type="primary" class="notes-header__btn" @click="openUploadModal">
                   上传笔记
                 </n-button>
               </div>
