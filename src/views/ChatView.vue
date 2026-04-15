@@ -20,16 +20,18 @@ function toggleKbPanel() {
 
 async function onKbEnabledChange(enabled: boolean) {
   if (!chatStore.currentConversation) return
-  // Update conversation kb_enabled via API
   const { api } = await import('@/api/chat.api')
-  await api.updateConversation(chatStore.currentConversation.id, {
-    kb_enabled: enabled
-  })
-  // Refresh conversation list
-  await chatStore.fetchConversations()
-  // Update current conversation ref
-  const conv = chatStore.conversations.find(c => c.id === chatStore.currentConversation?.id)
-  if (conv) chatStore.currentConversation = conv
+  const message = window.$message
+  try {
+    await api.updateConversation(chatStore.currentConversation.id, {
+      kb_enabled: enabled
+    })
+    await chatStore.fetchConversations()
+    const conv = chatStore.conversations.find(c => c.id === chatStore.currentConversation?.id)
+    if (conv) chatStore.currentConversation = conv
+  } catch (e) {
+    message.error('更新知识库设置失败')
+  }
 }
 
 onMounted(async () => {
