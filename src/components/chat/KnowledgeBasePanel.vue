@@ -16,6 +16,8 @@ const message = useMessage()
 const settings = ref<Partial<KnowledgeBaseSettings>>({})
 const loading = ref(false)
 const statsLoading = ref(false)
+const saving = ref(false)
+const rebuilding = ref(false)
 const stats = ref({ points_count: 0 })
 const panelVisible = ref(false)
 
@@ -45,20 +47,26 @@ async function loadStats() {
 }
 
 async function saveSettings() {
+  saving.value = true
   try {
     await knowledgeBaseApi.updateSettings(settings.value)
     message.success('知识库设置已保存')
   } catch (e) {
     message.error('保存失败')
+  } finally {
+    saving.value = false
   }
 }
 
 async function rebuildIndex() {
+  rebuilding.value = true
   try {
     await knowledgeBaseApi.rebuild()
     message.success('索引重建已启动')
   } catch (e) {
     message.error('重建失败')
+  } finally {
+    rebuilding.value = false
   }
 }
 
@@ -86,19 +94,13 @@ defineExpose({ toggle })
         <n-switch v-model:value="localKbEnabled" />
       </div>
 
-      <!-- 检索范围 -->
-      <div class="kb-panel__row">
-        <span>检索范围</span>
-        <n-radio-group value="all" size="small">
-          <n-radio value="all">全部笔记</n-radio>
-        </n-radio-group>
-      </div>
+      <!-- 检索范围 (全部笔记) -->
 
       <!-- Top K -->
       <div class="kb-panel__row">
-        <span>Top K: {{ settings.kb_top_k || 5 }}</span>
+        <span>Top K: {{ settings.kb_top_k ?? 5 }}</span>
         <n-slider
-          v-model:value="settings.kb_top_k!"
+          v-model:value="settings.kb_top_k ?? 5"
           :min="1"
           :max="20"
           :step="1"
@@ -111,10 +113,10 @@ defineExpose({ toggle })
         <n-button size="small" :loading="statsLoading" @click="loadStats">
           刷新统计
         </n-button>
-        <n-button size="small" type="warning" @click="rebuildIndex">
+        <n-button size="small" type="warning" :loading="rebuilding" @click="rebuildIndex">
           重建索引
         </n-button>
-        <n-button size="small" type="primary" @click="saveSettings">
+        <n-button size="small" type="primary" :loading="saving" @click="saveSettings">
           保存
         </n-button>
       </div>
