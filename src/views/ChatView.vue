@@ -6,10 +6,31 @@ import AppLayout from '@/components/common/AppLayout.vue'
 import ConversationList from '@/components/chat/ConversationList.vue'
 import MessageList from '@/components/chat/MessageList.vue'
 import MessageInput from '@/components/chat/MessageInput.vue'
+import KnowledgeBasePanel from '@/components/chat/KnowledgeBasePanel.vue'
 
 const route = useRoute()
 const router = useRouter()
 const chatStore = useChatStore()
+
+const kbPanelVisible = ref(false)
+
+function toggleKbPanel() {
+  kbPanelVisible.value = !kbPanelVisible.value
+}
+
+async function onKbEnabledChange(enabled: boolean) {
+  if (!chatStore.currentConversation) return
+  // Update conversation kb_enabled via API
+  const { api } = await import('@/api/chat.api')
+  await api.updateConversation(chatStore.currentConversation.id, {
+    kb_enabled: enabled
+  })
+  // Refresh conversation list
+  await chatStore.fetchConversations()
+  // Update current conversation ref
+  const conv = chatStore.conversations.find(c => c.id === chatStore.currentConversation?.id)
+  if (conv) chatStore.currentConversation = conv
+}
 
 onMounted(async () => {
   await chatStore.fetchConversations()
@@ -75,12 +96,33 @@ watch(() => route.params.id, async (id) => {
                 <span class="chat-header__provider">
                   {{ chatStore.currentConversation.provider }}
                 </span>
+                <n-tooltip trigger="hover">
+                  <template #trigger>
+                    <div
+                      class="chat-header__kb-btn"
+                      :class="{ 'chat-header__kb-btn--active': kbPanelVisible }"
+                      @click="toggleKbPanel"
+                    >
+                      <span>📚</span>
+                    </div>
+                  </template>
+                  {{ chatStore.currentConversation?.kb_enabled ? '知识库：已启用' : '知识库：已关闭' }}
+                </n-tooltip>
               </div>
 
               <!-- Title -->
               <h2 class="chat-header__title">
                 {{ chatStore.currentConversation.title }}
               </h2>
+            </div>
+
+            <!-- KB Panel -->
+            <div v-if="kbPanelVisible && chatStore.currentConversation" class="chat-header__kb-panel">
+              <KnowledgeBasePanel
+                :conversation-id="chatStore.currentConversation.id"
+                :kb-enabled="!!chatStore.currentConversation.kb_enabled"
+                @update:kb-enabled="onKbEnabledChange"
+              />
             </div>
           </div>
 
@@ -164,6 +206,7 @@ watch(() => route.params.id, async (id) => {
 
 /* Header */
 .chat-header {
+  position: relative;
   padding: 14px 24px;
   border-bottom: 1px solid var(--border-subtle);
   background: var(--bg-card);
@@ -262,5 +305,31 @@ watch(() => route.params.id, async (id) => {
 .chat-empty__btn:hover {
   box-shadow: 0 6px 20px rgba(245, 158, 11, 0.4);
   transform: translateY(-1px);
+}
+
+.chat-header__kb-btn {
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: var(--radius-md);
+  font-size: 1rem;
+  transition: background 0.2s;
+}
+
+.chat-header__kb-btn:hover {
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.chat-header__kb-btn--active {
+  background: rgba(245, 158, 11, 0.15);
+}
+
+.chat-header__kb-panel {
+  position: absolute;
+  top: 100%;
+  right: 24px;
+  z-index: 100;
+  margin-top: 8px;
+  box-shadow: var(--shadow-lg);
+  border-radius: var(--radius-lg);
 }
 </style>
