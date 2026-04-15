@@ -2,6 +2,7 @@ import { Response } from 'express'
 import { connectDatabase } from '../database/index.js'
 import { createAIClient } from './ai/openai-client.js'
 import { getSettingValue } from './settings.service.js'
+import { buildKnowledgeBaseContext } from './knowledge-base.service.js'
 
 interface ConversationRow {
   id: number; title: string; model: string; provider: string; is_deleted: number; created_at: string; updated_at: string
@@ -82,6 +83,13 @@ export async function streamChat(
   const userMsgResult = db.prepare('INSERT INTO messages (conversation_id, role, content) VALUES (?, ?, ?)').run(conversationId, 'user', userContent)
   const userMessageId = userMsgResult.lastInsertRowid as number
 
+  // Knowledge base context injection
+  const kbContext = await buildKnowledgeBaseContext(conversationId, userContent)
+  let systemPrompt = ''
+  if (kbContext?.systemPrompt) {
+    systemPrompt = kbContext.systemPrompt
+  }
+
   // Set SSE headers
   res.setHeader('Content-Type', 'text/event-stream')
   res.setHeader('Cache-Control', 'no-cache')
@@ -104,6 +112,10 @@ export async function streamChat(
     // Get conversation history
     const messages = (db.prepare('SELECT role, content FROM messages WHERE conversation_id = ? AND is_error = 0 ORDER BY created_at ASC').all(conversationId) as { role: string; content: string }[])
       .filter(m => m.content.trim().length > 0) // exclude the empty assistant placeholder we just inserted
+
+    if (systemPrompt) {
+      messages.unshift({ role: 'system', content: systemPrompt })
+    }
 
     const stream = await client.chat.completions.create({
       model: conversation.model,
@@ -138,7 +150,12 @@ export async function streamChat(
       db.prepare("UPDATE conversations SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?").run(conversationId)
     }
 
-    writeSSE('done', { messageId: assistantMessageId, tokensUsed, content: fullContent })
+    writeSSE('done', {
+      messageId: assistantMessageId,
+      tokensUsed,
+      content: fullContent,
+      references: kbContext?.references || []
+    })
   } catch (error) {
     const errMsg = (error as Error).message
     db.prepare('UPDATE messages SET content = ?, is_error = 1 WHERE id = ?').run(`Error: ${errMsg}`, assistantMessageId)
