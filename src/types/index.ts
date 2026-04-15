@@ -80,8 +80,17 @@ export interface Conversation {
   model: string
   provider: string
   is_deleted: boolean
+  kb_enabled?: boolean
+  kb_scope?: string
   created_at: string
   updated_at: string
+}
+
+export interface MessageReference {
+  note_id: number
+  title: string
+  content: string
+  score: number
 }
 
 export interface Message {
@@ -91,6 +100,7 @@ export interface Message {
   content: string
   tokens_used: number | null
   is_error: boolean
+  references?: MessageReference[]
   created_at: string
 }
 
