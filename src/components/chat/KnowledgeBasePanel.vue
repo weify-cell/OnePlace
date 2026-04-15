@@ -20,6 +20,7 @@ const saving = ref(false)
 const rebuilding = ref(false)
 const stats = ref({ points_count: 0 })
 const panelVisible = ref(false)
+const topK = ref(5)
 
 const localKbEnabled = computed({
   get: () => props.kbEnabled,
@@ -31,6 +32,7 @@ async function loadSettings() {
   try {
     const res = await knowledgeBaseApi.getSettings()
     settings.value = res.data.data
+    topK.value = res.data.data.kb_top_k ?? 5
   } finally {
     loading.value = false
   }
@@ -49,7 +51,7 @@ async function loadStats() {
 async function saveSettings() {
   saving.value = true
   try {
-    await knowledgeBaseApi.updateSettings(settings.value)
+    await knowledgeBaseApi.updateSettings({ ...settings.value, kb_top_k: topK.value })
     message.success('知识库设置已保存')
   } catch (e) {
     message.error('保存失败')
@@ -98,9 +100,9 @@ defineExpose({ toggle })
 
       <!-- Top K -->
       <div class="kb-panel__row">
-        <span>Top K: {{ settings.kb_top_k ?? 5 }}</span>
+        <span>Top K: {{ topK }}</span>
         <n-slider
-          v-model:value="settings.kb_top_k ?? 5"
+          v-model:value="topK"
           :min="1"
           :max="20"
           :step="1"

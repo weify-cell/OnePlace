@@ -17,6 +17,7 @@ declare module 'vue' {
     ImageManager: typeof import('./components/notes/ImageManager.vue')['default']
     InlineDiffEditor: typeof import('./components/toolbox/InlineDiffEditor.vue')['default']
     JsonEditor: typeof import('./components/toolbox/JsonEditor.vue')['default']
+    KnowledgeBasePanel: typeof import('./components/chat/KnowledgeBasePanel.vue')['default']
     LoginReminderModal: typeof import('./components/common/LoginReminderModal.vue')['default']
     MarkdownPreview: typeof import('./components/notes/MarkdownPreview.vue')['default']
     MessageBubble: typeof import('./components/chat/MessageBubble.vue')['default']
@@ -49,10 +50,13 @@ declare module 'vue' {
     NRadioButton: typeof import('naive-ui')['NRadioButton']
     NRadioGroup: typeof import('naive-ui')['NRadioGroup']
     NSelect: typeof import('naive-ui')['NSelect']
+    NSlider: typeof import('naive-ui')['NSlider']
     NSpin: typeof import('naive-ui')['NSpin']
+    NSwitch: typeof import('naive-ui')['NSwitch']
     NTabPane: typeof import('naive-ui')['NTabPane']
     NTabs: typeof import('naive-ui')['NTabs']
     NTag: typeof import('naive-ui')['NTag']
+    NTooltip: typeof import('naive-ui')['NTooltip']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     SheetSelectorDialog: typeof import('./components/toolbox/SheetSelectorDialog.vue')['default']
@@ -68,5 +72,6 @@ declare module 'vue' {
     ToolCard: typeof import('./components/toolbox/ToolCard.vue')['default']
     ToolLayout: typeof import('./components/toolbox/ToolLayout.vue')['default']
     ToolSearchDialog: typeof import('./components/toolbox/ToolSearchDialog.vue')['default']
+    UploadNoteModal: typeof import('./components/notes/UploadNoteModal.vue')['default']
   }
 }
