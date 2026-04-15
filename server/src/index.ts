@@ -19,6 +19,7 @@ import { chatRouter } from './routes/chat.routes.js'
 import { settingsRouter } from './routes/settings.routes.js'
 import { foldersRouter } from './routes/folders.routes.js'
 import { uploadRouter } from './routes/upload.routes.js'
+import { knowledgeBaseRouter } from './routes/knowledge-base.routes.js'
 
 const app = express()
 const PORT = process.env.PORT || 3000
@@ -50,6 +51,7 @@ app.use('/api/conversations', chatRouter)
 app.use('/api/settings', settingsRouter)
 app.use('/api/folders', foldersRouter)
 app.use('/api/upload', uploadRouter)
+app.use('/api/knowledge-base', knowledgeBaseRouter)
 
 // Static file serving for uploads
 const uploadsPath = resolve(__dirname, '../../uploads')
