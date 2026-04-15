@@ -93,7 +93,8 @@ export const useChatStore = defineStore('chat', () => {
                   content: parsed.content || streamingMessage.value,
                   tokens_used: parsed.tokensUsed,
                   is_error: false,
-                  created_at: new Date().toISOString()
+                  created_at: new Date().toISOString(),
+                  references: parsed.references || [],
                 }
                 messages.value.push(assistantMessage)
                 streamingMessage.value = ''
