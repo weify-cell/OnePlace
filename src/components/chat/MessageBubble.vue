@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { Message } from '@/types'
 import MarkdownIt from 'markdown-it'
 
@@ -15,6 +15,12 @@ const renderedContent = computed(() => {
 })
 
 const isUser = computed(() => props.message.role === 'user')
+
+const refsExpanded = ref(false)
+
+watch(() => props.message.references, (newRefs) => {
+  if (newRefs?.length) refsExpanded.value = false
+})
 </script>
 
 <template>
@@ -36,6 +42,23 @@ const isUser = computed(() => props.message.role === 'user')
           class="message-bubble__content prose prose-sm max-w-none dark:prose-invert"
           v-html="renderedContent"
         />
+        <!-- 引用来源 -->
+        <div v-if="message.references?.length" class="message-bubble__references">
+          <div class="references__header" @click="refsExpanded = !refsExpanded">
+            <span>📚 参考了 {{ message.references?.length ?? 0 }} 篇笔记</span>
+            <span class="references__toggle">{{ refsExpanded ? '▲' : '▼' }}</span>
+          </div>
+          <div v-if="refsExpanded" class="references__list">
+            <div
+              v-for="(ref, index) in message.references"
+              :key="ref.note_id"
+              class="references__item"
+            >
+              <div class="references__item-title">[{{ index + 1 }}] {{ ref.title }}</div>
+              <div class="references__item-content">{{ ref.content }}</div>
+            </div>
+          </div>
+        </div>
         <div v-if="message.tokens_used" class="message-bubble__tokens">
           {{ message.tokens_used }} tokens
         </div>
@@ -153,5 +176,50 @@ const isUser = computed(() => props.message.role === 'user')
   line-height: 1.5;
   white-space: pre-wrap;
   margin: 0;
+}
+
+/* References */
+.message-bubble__references {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 0.75rem;
+}
+
+.references__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.references__toggle {
+  font-size: 0.625rem;
+}
+
+.references__list {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.references__item {
+  background: var(--bg-content);
+  border-radius: var(--radius-md);
+  padding: 6px 10px;
+}
+
+.references__item-title {
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.references__item-content {
+  color: var(--text-secondary);
+  line-height: 1.4;
 }
 </style>
