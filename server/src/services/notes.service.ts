@@ -1,4 +1,5 @@
 import { connectDatabase } from '../database/index.js'
+import { enqueueEmbeddingTask } from './vector/embedding-queue.js'
 
 export interface Note {
   id: number
@@ -151,12 +152,20 @@ export function updateNote(id: number, data: Partial<Note>): Note | null {
   params.push(id)
 
   db.prepare(`UPDATE notes SET ${updates.join(', ')} WHERE id = ?`).run(...params)
+
+  // Trigger async embedding indexing
+  enqueueEmbeddingTask({ noteId: id, action: 'upsert', timestamp: Date.now() })
+
   return getNoteById(id)
 }
 
 export function deleteNote(id: number): boolean {
   const db = connectDatabase()
   const result = db.prepare("UPDATE notes SET is_deleted = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ? AND is_deleted = 0").run(id)
+
+  // Trigger async embedding deletion
+  enqueueEmbeddingTask({ noteId: id, action: 'delete', timestamp: Date.now() })
+
   return result.changes > 0
 }
 
