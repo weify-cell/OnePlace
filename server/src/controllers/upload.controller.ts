@@ -42,7 +42,36 @@ export function uploadNoteFile(req: Request, res: Response): void {
     return
   }
 
-  const ext = path.extname(req.file.originalname).toLowerCase()
+  // Handle filename encoding from different browsers/platforms
+  // 1. Percent-encoded: %E6%B5%8B%E8%AF%95.txt (URL encoded)
+  // 2. Mis-decoded UTF-8: æ½è¯.txt (UTF-8 bytes read as Latin-1)
+  // 3. Already correct: 测试.txt
+  function hasChinese(s: string): boolean {
+    return /[\u4e00-\u9fff]/.test(s)
+  }
+
+  let finalName = req.file.originalname
+
+  // Try percent-decode first
+  if (finalName.includes('%')) {
+    try {
+      const decoded = decodeURIComponent(finalName)
+      if (hasChinese(decoded)) {
+        finalName = decoded
+      }
+    } catch {}
+  }
+
+  // If still no Chinese, try fixing mis-decoded UTF-8 (Latin-1 roundtrip)
+  if (!hasChinese(finalName)) {
+    const recomposed = Buffer.from(finalName, 'latin1').toString('utf8')
+    if (hasChinese(recomposed)) {
+      finalName = recomposed
+    }
+  }
+
+  const decodedName = finalName
+  const ext = path.extname(decodedName).toLowerCase()
   if (ext !== '.txt' && ext !== '.md') {
     res.status(400).json({ error: 'Only .txt and .md files are supported' })
     return
@@ -50,7 +79,7 @@ export function uploadNoteFile(req: Request, res: Response): void {
 
   try {
     const content = req.file.buffer.toString('utf-8')
-    const title = path.basename(req.file.originalname, ext) || '无标题'
+    const title = path.basename(decodedName, ext) || '无标题'
     const folder_id = req.body.folder_id ? Number(req.body.folder_id) : null
 
     const db = connectDatabase()
