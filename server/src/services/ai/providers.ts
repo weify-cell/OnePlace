@@ -3,6 +3,7 @@ export interface AIProvider {
   displayName: string
   baseURL: string
   models: { id: string; name: string }[]
+  embedding_models?: { id: string; name: string }[]
 }
 
 export const AI_PROVIDERS: Record<string, AIProvider> = {
@@ -15,6 +16,10 @@ export const AI_PROVIDERS: Record<string, AIProvider> = {
       { id: 'qwen-plus', name: 'Qwen Plus' },
       { id: 'qwen-max', name: 'Qwen Max' },
       { id: 'qwen-long', name: 'Qwen Long' }
+    ],
+    embedding_models: [
+      { id: 'text-embedding-v2', name: 'Text Embedding V2' },
+      { id: 'text-embedding-v3', name: 'Text Embedding V3' }
     ]
   },
   kimi: {
@@ -44,6 +49,9 @@ export const AI_PROVIDERS: Record<string, AIProvider> = {
     models: [
       { id: 'deepseek-chat', name: 'DeepSeek Chat' },
       { id: 'deepseek-reasoner', name: 'DeepSeek Reasoner' }
+    ],
+    embedding_models: [
+      { id: 'deepseek-embedder', name: 'DeepSeek Embedder' }
     ]
   },
   openai: {
@@ -54,6 +62,11 @@ export const AI_PROVIDERS: Record<string, AIProvider> = {
       { id: 'gpt-4o', name: 'GPT-4o' },
       { id: 'gpt-4o-mini', name: 'GPT-4o Mini' },
       { id: 'gpt-4-turbo', name: 'GPT-4 Turbo' }
+    ],
+    embedding_models: [
+      { id: 'text-embedding-3-small', name: 'Text Embedding 3 Small' },
+      { id: 'text-embedding-3-large', name: 'Text Embedding 3 Large' },
+      { id: 'text-embedding-ada-002', name: 'Text Embedding Ada 002' }
     ]
   }
 }
