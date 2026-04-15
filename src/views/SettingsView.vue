@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { useSettingsStore } from '@/stores/settings.store'
 import AppLayout from '@/components/common/AppLayout.vue'
+import { knowledgeBaseApi } from '@/api/knowledge-base.api'
 
 const settingsStore = useSettingsStore()
 const message = useMessage()
@@ -12,6 +13,25 @@ const providers = ref<Record<string, { apiKey: string; baseURL: string }>>({})
 const defaultProvider = ref('')
 const defaultModel = ref('')
 const theme = ref<'light' | 'dark' | 'system'>('system')
+
+const kbSettings = ref({
+  kb_enabled: false,
+  embedding_provider: 'qwen',
+  embedding_model: 'text-embedding-v2',
+  qdrant_url: 'http://localhost:6333',
+  qdrant_collection: 'notes_knowledge_base',
+  kb_chunk_size: 500,
+  kb_chunk_overlap: 50,
+  kb_default_enabled: false,
+})
+
+const embeddingProviderOptions = [
+  { label: '通义千问', value: 'qwen' },
+  { label: 'DeepSeek', value: 'deepseek' },
+  { label: 'OpenAI', value: 'openai' },
+]
+
+const savingKb = ref(false)
 
 watch(theme, (val) => { settingsStore.theme = val })
 
@@ -28,6 +48,7 @@ onMounted(async () => {
       baseURL: settingsStore.aiProviders[p.name]?.baseURL || ''
     }
   }
+  loadKbSettings()
 })
 
 const themeOptions = [
@@ -58,6 +79,21 @@ async function saveAll() {
     message.success('设置已保存')
   } finally {
     saving.value = false
+  }
+}
+
+async function loadKbSettings() {
+  const res = await knowledgeBaseApi.getSettings()
+  Object.assign(kbSettings.value, res.data.data)
+}
+
+async function saveKbSettings() {
+  savingKb.value = true
+  try {
+    await knowledgeBaseApi.updateSettings(kbSettings.value)
+    window.$message.success('知识库配置已保存')
+  } finally {
+    savingKb.value = false
   }
 }
 </script>
@@ -174,6 +210,97 @@ async function saveAll() {
                   </div>
                 </n-collapse-item>
               </n-collapse>
+            </div>
+          </div>
+        </div>
+
+        <!-- Knowledge Base section -->
+        <n-divider>知识库</n-divider>
+
+        <div class="settings-section animate-slideIn" style="animation-delay: 150ms">
+          <div class="settings-card">
+            <div class="settings-card__header">
+              <div class="settings-card__icon">📚</div>
+              <div>
+                <h2 class="settings-card__title">知识库配置</h2>
+                <p class="settings-card__desc">配置 Embedding 和向量数据库</p>
+              </div>
+            </div>
+            <div class="settings-card__body">
+              <div class="settings-row">
+                <div class="settings-field">
+                  <label class="settings-field__label">启用知识库功能</label>
+                  <n-switch v-model:value="kbSettings.kb_enabled" />
+                </div>
+                <div class="settings-field">
+                  <label class="settings-field__label">新对话默认启用</label>
+                  <n-switch v-model:value="kbSettings.kb_default_enabled" />
+                </div>
+              </div>
+
+              <div class="settings-row">
+                <div class="settings-field">
+                  <label class="settings-field__label">Embedding 服务商</label>
+                  <n-select
+                    v-model:value="kbSettings.embedding_provider"
+                    :options="embeddingProviderOptions"
+                    placeholder="选择服务商"
+                  />
+                </div>
+                <div class="settings-field">
+                  <label class="settings-field__label">Embedding 模型</label>
+                  <n-input
+                    v-model:value="kbSettings.embedding_model"
+                    placeholder="如 text-embedding-v2"
+                  />
+                </div>
+              </div>
+
+              <div class="settings-row">
+                <div class="settings-field">
+                  <label class="settings-field__label">Qdrant 地址</label>
+                  <n-input
+                    v-model:value="kbSettings.qdrant_url"
+                    placeholder="http://localhost:6333"
+                  />
+                </div>
+                <div class="settings-field">
+                  <label class="settings-field__label">Collection</label>
+                  <n-input
+                    v-model:value="kbSettings.qdrant_collection"
+                    placeholder="notes_knowledge_base"
+                  />
+                </div>
+              </div>
+
+              <div class="settings-row">
+                <div class="settings-field">
+                  <label class="settings-field__label">分块大小</label>
+                  <n-input-number
+                    v-model:value="kbSettings.kb_chunk_size"
+                    :min="100"
+                    :max="2000"
+                    style="width: 120px"
+                  />
+                  <span class="settings-field__hint">字</span>
+                </div>
+                <div class="settings-field">
+                  <label class="settings-field__label">重叠字数</label>
+                  <n-input-number
+                    v-model:value="kbSettings.kb_chunk_overlap"
+                    :min="0"
+                    :max="500"
+                    style="width: 120px"
+                  />
+                  <span class="settings-field__hint">字</span>
+                </div>
+              </div>
+
+              <div class="settings-field__actions">
+                <n-button type="primary" :loading="savingKb" @click="saveKbSettings">
+                  保存知识库配置
+                </n-button>
+              </div>
             </div>
           </div>
         </div>
@@ -295,6 +422,16 @@ async function saveAll() {
   font-size: 0.8125rem;
   font-weight: 600;
   color: var(--text-secondary);
+}
+
+.settings-field__hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-left: 4px;
+}
+
+.settings-field__actions {
+  margin-top: 12px;
 }
 
 /* Theme options */
