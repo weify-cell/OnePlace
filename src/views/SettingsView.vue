@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useSettingsStore } from '@/stores/settings.store'
 import AppLayout from '@/components/common/AppLayout.vue'
 import { knowledgeBaseApi } from '@/api/knowledge-base.api'
