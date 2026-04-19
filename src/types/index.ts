@@ -56,6 +56,7 @@ export interface Note {
   is_pinned: boolean
   is_archived: boolean
   is_deleted: boolean
+  is_knowledge_base: boolean
   created_at: string
   updated_at: string
 }

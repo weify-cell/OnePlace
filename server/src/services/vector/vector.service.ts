@@ -43,13 +43,18 @@ async function qdrantRequest(path: string, method = 'GET', body?: unknown) {
 export async function upsertChunks(chunks: { id: string; vector: number[]; payload: ChunkPayload }[]): Promise<void> {
   if (chunks.length === 0) return
   const { collection } = getQdrantConfig()
-  await qdrantRequest(`/collections/${collection}/points`, 'PUT', {
-    points: chunks.map(c => ({
-      id: c.id,
-      vector: c.vector,
-      payload: c.payload,
-    }))
-  })
+  // 每10个一组提交
+  for (let i = 0; i < chunks.length; i += 9) {
+    const batch = chunks.slice(i, i + 9)
+    await qdrantRequest(`/collections/${collection}/points`, 'PUT', {
+      points: batch.map(c => ({
+        id: c.id,
+        vector: c.vector,
+        payload: c.payload,
+      }))
+    })
+  }
+  
 }
 
 export async function searchChunks(queryVector: number[], topK: number): Promise<SearchResult[]> {
@@ -78,15 +83,28 @@ export async function deleteChunksByNoteId(noteId: number): Promise<void> {
   })
 }
 
-export async function createCollectionIfNotExists(dimension: number): Promise<void> {
+export async function createCollectionIfNotExists(dimension: number): Promise<boolean> {
   const { collection } = getQdrantConfig()
+
+  // Check if collection already exists
+  const exists = await qdrantRequest(`/collections/${collection}`).then(() => true).catch((e) => {
+    if (e.message.includes('404')) return false
+    throw e
+  })
+
+  if (exists) return true
+
+  // Create collection using PUT (Qdrant 1.7+ API)
   try {
-    await qdrantRequest(`/collections/${collection}`)
-  } catch {
-    await qdrantRequest('/collections', 'POST', {
-      collection_name: collection,
-      vectors_config: { size: dimension, distance: 'Cosine' }
+    await qdrantRequest(`/collections/${collection}`, 'PUT', {
+      vectors: {
+        size: dimension,
+        distance: 'Cosine'
+      }
     })
+    return true
+  } catch {
+    return false
   }
 }
 

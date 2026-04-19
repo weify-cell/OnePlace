@@ -74,6 +74,13 @@ export const useNoteStore = defineStore('notes', () => {
     return updateNote(id, { is_pinned: !note.is_pinned })
   }
 
+
+  async function toggleKnowledgeBase(id: number) {
+    const note = items.value.find(n => n.id === id) || currentNote.value
+    if (!note) return
+    return updateNote(id, { is_knowledge_base: !note.is_knowledge_base })
+  }
+
   async function toggleArchive(id: number) {
     const note = items.value.find(n => n.id === id) || currentNote.value
     if (!note) return
@@ -120,7 +127,7 @@ export const useNoteStore = defineStore('notes', () => {
     items, total, currentNote, loading, saving, allTags,
     folders, currentFolderId, filters,
     fetchNotes, createNote, fetchNote, updateNote, deleteNote,
-    togglePin, toggleArchive, fetchAllTags,
+    togglePin, toggleArchive, fetchAllTags,toggleKnowledgeBase,
     fetchFolders, createFolder, renameFolder, deleteFolder, selectFolder
   }
 })

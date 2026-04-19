@@ -20,14 +20,41 @@ function splitIntoChunks(text: string, chunkSize = 500, overlap = 50): string[] 
 
   for (const para of paragraphs) {
     if (para.trim().length < 10) continue
-    if (current.length + para.length + 2 <= chunkSize) {
+
+    // 单段落超长，按句子二次拆分
+    if (para.length > chunkSize) {
+      if (current.trim()) chunks.push(current)
+      current = ''
+
+      const sentences = para.split(/(?<=[。！？.!?])/)
+      let buf = ''
+      for (const sent of sentences) {
+        if (sent.length > chunkSize) {
+          // 当前缓冲区有内容先 push
+          if (buf.trim()) { chunks.push(buf); buf = '' }
+          // 超长句子按固定长度截断（无 overlap，避免复杂）
+          for (let i = 0; i < sent.length; i += chunkSize - overlap) {
+            const chunk = sent.slice(i, i + chunkSize - overlap)
+            if (chunk.trim()) chunks.push(chunk)
+          }
+          buf = ''
+        } else if (buf.length + sent.length <= chunkSize) {
+          buf += sent
+        } else {
+          if (buf.trim()) chunks.push(buf)
+          buf = sent
+        }
+      }
+      current = buf
+    } else if (current.length + para.length + 2 <= chunkSize) {
       current += (current ? '\n\n' : '') + para
     } else {
-      if (current) chunks.push(current)
+      if (current.trim()) chunks.push(current)
       const overlapText = current.slice(-overlap)
       current = overlapText + (overlapText ? '\n\n' : '') + para
     }
   }
+
   if (current.trim()) chunks.push(current)
   return chunks
 }
@@ -57,7 +84,11 @@ async function processTask(task: EmbeddingTask): Promise<void> {
     return
   }
 
-  await createCollectionIfNotExists(dimension)
+  const collectionReady = await createCollectionIfNotExists(dimension)
+  if (!collectionReady) {
+    console.warn(`[embedding-queue] Skipping note ${task.noteId}: Qdrant collection not available`)
+    return
+  }
 
   let vectors: number[][]
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -74,7 +105,7 @@ async function processTask(task: EmbeddingTask): Promise<void> {
   }
 
   const chunks = texts.map((content, index) => ({
-    id: `note_${note.id}_${index}`,
+    id: note.id * 10000 + index, // numeric ID for Qdrant (noteId * 10000 + chunkIndex)
     vector: vectors[index],
     payload: {
       chunk_id: `note_${note.id}_${index}`,

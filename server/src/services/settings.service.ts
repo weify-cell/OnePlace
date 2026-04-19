@@ -33,6 +33,7 @@ export function setSetting(key: string, value: unknown): void {
 export function getAllSettings(): Record<string, unknown> {
   const db = connectDatabase()
   const rows = db.prepare("SELECT key, value FROM settings WHERE key != 'password_hash'").all() as SettingRow[]
+  console.log('Loaded settings:', rows.map(r => ({ key: r.key, value: r.value })))
   const result: Record<string, unknown> = {}
   for (const row of rows) {
     try { result[row.key] = JSON.parse(row.value) } catch { result[row.key] = row.value }

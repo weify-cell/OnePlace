@@ -73,6 +73,15 @@ if (isProduction) {
 
 app.use(errorMiddleware)
 
+// Global error handlers to prevent server crashes
+process.on('uncaughtException', (err) => {
+  console.error('[UncaughtException]', err.message)
+})
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[UnhandledRejection]', reason)
+})
+
 // Initialize DB and start server
 const db = connectDatabase()
 runMigrations(db)

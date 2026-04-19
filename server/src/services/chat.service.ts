@@ -5,14 +5,14 @@ import { getSettingValue } from './settings.service.js'
 import { buildKnowledgeBaseContext } from './knowledge-base.service.js'
 
 interface ConversationRow {
-  id: number; title: string; model: string; provider: string; is_deleted: number; created_at: string; updated_at: string
+  id: number; title: string; model: string; provider: string; is_deleted: number; kb_enabled: number; kb_scope: string; created_at: string; updated_at: string
 }
 interface MessageRow {
   id: number; conversation_id: number; role: string; content: string; tokens_used: number | null; is_error: number; created_at: string
 }
 
 function rowToConversation(row: ConversationRow) {
-  return { ...row, is_deleted: row.is_deleted === 1 }
+  return { ...row, is_deleted: row.is_deleted === 1, kb_enabled: row.kb_enabled === 1 }
 }
 
 function rowToMessage(row: MessageRow) {
@@ -28,8 +28,9 @@ export function createConversation(data?: { title?: string; model?: string; prov
   const db = connectDatabase()
   const defaultModel = getSettingValue<string>('default_model', 'qwen-turbo')
   const defaultProvider = getSettingValue<string>('default_provider', 'qwen')
-  const result = db.prepare('INSERT INTO conversations (title, model, provider) VALUES (?, ?, ?)').run(
-    data?.title || '新对话', data?.model || defaultModel, data?.provider || defaultProvider
+  const kbDefaultEnabled = getSettingValue<boolean>('kb_default_enabled', false) ? 1 : 0
+  const result = db.prepare('INSERT INTO conversations (title, model, provider, kb_enabled) VALUES (?, ?, ?, ?)').run(
+    data?.title || '新对话', data?.model || defaultModel, data?.provider || defaultProvider, kbDefaultEnabled
   )
   return db.prepare('SELECT * FROM conversations WHERE id = ?').get(result.lastInsertRowid) as ConversationRow
 }
@@ -40,13 +41,14 @@ export function getConversationById(id: number) {
   return row ? rowToConversation(row) : null
 }
 
-export function updateConversation(id: number, data: { title?: string; model?: string; provider?: string }) {
+export function updateConversation(id: number, data: { title?: string; model?: string; provider?: string; kb_enabled?: boolean }) {
   const db = connectDatabase()
   const updates: string[] = []
   const params: (string | number)[] = []
   if (data.title !== undefined) { updates.push('title = ?'); params.push(data.title) }
   if (data.model !== undefined) { updates.push('model = ?'); params.push(data.model) }
   if (data.provider !== undefined) { updates.push('provider = ?'); params.push(data.provider) }
+  if (data.kb_enabled !== undefined) { updates.push('kb_enabled = ?'); params.push(data.kb_enabled ? 1 : 0) }
   if (updates.length === 0) return getConversationById(id)
   updates.push("updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')")
   params.push(id)

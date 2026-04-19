@@ -178,9 +178,16 @@ function handleEditLegacyNote() {
             <n-button size="small" type="primary" class="note-toolbar__btn" @click="enterEditMode">
               编辑
             </n-button>
+            <n-button size="small"  :type="note.is_knowledge_base ? 'warning' : 'tertiary'" class="note-toolbar__btn" @click="noteStore.toggleKnowledgeBase(note.id)">
+              <n-tooltip trigger="hover">                                       
+                  <template #trigger>                                             
+                      知识库同步                                                  
+                  </template>
+                {{ note.is_knowledge_base ? '关闭知识库同步' : '开启知识库同步' }}
+              </n-tooltip>
+            </n-button>
             <n-button
               size="small"
-              :type="note.is_pinned ? 'warning' : 'default'"
               secondary
               class="note-toolbar__btn"
               @click="noteStore.togglePin(note.id)"

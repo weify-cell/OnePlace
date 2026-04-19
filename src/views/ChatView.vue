@@ -11,6 +11,7 @@ import KnowledgeBasePanel from '@/components/chat/KnowledgeBasePanel.vue'
 const route = useRoute()
 const router = useRouter()
 const chatStore = useChatStore()
+const message = useMessage()
 
 const kbPanelVisible = ref(false)
 
@@ -20,17 +21,16 @@ function toggleKbPanel() {
 
 async function onKbEnabledChange(enabled: boolean) {
   if (!chatStore.currentConversation) return
-  const { api } = await import('@/api/chat.api')
-  const message = window.$message
+  const { chatApi } = await import('@/api/chat.api')
   try {
-    await api.updateConversation(chatStore.currentConversation.id, {
+    await chatApi.updateConversation(chatStore.currentConversation.id, {
       kb_enabled: enabled
     })
     await chatStore.fetchConversations()
     const conv = chatStore.conversations.find(c => c.id === chatStore.currentConversation?.id)
     if (conv) chatStore.currentConversation = conv
-  } catch (e) {
-    message.error('更新知识库设置失败')
+  } catch (e: any) {
+    console.error('[ChatView] onKbEnabledChange error:', e?.response?.data || e?.message || e)
   }
 }
 

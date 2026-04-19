@@ -159,8 +159,6 @@ defineExpose({ refresh: fetchImages })
   overflow: hidden;
   text-overflow: ellipsis;
 }
-}
-
 .image-item__status {
   font-size: 0.625rem;
   padding: 1px 6px;

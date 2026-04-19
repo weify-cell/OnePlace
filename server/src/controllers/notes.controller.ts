@@ -3,7 +3,7 @@ import * as notesService from '../services/notes.service.js'
 import * as uploadService from '../services/upload.service.js'
 
 export function getNotes(req: Request, res: Response): void {
-  const { tag, search, is_archived, is_pinned, page, pageSize, folder_id } = req.query
+  const { tag, search, is_archived, is_pinned, page, pageSize, folder_id,is_knowledge_base } = req.query
 
   let parsedFolderId: number | 'none' | undefined
   if (folder_id === 'none') {
@@ -18,6 +18,7 @@ export function getNotes(req: Request, res: Response): void {
     folder_id: parsedFolderId,
     is_archived: is_archived === 'true',
     is_pinned: is_pinned !== undefined ? is_pinned === 'true' : undefined,
+    is_knowledge_base: is_knowledge_base === 'true',
     page: page ? Number(page) : 1,
     pageSize: pageSize ? Number(pageSize) : 20
   })
@@ -50,6 +51,13 @@ export function deleteNote(req: Request, res: Response): void {
 
 export function pinNote(req: Request, res: Response): void {
   const note = notesService.updateNote(Number(req.params.id), { is_pinned: req.body.is_pinned })
+  if (!note) { res.status(404).json({ error: 'NotFound' }); return }
+  res.json(note)
+}
+
+
+export function isKnowledgeBaseNote(req: Request, res: Response): void {
+  const note = notesService.updateNote(Number(req.params.id), { is_knowledge_base: req.body.is_knowledge_base })
   if (!note) { res.status(404).json({ error: 'NotFound' }); return }
   res.json(note)
 }

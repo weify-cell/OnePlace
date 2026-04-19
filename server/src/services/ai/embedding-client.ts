@@ -40,9 +40,12 @@ export async function embedText(text: string, provider: string, model: string): 
 export async function embedTexts(texts: string[], provider: string, model: string): Promise<number[][]> {
   if (texts.length === 0) return []
   const { client } = createEmbeddingClient(provider)
-  const response = await client.embeddings.create({
-    model,
-    input: texts
-  })
-  return response.data.map(d => d.embedding)
+  const batchSize = 10
+  const results: number[][] = []
+  for (let i = 0; i < texts.length; i += batchSize) {
+    const batch = texts.slice(i, i + batchSize)
+    const response = await client.embeddings.create({ model, input: batch })
+    results.push(...response.data.map(d => d.embedding))
+  }
+  return results
 }

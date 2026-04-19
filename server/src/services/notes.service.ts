@@ -12,6 +12,7 @@ export interface Note {
   is_pinned: boolean
   is_archived: boolean
   is_deleted: boolean
+  is_knowledge_base: boolean
   created_at: string
   updated_at: string
 }
@@ -27,6 +28,7 @@ interface NoteRow {
   is_pinned: number
   is_archived: number
   is_deleted: number
+  is_knowledge_base: number
   created_at: string
   updated_at: string
 }
@@ -39,7 +41,8 @@ function rowToNote(row: NoteRow): Note {
     folder_id: row.folder_id ?? null,
     is_pinned: row.is_pinned === 1,
     is_archived: row.is_archived === 1,
-    is_deleted: row.is_deleted === 1
+    is_deleted: row.is_deleted === 1,
+    is_knowledge_base: row.is_knowledge_base === 1
   }
 }
 
@@ -57,9 +60,9 @@ function extractText(content: string, contentFormat: 'tiptap' | 'markdown' = 'ti
       if (node.content) node.content.forEach(child => traverse(child as { text?: string; content?: unknown[] }))
     }
     traverse(doc)
-    return texts.join(' ').slice(0, 500)
+    return texts.join(' ')
   } catch {
-    return content.slice(0, 500)
+    return content
   }
 }
 
@@ -70,7 +73,6 @@ function extractTextFromMarkdown(markdown: string): string {
     .replace(/\[.*?\]\(.*?\)/g, '$1') // 去除链接，保留文本
     .replace(/[#*`_~[\]]/g, '')       // 去除标题/加粗/斜体等符号
     .replace(/\n+/g, ' ')             // 合并换行
-    .slice(0, 500)
 }
 
 export interface NoteQuery {
@@ -79,15 +81,16 @@ export interface NoteQuery {
   folder_id?: number | 'none'
   is_archived?: boolean
   is_pinned?: boolean
+  is_knowledge_base?: boolean
   page?: number
   pageSize?: number
 }
 
 export function getNotes(query: NoteQuery) {
   const db = connectDatabase()
-  const { tag, search, folder_id, is_archived = false, is_pinned, page = 1, pageSize = 20 } = query
+  const { tag, search, folder_id, is_archived = false, is_knowledge_base=false,is_pinned, page = 1, pageSize = 20 } = query
 
-  const conditions: string[] = ['is_deleted = 0', `is_archived = ${is_archived ? 1 : 0}`]
+  const conditions: string[] = ['is_deleted = 0', `is_archived = ${is_archived ? 1 : 0}`,`is_knowledge_base= ${is_knowledge_base ? 1 : 0}`]
   const params: (string | number)[] = []
 
   if (is_pinned !== undefined) { conditions.push(`is_pinned = ${is_pinned ? 1 : 0}`) }
@@ -143,6 +146,7 @@ export function updateNote(id: number, data: Partial<Note>): Note | null {
   if (data.tags !== undefined) { updates.push('tags = ?'); params.push(JSON.stringify(data.tags)) }
   if (data.is_pinned !== undefined) { updates.push('is_pinned = ?'); params.push(data.is_pinned ? 1 : 0) }
   if (data.is_archived !== undefined) { updates.push('is_archived = ?'); params.push(data.is_archived ? 1 : 0) }
+  if (data.is_knowledge_base !== undefined) { updates.push('is_knowledge_base = ?'); params.push(data.is_knowledge_base ? 1 : 0) }
   if ('folder_id' in data) { updates.push('folder_id = ?'); params.push(data.folder_id ?? null) }
   if (data.content_format !== undefined) { updates.push('content_format = ?'); params.push(data.content_format) }
 
@@ -154,8 +158,11 @@ export function updateNote(id: number, data: Partial<Note>): Note | null {
   db.prepare(`UPDATE notes SET ${updates.join(', ')} WHERE id = ?`).run(...params)
 
   // Trigger async embedding indexing
-  enqueueEmbeddingTask({ noteId: id, action: 'upsert', timestamp: Date.now() })
-
+  // 只有当前用户勾选了同步到知识库，才会触发这个任务
+  if (data.is_knowledge_base === true || (data.is_knowledge_base === undefined && existing.is_knowledge_base)) {
+    console.log('Enqueue embedding task for note', id)
+    enqueueEmbeddingTask({ noteId: id, action: 'upsert', timestamp: Date.now() })
+  }
   return getNoteById(id)
 }
 

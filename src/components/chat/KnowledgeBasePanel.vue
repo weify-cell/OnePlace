@@ -53,8 +53,8 @@ async function saveSettings() {
   try {
     await knowledgeBaseApi.updateSettings({ ...settings.value, kb_top_k: topK.value })
     message.success('知识库设置已保存')
-  } catch (e) {
-    message.error('保存失败')
+  } catch (e: any) {
+    console.error('[KnowledgeBasePanel] saveSettings error:', e?.response?.data || e?.message || e)
   } finally {
     saving.value = false
   }
@@ -65,8 +65,8 @@ async function rebuildIndex() {
   try {
     await knowledgeBaseApi.rebuild()
     message.success('索引重建已启动')
-  } catch (e) {
-    message.error('重建失败')
+  } catch (e: any) {
+    console.error('[KnowledgeBasePanel] rebuildIndex error:', e?.response?.data || e?.message || e)
   } finally {
     rebuilding.value = false
   }
@@ -110,7 +110,7 @@ defineExpose({ toggle })
         />
       </div>
 
-      <!-- 重建索引按钮 -->
+      <!-- 重建索引按钮 
       <div class="kb-panel__actions">
         <n-button size="small" :loading="statsLoading" @click="loadStats">
           刷新统计
@@ -122,11 +122,13 @@ defineExpose({ toggle })
           保存
         </n-button>
       </div>
+      -->
 
-      <!-- 统计信息 -->
+      <!-- 统计信息 
       <div class="kb-panel__stats">
         已索引：{{ stats.points_count }} 个段落
       </div>
+      -->
     </div>
   </div>
 </template>

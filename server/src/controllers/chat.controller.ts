@@ -17,9 +17,14 @@ export function getConversation(req: Request, res: Response): void {
 }
 
 export function updateConversation(req: Request, res: Response): void {
-  const conv = chatService.updateConversation(Number(req.params.id), req.body)
-  if (!conv) { res.status(404).json({ error: 'NotFound' }); return }
-  res.json(conv)
+  try {
+    const conv = chatService.updateConversation(Number(req.params.id), req.body)
+    if (!conv) { res.status(404).json({ error: 'NotFound', message: '对话不存在' }); return }
+    res.json(conv)
+  } catch (err: any) {
+    console.error('[Chat] updateConversation error:', err)
+    res.status(500).json({ error: 'UpdateFailed', message: err.message || '更新对话失败' })
+  }
 }
 
 export function deleteConversation(req: Request, res: Response): void {
