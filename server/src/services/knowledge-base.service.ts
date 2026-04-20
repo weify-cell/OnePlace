@@ -42,18 +42,15 @@ export async function buildKnowledgeBaseContext(
       return { systemPrompt: '', references: [] }
     }
 
-    // Deduplicate by note_id, keep highest score chunk per note
-    const noteMap = new Map<number, MessageReference>()
+    const noteMap = new Map<string, MessageReference>()
     for (const chunk of chunks) {
-      const existing = noteMap.get(chunk.note_id)
-      if (!existing || chunk.score > existing.score) {
-        noteMap.set(chunk.note_id, {
+      const mapKey = chunk.note_id+'_'+chunk.chunk_id
+      noteMap.set(mapKey, {
           note_id: chunk.note_id,
           title: chunk.title,
           content: chunk.content,
           score: chunk.score,
         })
-      }
     }
     const references = Array.from(noteMap.values())
 

@@ -90,7 +90,7 @@ export function getNotes(query: NoteQuery) {
   const db = connectDatabase()
   const { tag, search, folder_id, is_archived = false, is_knowledge_base=false,is_pinned, page = 1, pageSize = 20 } = query
 
-  const conditions: string[] = ['is_deleted = 0', `is_archived = ${is_archived ? 1 : 0}`,`is_knowledge_base= ${is_knowledge_base ? 1 : 0}`]
+  const conditions: string[] = ['is_deleted = 0', `is_archived = ${is_archived ? 1 : 0}`]
   const params: (string | number)[] = []
 
   if (is_pinned !== undefined) { conditions.push(`is_pinned = ${is_pinned ? 1 : 0}`) }
