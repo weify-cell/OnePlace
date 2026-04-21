@@ -40,7 +40,7 @@ async function qdrantRequest(path: string, method = 'GET', body?: unknown) {
   return res.json()
 }
 
-export async function upsertChunks(chunks: { id: string; vector: number[]; payload: ChunkPayload }[]): Promise<void> {
+export async function upsertChunks(chunks: { id: number | string; vector: number[]; payload: ChunkPayload }[]): Promise<void> {
   if (chunks.length === 0) return
   const { collection } = getQdrantConfig()
   // 每10个一组提交
@@ -59,9 +59,11 @@ export async function upsertChunks(chunks: { id: string; vector: number[]; paylo
 
 export async function searchChunks(queryVector: number[], topK: number): Promise<SearchResult[]> {
   const { collection } = getQdrantConfig()
+  const threshold = getSettingValue<number>('kb_score_threshold', 0.5)
   const result = await qdrantRequest(`/collections/${collection}/points/search`, 'POST', {
     vector: queryVector,
     limit: topK,
+    score_threshold: threshold,
     with_payload: true,
   })
   return (result.result || []).map((r: any) => ({
