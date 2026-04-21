@@ -22,6 +22,8 @@ const kbSettings = ref({
   qdrant_collection: 'notes_knowledge_base',
   kb_chunk_size: 500,
   kb_chunk_overlap: 50,
+  kb_top_k: 5,
+  kb_score_threshold: 0.5,
   kb_default_enabled: false,
 })
 
@@ -293,6 +295,34 @@ async function saveKbSettings() {
                     style="width: 120px"
                   />
                   <span class="settings-field__hint">字</span>
+                </div>
+              </div>
+
+              <div class="settings-row">
+                <div class="settings-field">
+                  <label class="settings-field__label">返回数量 (top_k)</label>
+                  <n-input-number
+                    v-model:value="kbSettings.kb_top_k"
+                    :min="1"
+                    :max="50"
+                    style="width: 120px"
+                  />
+                  <span class="settings-field__hint">条</span>
+                </div>
+              </div>
+
+              <div class="settings-row">
+                <div class="settings-field">
+                  <label class="settings-field__label">相似度阈值</label>
+                  <n-input-number
+                    v-model:value="kbSettings.kb_score_threshold"
+                    :min="0"
+                    :max="1"
+                    :step="0.05"
+                    :precision="2"
+                    style="width: 120px"
+                  />
+                  <span class="settings-field__hint">低于此分数的块将被过滤（默认 0.5）</span>
                 </div>
               </div>
 
