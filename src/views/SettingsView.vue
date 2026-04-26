@@ -25,12 +25,22 @@ const kbSettings = ref({
   kb_top_k: 5,
   kb_score_threshold: 0.5,
   kb_default_enabled: false,
+  kb_rerank_enabled: true,
+  kb_rerank_provider: 'qwen',
+  kb_rerank_model: 'gte-rerank-v2',
+  kb_rerank_recall_size: 20,
+  kb_rerank_score_threshold: 0.0,
 })
 
 const embeddingProviderOptions = [
   { label: '通义千问', value: 'qwen' },
   { label: 'DeepSeek', value: 'deepseek' },
   { label: 'OpenAI', value: 'openai' },
+]
+
+const rerankProviderOptions = [
+  { label: '通义千问 (DashScope)', value: 'qwen' },
+  { label: 'Cohere', value: 'cohere' },
 ]
 
 const savingKb = ref(false)
@@ -86,14 +96,14 @@ async function saveAll() {
 
 async function loadKbSettings() {
   const res = await knowledgeBaseApi.getSettings()
-  Object.assign(kbSettings.value, res.data.data)
+  Object.assign(kbSettings.value, res.data)
 }
 
 async function saveKbSettings() {
   savingKb.value = true
   try {
     await knowledgeBaseApi.updateSettings(kbSettings.value)
-    window.$message.success('知识库配置已保存')
+    message.success('知识库配置已保存')
   } finally {
     savingKb.value = false
   }
@@ -323,6 +333,62 @@ async function saveKbSettings() {
                     style="width: 120px"
                   />
                   <span class="settings-field__hint">低于此分数的块将被过滤（默认 0.5）</span>
+                </div>
+              </div>
+
+              <n-divider style="margin: 4px 0;">Rerank 精排</n-divider>
+
+              <div class="settings-row">
+                <div class="settings-field">
+                  <label class="settings-field__label">启用 Rerank 精排</label>
+                  <n-switch v-model:value="kbSettings.kb_rerank_enabled" />
+                </div>
+                <div class="settings-field">
+                  <label class="settings-field__label">Rerank 服务商</label>
+                  <n-select
+                    v-model:value="kbSettings.kb_rerank_provider"
+                    :options="rerankProviderOptions"
+                    :disabled="!kbSettings.kb_rerank_enabled"
+                  />
+                </div>
+              </div>
+
+              <div class="settings-row">
+                <div class="settings-field">
+                  <label class="settings-field__label">Rerank 模型</label>
+                  <n-input
+                    v-model:value="kbSettings.kb_rerank_model"
+                    placeholder="如 gte-rerank-v2"
+                    :disabled="!kbSettings.kb_rerank_enabled"
+                  />
+                </div>
+                <div class="settings-field">
+                  <label class="settings-field__label">召回数量</label>
+                  <n-input-number
+                    v-model:value="kbSettings.kb_rerank_recall_size"
+                    :min="kbSettings.kb_top_k"
+                    :max="100"
+                    :step="5"
+                    :disabled="!kbSettings.kb_rerank_enabled"
+                    style="width: 120px"
+                  />
+                  <span class="settings-field__hint">召回后再精排，超过 100 自动截断</span>
+                </div>
+              </div>
+
+              <div class="settings-row">
+                <div class="settings-field">
+                  <label class="settings-field__label">Rerank 阈值</label>
+                  <n-input-number
+                    v-model:value="kbSettings.kb_rerank_score_threshold"
+                    :min="0"
+                    :max="1"
+                    :step="0.05"
+                    :precision="2"
+                    :disabled="!kbSettings.kb_rerank_enabled"
+                    style="width: 120px"
+                  />
+                  <span class="settings-field__hint">精排分数低于此值的块将被过滤（默认 0.0）</span>
                 </div>
               </div>
 
