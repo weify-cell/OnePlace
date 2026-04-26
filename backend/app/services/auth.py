@@ -2,6 +2,7 @@
 import bcrypt
 import json
 from app.database.connection import get_db
+from app.middleware.auth import create_token
 
 def get_password_hash() -> str:
     db = get_db()

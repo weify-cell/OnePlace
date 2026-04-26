@@ -7,7 +7,7 @@ from app.models.auth import LoginRequest, SetupRequest, TokenResponse
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 @router.post("/setup", response_model=TokenResponse)
-async def api_setup(req: SetupRequest, user: dict = Depends(auth_dependency)):
+async def api_setup(req: SetupRequest):
     try:
         token = await setup_password(req.password)
         return TokenResponse(token=token)
@@ -22,6 +22,6 @@ async def api_login(req: LoginRequest):
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
 
-@router.get("/check")
+@router.post("/check")
 async def api_check(user: dict = Depends(auth_dependency)):
     return {"ok": True}
