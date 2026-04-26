@@ -4,7 +4,13 @@ test.describe('Knowledge Base E2E Tests', () => {
   test.beforeEach(async ({ page }) => {
     // Login first
     await page.goto('http://localhost:5173/login')
-    await page.waitForTimeout(1000)
+    await page.waitForTimeout(500)
+    const passwordInput = page.getByRole('textbox', { name: '请输入密码' })
+    if (await passwordInput.isVisible()) {
+      await passwordInput.fill('test123')
+      await page.locator('button:has-text("登录")').click()
+      await page.waitForURL('**/todos', { timeout: 10000 })
+    }
   })
 
   test('KB-01: Knowledge base config section in Settings', async ({ page }) => {
