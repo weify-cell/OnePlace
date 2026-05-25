@@ -68,5 +68,6 @@ declare module 'vue' {
     ToolCard: typeof import('./components/toolbox/ToolCard.vue')['default']
     ToolLayout: typeof import('./components/toolbox/ToolLayout.vue')['default']
     ToolSearchDialog: typeof import('./components/toolbox/ToolSearchDialog.vue')['default']
+    UploadNoteModal: typeof import('./components/notes/UploadNoteModal.vue')['default']
   }
 }
