@@ -9,7 +9,7 @@ global.fetch = mockFetch
 vi.mock('../services/settings.service.js', () => ({
   getSettingValue: vi.fn((key: string, defaultValue: string) => {
     if (key === 'qdrant_url') return 'http://localhost:6333'
-    if (key === 'qdrant_collection') return 'oneplace'
+    if (key === 'qdrant_collection') return 'notes_knowledge_base'
     return defaultValue
   }),
 }))
@@ -23,7 +23,7 @@ describe('vector.service', () => {
     it('should not create collection if it already exists', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: () => Promise.resolve({ collections: [{ name: 'oneplace' }] }),
+        json: () => Promise.resolve({ collections: [{ name: 'notes_knowledge_base' }] }),
       })
 
       await ensureCollection()
@@ -46,7 +46,7 @@ describe('vector.service', () => {
 
       expect(mockFetch).toHaveBeenCalledTimes(2)
       const createCall = mockFetch.mock.calls[1]
-      expect(createCall[0]).toBe('http://localhost:6333/collections/oneplace')
+      expect(createCall[0]).toBe('http://localhost:6333/collections/notes_knowledge_base')
       expect(createCall[1].body).toContain('"vectors"')
     })
   })
@@ -74,7 +74,7 @@ describe('vector.service', () => {
       expect(result).toEqual({ success: true, count: 2 })
       expect(mockFetch).toHaveBeenCalledTimes(1)
       const call = mockFetch.mock.calls[0]
-      expect(call[0]).toBe('http://localhost:6333/collections/oneplace/points')
+      expect(call[0]).toBe('http://localhost:6333/collections/notes_knowledge_base/points')
       const body = JSON.parse(call[1].body as string)
       expect(body.points).toHaveLength(2)
       expect(body.points[0].id).toBe('chunk-1')
@@ -119,7 +119,7 @@ describe('vector.service', () => {
 
       expect(mockFetch).toHaveBeenCalledTimes(1)
       const call = mockFetch.mock.calls[0]
-      expect(call[0]).toBe('http://localhost:6333/collections/oneplace/points/delete')
+      expect(call[0]).toBe('http://localhost:6333/collections/notes_knowledge_base/points/delete')
       const body = JSON.parse(call[1].body as string)
       expect(body.points).toEqual(['chunk-1', 'chunk-2'])
     })
