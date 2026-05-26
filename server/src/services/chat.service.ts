@@ -2,9 +2,10 @@ import { Response } from 'express'
 import { connectDatabase } from '../database/index.js'
 import { createAIClient } from './ai/openai-client.js'
 import { getSettingValue } from './settings.service.js'
+import { searchKnowledgeBase } from './knowledge-base.service.js'
 
 interface ConversationRow {
-  id: number; title: string; model: string; provider: string; is_deleted: number; created_at: string; updated_at: string
+  id: number; title: string; model: string; provider: string; is_deleted: number; kb_enabled: number; created_at: string; updated_at: string
 }
 interface MessageRow {
   id: number; conversation_id: number; role: string; content: string; tokens_used: number | null; is_error: number; created_at: string
@@ -39,13 +40,14 @@ export function getConversationById(id: number) {
   return row ? rowToConversation(row) : null
 }
 
-export function updateConversation(id: number, data: { title?: string; model?: string; provider?: string }) {
+export function updateConversation(id: number, data: { title?: string; model?: string; provider?: string; kb_enabled?: boolean }) {
   const db = connectDatabase()
   const updates: string[] = []
   const params: (string | number)[] = []
   if (data.title !== undefined) { updates.push('title = ?'); params.push(data.title) }
   if (data.model !== undefined) { updates.push('model = ?'); params.push(data.model) }
   if (data.provider !== undefined) { updates.push('provider = ?'); params.push(data.provider) }
+  if (data.kb_enabled !== undefined) { updates.push('kb_enabled = ?'); params.push(data.kb_enabled ? 1 : 0) }
   if (updates.length === 0) return getConversationById(id)
   updates.push("updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')")
   params.push(id)
@@ -104,6 +106,23 @@ export async function streamChat(
     // Get conversation history
     const messages = (db.prepare('SELECT role, content FROM messages WHERE conversation_id = ? AND is_error = 0 ORDER BY created_at ASC').all(conversationId) as { role: string; content: string }[])
       .filter(m => m.content.trim().length > 0) // exclude the empty assistant placeholder we just inserted
+
+    // Inject KB context if enabled
+    if (conversation.kb_enabled) {
+      const kbResults = await searchKnowledgeBase(userContent, 5)
+      if (kbResults.length > 0) {
+        const kbContext = kbResults.map((r, i) => `[${i + 1}] ${r.title}: ${r.content}`).join('\n')
+        const systemPrompt: { role: 'system'; content: string } = {
+          role: 'system',
+          content: `You are an assistant. When the user asks a question, please answer based on the provided reference notes.
+If the reference content does not contain relevant information, please say so honestly.
+
+## References
+${kbContext}`
+        }
+        messages.unshift(systemPrompt)
+      }
+    }
 
     const stream = await client.chat.completions.create({
       model: conversation.model,
