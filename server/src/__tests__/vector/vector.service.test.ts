@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { ensureCollection, upsertChunks, searchChunks, deleteChunks } from '../services/vec/vector.service.js'
+import { ensureCollection, upsertChunks, searchChunks, deleteChunks } from '../../services/vector/vector.service.js'
 
 // Mock fetch
 const mockFetch = vi.fn()
