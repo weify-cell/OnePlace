@@ -14,6 +14,7 @@ chatRouter.post('/:id/chat', chatController.streamChat)
 chatRouter.patch('/:id/kb', (req, res) => {
   const { id } = req.params
   const { kb_enabled } = req.body
-  chatController.updateConversation(Number(id), { kb_enabled })
+  const conv = chatController.updateConversation(Number(id), { kb_enabled })
+  if (!conv) { res.status(404).json({ error: 'NotFound' }); return }
   res.json({ success: true })
 })
