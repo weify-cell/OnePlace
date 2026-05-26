@@ -142,5 +142,17 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  return { conversations, currentConversation, messages, streamingMessage, isStreaming, fetchConversations, createConversation, selectConversation, sendMessage, cancelStream, deleteConversation, clearMessages }
+  async function toggleConversationKbEnabled(convId: number, enabled: boolean) {
+    const res = await chatApi.updateConversation(convId, { kb_enabled: enabled })
+    const updated = res.data
+    const idx = conversations.value.findIndex(c => c.id === convId)
+    if (idx !== -1) {
+      conversations.value[idx] = { ...conversations.value[idx], ...updated }
+    }
+    if (currentConversation.value?.id === convId) {
+      currentConversation.value = { ...currentConversation.value, ...updated }
+    }
+  }
+
+  return { conversations, currentConversation, messages, streamingMessage, isStreaming, fetchConversations, createConversation, selectConversation, sendMessage, cancelStream, deleteConversation, clearMessages, toggleConversationKbEnabled }
 })

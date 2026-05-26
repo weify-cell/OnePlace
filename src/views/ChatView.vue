@@ -77,10 +77,21 @@ watch(() => route.params.id, async (id) => {
                 </span>
               </div>
 
-              <!-- Title -->
-              <h2 class="chat-header__title">
-                {{ chatStore.currentConversation.title }}
-              </h2>
+              <div class="chat-header__right">
+                <!-- Title -->
+                <h2 class="chat-header__title">
+                  {{ chatStore.currentConversation.title }}
+                </h2>
+                <!-- KB toggle -->
+                <div class="chat-header__kb-toggle">
+                  <span class="chat-header__kb-label">知识库</span>
+                  <n-switch
+                    size="small"
+                    :value="chatStore.currentConversation.kb_enabled"
+                    @update:value="(val: boolean) => chatStore.toggleConversationKbEnabled(chatStore.currentConversation!.id, val)"
+                  />
+                </div>
+              </div>
             </div>
           </div>
 
@@ -217,6 +228,23 @@ watch(() => route.params.id, async (id) => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.chat-header__right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.chat-header__kb-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chat-header__kb-label {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
 }
 
 /* Empty state */

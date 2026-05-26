@@ -79,6 +79,7 @@ export interface Conversation {
   title: string
   model: string
   provider: string
+  kb_enabled?: boolean
   is_deleted: boolean
   created_at: string
   updated_at: string
