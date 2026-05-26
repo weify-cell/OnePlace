@@ -11,6 +11,7 @@ export interface Note {
   is_pinned: boolean
   is_archived: boolean
   is_deleted: boolean
+  is_knowledge_base: boolean
   created_at: string
   updated_at: string
 }
@@ -26,6 +27,7 @@ interface NoteRow {
   is_pinned: number
   is_archived: number
   is_deleted: number
+  is_knowledge_base: number
   created_at: string
   updated_at: string
 }
@@ -38,7 +40,8 @@ function rowToNote(row: NoteRow): Note {
     folder_id: row.folder_id ?? null,
     is_pinned: row.is_pinned === 1,
     is_archived: row.is_archived === 1,
-    is_deleted: row.is_deleted === 1
+    is_deleted: row.is_deleted === 1,
+    is_knowledge_base: row.is_knowledge_base === 1
   }
 }
 
@@ -144,6 +147,7 @@ export function updateNote(id: number, data: Partial<Note>): Note | null {
   if (data.is_archived !== undefined) { updates.push('is_archived = ?'); params.push(data.is_archived ? 1 : 0) }
   if ('folder_id' in data) { updates.push('folder_id = ?'); params.push(data.folder_id ?? null) }
   if (data.content_format !== undefined) { updates.push('content_format = ?'); params.push(data.content_format) }
+  if (data.is_knowledge_base !== undefined) { updates.push('is_knowledge_base = ?'); params.push(data.is_knowledge_base ? 1 : 0) }
 
   if (updates.length === 0) return existing
 
@@ -151,6 +155,14 @@ export function updateNote(id: number, data: Partial<Note>): Note | null {
   params.push(id)
 
   db.prepare(`UPDATE notes SET ${updates.join(', ')} WHERE id = ?`).run(...params)
+
+  // Trigger knowledge base embedding if is_knowledge_base changed
+  if (data.is_knowledge_base !== undefined && data.is_knowledge_base !== existing.is_knowledge_base) {
+    import('./knowledge-base.service.js').then(({ triggerEmbedding }) => {
+      triggerEmbedding(id).catch(console.error)
+    })
+  }
+
   return getNoteById(id)
 }
 
