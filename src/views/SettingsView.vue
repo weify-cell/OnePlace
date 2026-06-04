@@ -1,13 +1,29 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useSettingsStore } from '@/stores/settings.store'
 import { useKnowledgeBaseStore } from '@/stores/knowledge_base.store'
+import { useILinkStore } from '@/stores/ilink.store'
 import AppLayout from '@/components/common/AppLayout.vue'
 
 const settingsStore = useSettingsStore()
+const ilinkStore = useILinkStore()
 const message = useMessage()
 const saving = ref(false)
 const rebuilding = ref(false)
+
+// iLink config
+const ilinkConfig = ref({
+  bot_token: '',
+  provider: 'qwen',
+  model: 'qwen-turbo',
+  system_prompt: '你是一个智能助手，可以通过微信为用户提供服务。请用中文回复。',
+  max_tool_rounds: 5
+})
+
+const ilinkProviderModels = computed(() => {
+  const p = settingsStore.availableProviders.find(p => p.name === ilinkConfig.value.provider)
+  return p?.models.map(m => ({ label: m.name, value: m.id })) || []
+})
 
 // Knowledge base config
 const kbConfig = ref({
@@ -68,6 +84,18 @@ onMounted(async () => {
     kb_top_k: kbStore.config.kb_top_k || 20,
     kb_rerank_recall_size: kbStore.config.kb_rerank_recall_size || 5,
     kb_score_threshold: kbStore.config.kb_score_threshold ?? 0
+  }
+  // Load iLink config
+  await ilinkStore.fetchConfig()
+  await ilinkStore.fetchStatus()
+  if (ilinkStore.config) {
+    ilinkConfig.value = {
+      bot_token: ilinkStore.config.bot_token || '',
+      provider: ilinkStore.config.provider || 'qwen',
+      model: ilinkStore.config.model || 'qwen-turbo',
+      system_prompt: ilinkStore.config.system_prompt || '你是一个智能助手，可以通过微信为用户提供服务。请用中文回复。',
+      max_tool_rounds: ilinkStore.config.max_tool_rounds || 5
+    }
   }
 })
 
@@ -195,6 +223,56 @@ async function rebuildIndex() {
     message.success('索引重建已启动')
   } finally {
     rebuilding.value = false
+  }
+}
+
+// iLink Bot functions
+async function saveILinkConfig() {
+  try {
+    await ilinkStore.updateConfig(ilinkConfig.value)
+    message.success('Bot 配置已保存')
+  } catch (err: any) {
+    message.error('保存失败: ' + (err.message || '未知错误'))
+  }
+}
+
+async function handleStartBot() {
+  try {
+    const result = await ilinkStore.startBot()
+    if (result.success) {
+      message.success('Bot 已启动')
+    } else {
+      message.error('启动失败: ' + result.error)
+    }
+  } catch (err: any) {
+    message.error('启动失败: ' + (err.message || '未知错误'))
+  }
+}
+
+async function handleStopBot() {
+  try {
+    const result = await ilinkStore.stopBot()
+    if (result.success) {
+      message.success('Bot 已停止')
+    } else {
+      message.error('停止失败: ' + result.error)
+    }
+  } catch (err: any) {
+    message.error('停止失败: ' + (err.message || '未知错误'))
+  }
+}
+
+function formatUptime(ms: number): string {
+  const seconds = Math.floor(ms / 1000)
+  const minutes = Math.floor(seconds / 60)
+  const hours = Math.floor(minutes / 60)
+
+  if (hours > 0) {
+    return `${hours}小时${minutes % 60}分钟`
+  } else if (minutes > 0) {
+    return `${minutes}分钟`
+  } else {
+    return `${seconds}秒`
   }
 }
 </script>
@@ -413,6 +491,118 @@ async function rebuildIndex() {
             </div>
           </div>
         </div>
+
+        <!-- WeChat iLink Bot section -->
+        <div class="settings-section animate-slideIn" style="animation-delay: 200ms">
+          <div class="settings-card">
+            <div class="settings-card__header">
+              <div class="settings-card__icon">💬</div>
+              <div>
+                <h2 class="settings-card__title">微信 Bot</h2>
+                <p class="settings-card__desc">通过微信 iLink 协议提供 AI 对话服务</p>
+              </div>
+            </div>
+            <div class="settings-card__body">
+              <!-- Bot 状态 -->
+              <div class="settings-field">
+                <label class="settings-field__label">Bot 状态</label>
+                <div class="ilink-status">
+                  <div :class="['status-dot', ilinkStore.status?.running ? 'status-dot--running' : 'status-dot--stopped']" />
+                  <span>{{ ilinkStore.status?.running ? '运行中' : '已停止' }}</span>
+                  <span v-if="ilinkStore.status?.running && ilinkStore.status?.uptime" class="status-uptime">
+                    (已运行 {{ formatUptime(ilinkStore.status.uptime) }})
+                  </span>
+                  <span v-if="ilinkStore.status?.messages_processed" class="status-messages">
+                    · 处理 {{ ilinkStore.status.messages_processed }} 条消息
+                  </span>
+                </div>
+                <div v-if="ilinkStore.status?.error" class="status-error">
+                  {{ ilinkStore.status.error }}
+                </div>
+              </div>
+
+              <!-- Bot 控制按钮 -->
+              <div class="settings-field">
+                <div class="ilink-actions">
+                  <n-button
+                    v-if="!ilinkStore.status?.running"
+                    type="primary"
+                    :loading="ilinkStore.isLoading"
+                    @click="handleStartBot"
+                  >
+                    启动 Bot
+                  </n-button>
+                  <n-button
+                    v-else
+                    type="error"
+                    :loading="ilinkStore.isLoading"
+                    @click="handleStopBot"
+                  >
+                    停止 Bot
+                  </n-button>
+                </div>
+              </div>
+
+              <!-- Bot Token -->
+              <div class="settings-field">
+                <label class="settings-field__label">Bot Token</label>
+                <n-input
+                  v-model:value="ilinkConfig.bot_token"
+                  type="password"
+                  show-password-on="click"
+                  placeholder="从 iLink 平台获取的 Bot Token"
+                />
+                <div class="settings-field__hint">登录后自动获取，或从 iLink 平台手动复制</div>
+              </div>
+
+              <!-- AI 配置 -->
+              <div class="settings-row">
+                <div class="settings-field">
+                  <label class="settings-field__label">AI 提供商</label>
+                  <n-select
+                    v-model:value="ilinkConfig.provider"
+                    :options="settingsStore.availableProviders.map(p => ({ label: p.displayName, value: p.name }))"
+                    placeholder="选择提供商"
+                  />
+                </div>
+                <div class="settings-field">
+                  <label class="settings-field__label">AI 模型</label>
+                  <n-select
+                    v-model:value="ilinkConfig.model"
+                    :options="ilinkProviderModels"
+                    :disabled="!ilinkConfig.provider"
+                    placeholder="选择模型"
+                  />
+                </div>
+              </div>
+
+              <!-- System Prompt -->
+              <div class="settings-field">
+                <label class="settings-field__label">系统提示词</label>
+                <n-input
+                  v-model:value="ilinkConfig.system_prompt"
+                  type="textarea"
+                  :rows="3"
+                  placeholder="定义 Bot 的角色和行为"
+                />
+              </div>
+
+              <!-- Max Tool Rounds -->
+              <div class="settings-field">
+                <label class="settings-field__label">最大工具调用轮数</label>
+                <n-input-number v-model:value="ilinkConfig.max_tool_rounds" :min="1" :max="10" />
+                <div class="settings-field__hint">控制 Bot 在一次对话中最多调用工具的次数</div>
+              </div>
+
+              <!-- Save button -->
+              <div class="settings-field">
+                <n-button type="primary" :loading="ilinkStore.isLoading" @click="saveILinkConfig">
+                  保存 Bot 配置
+                </n-button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </AppLayout>
@@ -608,6 +798,56 @@ async function rebuildIndex() {
   padding: 8px 0 4px;
   border-top: 1px dashed var(--border-subtle);
   margin-top: 4px;
+}
+
+/* iLink Bot styles */
+.ilink-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.status-dot--running {
+  background: #22c55e;
+  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.3);
+  animation: pulse 2s infinite;
+}
+
+.status-dot--stopped {
+  background: #94a3b8;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.status-uptime, .status-messages {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.status-error {
+  margin-top: 4px;
+  padding: 6px 10px;
+  background: rgba(220, 38, 38, 0.06);
+  border: 1px solid rgba(220, 38, 38, 0.2);
+  border-radius: 6px;
+  font-size: 0.75rem;
+  color: #dc2626;
+}
+
+.ilink-actions {
+  display: flex;
+  gap: 8px;
 }
 
 /* Animations */

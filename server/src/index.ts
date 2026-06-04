@@ -20,6 +20,7 @@ import { settingsRouter } from './routes/settings.routes.js'
 import { foldersRouter } from './routes/folders.routes.js'
 import { uploadRouter } from './routes/upload.routes.js'
 import { kbRouter } from './routes/knowledge-base.routes.js'
+import { ilinkRouter } from './routes/ilink.routes.js'
 
 const app = express()
 const PORT = process.env.PORT || 3000
@@ -52,6 +53,7 @@ app.use('/api/settings', settingsRouter)
 app.use('/api/folders', foldersRouter)
 app.use('/api/upload', uploadRouter)
 app.use('/api/knowledge-base', kbRouter)
+app.use('/api/ilink', ilinkRouter)
 
 // Static file serving for uploads
 const uploadsPath = resolve(__dirname, '../../uploads')
