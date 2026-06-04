@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import type { Message } from '@/types'
+import { computed, ref } from 'vue'
+import type { Message, ToolCallRecord } from '@/types'
 import MarkdownIt from 'markdown-it'
 
-const props = defineProps<{ message: Message }>()
+const props = defineProps<{ message: Message; liveThinking?: string; liveToolCalls?: Array<{ id: string; name: string; arguments: Record<string, any>; status: string; result?: string }> }>()
 
 const md = new MarkdownIt({ html: false, linkify: true, typographer: true })
 
@@ -15,6 +15,46 @@ const renderedContent = computed(() => {
 })
 
 const isUser = computed(() => props.message.role === 'user')
+
+const citationsExpanded = ref(false)
+const toolCallsExpanded = ref(false)
+
+const citations = computed(() => {
+  if (!props.message.kb_citations) return []
+  if (Array.isArray(props.message.kb_citations)) return props.message.kb_citations
+  try {
+    return JSON.parse(props.message.kb_citations as unknown as string)
+  } catch {
+    return []
+  }
+})
+
+const toolCalls = computed<ToolCallRecord[]>(() => {
+  if (!props.message.tool_calls) return []
+  if (Array.isArray(props.message.tool_calls)) return props.message.tool_calls
+  try {
+    return JSON.parse(props.message.tool_calls as unknown as string)
+  } catch {
+    return []
+  }
+})
+
+const hasLiveActivity = computed(() => {
+  return (props.liveThinking && props.liveThinking.length > 0) || (props.liveToolCalls && props.liveToolCalls.length > 0)
+})
+
+function truncate(text: string, maxLen = 120) {
+  if (text.length <= maxLen) return text
+  return text.slice(0, maxLen) + '...'
+}
+
+function formatArgs(args: Record<string, any>): string {
+  try {
+    return JSON.stringify(args)
+  } catch {
+    return String(args)
+  }
+}
 </script>
 
 <template>
@@ -38,6 +78,64 @@ const isUser = computed(() => props.message.role === 'user')
         />
         <div v-if="message.tokens_used" class="message-bubble__tokens">
           {{ message.tokens_used }} tokens
+        </div>
+
+        <!-- KB Citations collapsible -->
+        <div v-if="citations.length > 0" class="message-bubble__citations">
+          <button class="citations-toggle" @click="citationsExpanded = !citationsExpanded">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="citations-toggle__icon" :class="citationsExpanded && 'citations-toggle__icon--open'">
+              <polyline points="9 18 15 12 9 6"/>
+            </svg>
+            引用文档 ({{ citations.length }})
+          </button>
+          <div v-if="citationsExpanded" class="citations-list">
+            <div v-for="(cite, i) in citations" :key="cite.note_id" class="citation-item">
+              <div class="citation-item__header">
+                <span class="citation-item__index">[{{ i + 1 }}]</span>
+                <span class="citation-item__title">{{ cite.title }}</span>
+                <span class="citation-item__score">{{ (cite.score * 100).toFixed(0) }}分</span>
+              </div>
+              <p class="citation-item__content">{{ truncate(cite.content) }}</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tool Calls collapsible (persisted) -->
+        <div v-if="toolCalls.length > 0" class="message-bubble__tools">
+          <button class="citations-toggle" @click="toolCallsExpanded = !toolCallsExpanded">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="citations-toggle__icon" :class="toolCallsExpanded && 'citations-toggle__icon--open'">
+              <polyline points="9 18 15 12 9 6"/>
+            </svg>
+            工具调用 ({{ toolCalls.length }})
+          </button>
+          <div v-if="toolCallsExpanded" class="citations-list">
+            <div v-for="tc in toolCalls" :key="tc.id" class="tool-item">
+              <div class="tool-item__header">
+                <span class="tool-item__icon">🔧</span>
+                <span class="tool-item__name">{{ tc.name }}</span>
+                <span v-if="tc.isError" class="tool-item__error">失败</span>
+                <span v-else class="tool-item__success">✓</span>
+              </div>
+              <p class="tool-item__args">{{ formatArgs(tc.arguments) }}</p>
+              <p v-if="tc.result" class="tool-item__result">{{ truncate(tc.result) }}</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Live activity (streaming) -->
+        <div v-if="hasLiveActivity" class="message-bubble__live">
+          <div v-if="liveThinking" class="live-thinking">
+            <span class="live-label">💭 思考中...</span>
+            <p class="live-thinking__text">{{ liveThinking }}</p>
+          </div>
+          <div v-if="liveToolCalls && liveToolCalls.length > 0" class="live-tools">
+            <div v-for="tc in liveToolCalls" :key="tc.id" class="live-tool">
+              <span class="live-label">
+                {{ tc.status === 'running' ? '⏳' : '✓' }} {{ tc.name }}
+              </span>
+              <span v-if="tc.status === 'running'" class="live-tool__running">执行中...</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -132,6 +230,196 @@ const isUser = computed(() => props.message.role === 'user')
   margin-top: 8px;
   font-size: 0.6875rem;
   color: var(--text-muted);
+}
+
+/* KB Citations */
+.message-bubble__citations {
+  margin-top: 10px;
+  border-top: 1px dashed var(--border-subtle);
+  padding-top: 8px;
+}
+
+.citations-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  padding: 2px 0;
+  font-weight: 600;
+}
+
+.citations-toggle:hover {
+  color: var(--accent-primary);
+}
+
+.citations-toggle__icon {
+  width: 14px;
+  height: 14px;
+  transition: transform 0.2s;
+}
+
+.citations-toggle__icon--open {
+  transform: rotate(90deg);
+}
+
+.citations-list {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.citation-item {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.citation-item__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.citation-item__index {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: var(--accent-primary);
+}
+
+.citation-item__title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  flex: 1;
+}
+
+.citation-item__score {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  background: var(--bg-primary);
+  padding: 1px 6px;
+  border-radius: 10px;
+  border: 1px solid var(--border-subtle);
+}
+
+.citation-item__content {
+  font-size: 0.6875rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Tool Calls */
+.message-bubble__tools {
+  margin-top: 10px;
+  border-top: 1px dashed var(--border-subtle);
+  padding-top: 8px;
+}
+
+.tool-item {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.tool-item__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.tool-item__icon {
+  font-size: 0.75rem;
+}
+
+.tool-item__name {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-family: monospace;
+  flex: 1;
+}
+
+.tool-item__success {
+  font-size: 0.6875rem;
+  color: #16a34a;
+  font-weight: 600;
+}
+
+.tool-item__error {
+  font-size: 0.6875rem;
+  color: #dc2626;
+  font-weight: 600;
+}
+
+.tool-item__args {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  font-family: monospace;
+  margin: 2px 0;
+  word-break: break-all;
+}
+
+.tool-item__result {
+  font-size: 0.6875rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Live activity (streaming) */
+.message-bubble__live {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border-subtle);
+}
+
+.live-thinking {
+  margin-bottom: 6px;
+}
+
+.live-label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.live-thinking__text {
+  font-size: 0.6875rem;
+  color: var(--text-secondary);
+  margin: 2px 0 0;
+  font-style: italic;
+  white-space: pre-wrap;
+}
+
+.live-tool {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.live-tool__running {
+  font-size: 0.6875rem;
+  color: var(--accent-primary);
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }
 
 /* User message */

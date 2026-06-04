@@ -11,12 +11,14 @@ export async function embedText(
   const apiKey = providerSettings.apiKey || 'sk-placeholder'
   const baseURL = providerSettings.baseURL || getDefaultBaseURL(provider)
 
-  const client = new OpenAI({ apiKey, baseURL, dangerouslyAllowBrowser: true })
-  const response = await client.embeddings.create({
-    model,
-    input: text
-  })
-  return response.data[0].embedding
+  try {
+    const client = new OpenAI({ apiKey, baseURL, dangerouslyAllowBrowser: true })
+    const response = await client.embeddings.create({ model, input: text })
+    return response.data[0].embedding
+  } catch (err) {
+    console.error(`[embedding] ${provider}/${model} failed:`, err)
+    throw err
+  }
 }
 
 function getDefaultBaseURL(provider: string): string {

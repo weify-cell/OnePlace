@@ -56,6 +56,7 @@ export interface Note {
   is_pinned: boolean
   is_archived: boolean
   is_deleted: boolean
+  is_knowledge_base?: boolean
   created_at: string
   updated_at: string
 }
@@ -80,9 +81,26 @@ export interface Conversation {
   model: string
   provider: string
   kb_enabled?: boolean
+  tools_enabled?: boolean
+  max_tool_rounds?: number
   is_deleted: boolean
   created_at: string
   updated_at: string
+}
+
+export interface KBCitation {
+  note_id: number
+  title: string
+  content: string
+  score: number
+}
+
+export interface ToolCallRecord {
+  id: string
+  name: string
+  arguments: Record<string, any>
+  result: string
+  isError: boolean
 }
 
 export interface Message {
@@ -92,7 +110,15 @@ export interface Message {
   content: string
   tokens_used: number | null
   is_error: boolean
+  kb_citations: KBCitation[] | null
+  tool_calls: ToolCallRecord[] | null
   created_at: string
+}
+
+/** 实时流式状态（SSE 推送，非持久化） */
+export interface StreamState {
+  thinking: string
+  toolCalls: Array<{ id: string; name: string; arguments: Record<string, any>; status: 'running' | 'completed'; result?: string }>
 }
 
 // Settings

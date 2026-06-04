@@ -1,38 +1,35 @@
 import { embedText } from './ai/embedding-client.js'
-import { upsertChunks, searchChunks, deleteChunks } from './vector/vector.service.js'
+import { rerankTextWithFallback } from './ai/rerank-client.js'
+import { upsertChunks, searchChunks } from './vector/vector.service.js'
 import { getSettingValue } from './settings.service.js'
 import type { Note } from './notes.service.js'
 
 function splitIntoChunks(text: string, chunkSize: number, overlap: number): string[] {
   if (text.length === 0) return []
   const targetTokens = chunkSize
+  const safeOverlap = Math.max(0, Math.min(overlap, chunkSize - 1))
   const chunks: string[] = []
   let start = 0
 
   while (start < text.length) {
     let end = start + 1
     let tokenCount = 0
-    // Expand to fill chunkSize tokens
     while (end <= text.length && tokenCount < targetTokens) {
       const char = text[end - 1]
       if (char.charCodeAt(0) > 127) {
-        tokenCount += 1.3 // Chinese character
-      } else if (/[a-zA-Z]/.test(char)) {
-        tokenCount += 0.25 // English letter
+        tokenCount += 1.3
       } else {
-        tokenCount += 0.25 // Other character
+        tokenCount += 0.25
       }
       end++
     }
-    // If we overshot, back off
     if (tokenCount > targetTokens && end > start + 1) {
       end--
     }
     chunks.push(text.slice(start, end))
-    // Step back for overlap
-    start = end - overlap
-    if (start >= text.length - 1) break
-    if (start < 0) start = 0
+    if (end >= text.length) break
+    const nextStart = end - safeOverlap
+    start = nextStart > start ? nextStart : end
   }
 
   return chunks.filter(c => c.length > 0)
@@ -52,8 +49,8 @@ async function triggerEmbedding(noteId: number): Promise<void> {
 
   if (!note.is_knowledge_base) {
     // Delete from Qdrant
-    const { deleteChunks } = await import('./vector/vector.service.js')
-    await deleteChunks([`note-${noteId}`])
+    const { deleteChunksByNoteId } = await import('./vector/vector.service.js')
+    await deleteChunksByNoteId(noteId)
     return
   }
 
@@ -69,8 +66,9 @@ async function triggerEmbedding(noteId: number): Promise<void> {
   const vectors = await Promise.all(chunks.map(chunk => embedText(chunk, config.embedding_provider, config.embedding_model)))
 
   const { upsertChunks } = await import('./vector/vector.service.js')
+  // Use numeric ID: noteId * 10000 + i to match existing data pattern
   await upsertChunks(chunks.map((content, i) => ({
-    id: `note-${noteId}-${i}`,
+    id: String(noteId * 10000 + i),
     vector: vectors[i],
     content,
     metadata: { note_id: noteId, chunk_index: i, title: note.title }
@@ -85,6 +83,11 @@ function getKnowledgeBaseConfig(): {
   qdrant_collection: string
   kb_chunk_size: number
   kb_chunk_overlap: number
+  rerank_provider: string
+  rerank_model: string
+  kb_top_k: number
+  kb_rerank_top_n: number
+  kb_score_threshold: number
 } {
   return {
     kb_enabled: getSettingValue<boolean>('kb_enabled', false),
@@ -93,7 +96,12 @@ function getKnowledgeBaseConfig(): {
     qdrant_url: getSettingValue<string>('qdrant_url', 'http://localhost:6333'),
     qdrant_collection: getSettingValue<string>('qdrant_collection', 'oneplace'),
     kb_chunk_size: getSettingValue<number>('kb_chunk_size', 500),
-    kb_chunk_overlap: getSettingValue<number>('kb_chunk_overlap', 50)
+    kb_chunk_overlap: getSettingValue<number>('kb_chunk_overlap', 50),
+    rerank_provider: getSettingValue<string>('kb_rerank_provider', 'qwen'),
+    rerank_model: getSettingValue<string>('kb_rerank_model', 'qwen3-rerank'),
+    kb_top_k: getSettingValue<number>('kb_top_k', 20),
+    kb_rerank_top_n: getSettingValue<number>('kb_rerank_recall_size', 5),
+    kb_score_threshold: getSettingValue<number>('kb_score_threshold', 0)
   }
 }
 
@@ -104,23 +112,43 @@ async function searchKnowledgeBase(
   const config = getKnowledgeBaseConfig()
   if (!config.kb_enabled) return []
 
-  const { embedText } = await import('./ai/embedding-client.js')
-  const queryVector = await embedText(query, config.embedding_provider, config.embedding_model)
+  try {
+    const { embedText } = await import('./ai/embedding-client.js')
+    const queryVector = await embedText(query, config.embedding_provider, config.embedding_model)
 
-  const { searchChunks } = await import('./vector/vector.service.js')
-  const results = await searchChunks(queryVector, topK)
+    const { searchChunks } = await import('./vector/vector.service.js')
+    const searchResults = await searchChunks(queryVector, config.kb_top_k)
 
-  return results
-    .filter(r => r.payload.content)
-    .map(r => {
-      const meta = r.payload as { note_id?: number; title?: string; content?: string }
-      return {
-        note_id: (meta.note_id as number) || 0,
-        title: (meta.title as string) || '',
-        content: (meta.content as string) || '',
-        score: r.score
-      }
-    })
+    if (searchResults.length === 0) return []
+
+    const docs = searchResults.map(r => r.payload.content as string || '')
+    const vectorScores = searchResults.map(r => r.score)
+    const rerankResults = await rerankTextWithFallback(query, docs, config.rerank_provider, config.rerank_model, vectorScores)
+
+    const threshold = config.kb_score_threshold
+    const filtered = threshold > 0
+      ? rerankResults.filter(r => r.score >= threshold)
+      : rerankResults
+
+    const finalResults = filtered
+      .slice(0, config.kb_rerank_top_n)
+      .map(r => {
+        const searchResult = searchResults[r.docIndex]
+        const meta = searchResult.payload as { note_id?: number; title?: string; content?: string }
+        return {
+          note_id: (meta.note_id as number) || 0,
+          title: (meta.title as string) || '',
+          content: (meta.content as string) || '',
+          score: r.score
+        }
+      })
+
+    console.log(`[knowledge-base] searchKnowledgeBase: ${finalResults.length} results after rerank (threshold=${threshold})`)
+    return finalResults
+  } catch (err) {
+    console.error('[knowledge-base] search failed:', err)
+    return []
+  }
 }
 
 async function rebuildAllIndex(): Promise<{ total: number; succeeded: number; failed: number }> {

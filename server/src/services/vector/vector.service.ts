@@ -1,6 +1,6 @@
 import { getSettingValue } from '../settings.service.js'
 
-const VECTOR_SIZE = 1536
+const VECTOR_SIZE = 1024
 const DISTANCE = 'Cosine'
 
 interface QdrantPoint {
@@ -61,32 +61,76 @@ export async function upsertChunks(chunks: Array<{ id: string; vector: number[];
   if (chunks.length === 0) return { success: true, count: 0 }
 
   const collection = getCollectionName()
-  const points: QdrantPoint[] = chunks.map((c) => ({
-    id: c.id,
+  const points: Array<{ id: number | string; vector: number[]; payload: Record<string, unknown> }> = chunks.map((c) => ({
+    id: /^\d+$/.test(c.id) ? Number(c.id) : c.id,
     vector: c.vector,
     payload: { content: c.content, ...c.metadata },
   }))
 
-  await request('PUT', `/collections/${collection}/points`, { points })
-  return { success: true, count: chunks.length }
+  try {
+    await request('PUT', `/collections/${collection}/points`, { points })
+    return { success: true, count: chunks.length }
+  } catch (err) {
+    console.error('[vector] upsertChunks failed:', err)
+    return { success: false, error: (err as Error).message }
+  }
 }
 
 export async function searchChunks(queryVector: number[], topK: number): Promise<SearchResult[]> {
   const collection = getCollectionName()
-  const res = await request<{ results: Array<{ id: { uuid: string }; score: number; payload: Record<string, unknown> }> }>('POST', `/collections/${collection}/points/search`, {
-    vector: queryVector,
-    limit: topK,
-  })
+  console.log(`[vector] searchChunks: collection=${collection}, vectorLen=${queryVector.length}`)
+  try {
+    const res = await request<{ result?: Array<{ id: number; score: number; payload?: Record<string, unknown> }>; status?: string; error?: string }>('POST', `/collections/${collection}/points/search`, {
+      vector: queryVector,
+      limit: topK,
+      with_payload: true,
+    })
 
-  return res.results.map((r) => ({
-    id: r.id.uuid,
-    score: r.score,
-    payload: r.payload,
-  }))
+    console.log(`[vector] searchChunks response:`, JSON.stringify(res).slice(0, 500))
+
+    if (!res.result) {
+      console.error('[vector] searchChunks: no result field, response:', res)
+      return []
+    }
+
+    return res.result.map((r) => {
+      console.log(`[vector] point id=${r.id}, score=${r.score}, payload=`, JSON.stringify(r.payload).slice(0, 200))
+      return {
+        id: String(r.id),
+        score: r.score,
+        payload: r.payload || {},
+      }
+    })
+  } catch (err) {
+    console.error('[vector] searchChunks failed:', err)
+    throw err
+  }
 }
 
 export async function deleteChunks(ids: string[]): Promise<void> {
   if (ids.length === 0) return
   const collection = getCollectionName()
-  await request('POST', `/collections/${collection}/points/delete`, { points: ids })
+  const normalized = ids.map(id => /^\d+$/.test(id) ? Number(id) : id)
+  await request('POST', `/collections/${collection}/points/delete`, { points: { ids: normalized } })
+}
+
+export async function deleteChunksByNoteId(noteId: number): Promise<void> {
+  const collection = getCollectionName()
+  // Scroll to find all points with matching note_id in payload
+  let offset: string | undefined
+  const idsToDelete: string[] = []
+  while (true) {
+    const res = await request<{ points: Array<{ id: number }>; next_page_offset?: string }>('POST', `/collections/${collection}/points/scroll`, {
+      filter: { must: [{ key: 'note_id', match: { value: noteId } }] },
+      limit: 100,
+      offset,
+      with_payload: false,
+    })
+    idsToDelete.push(...res.points.map(p => String(p.id)))
+    if (!res.next_page_offset) break
+    offset = res.next_page_offset
+  }
+  if (idsToDelete.length > 0) {
+    await deleteChunks(idsToDelete)
+  }
 }

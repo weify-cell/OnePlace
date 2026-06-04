@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { chatApi } from '@/api/chat.api'
-import type { Conversation, Message } from '@/types'
+import type { Conversation, Message, StreamState } from '@/types'
 
 export const useChatStore = defineStore('chat', () => {
   const conversations = ref<Conversation[]>([])
@@ -9,6 +9,7 @@ export const useChatStore = defineStore('chat', () => {
   const streamingMessage = ref('')
   const isStreaming = ref(false)
   const abortController = ref<AbortController | null>(null)
+  const streamState = ref<StreamState>({ thinking: '', toolCalls: [] })
 
   async function fetchConversations() {
     const res = await chatApi.getConversations()
@@ -37,10 +38,13 @@ export const useChatStore = defineStore('chat', () => {
       content,
       tokens_used: null,
       is_error: false,
+      kb_citations: null,
+      tool_calls: null,
       created_at: new Date().toISOString()
     }
     messages.value.push(userMessage)
     streamingMessage.value = ''
+    streamState.value = { thinking: '', toolCalls: [] }
     isStreaming.value = true
 
     const controller = new AbortController()
@@ -83,25 +87,64 @@ export const useChatStore = defineStore('chat', () => {
           if (event && data) {
             try {
               const parsed = JSON.parse(data)
-              if (event === 'delta') {
-                streamingMessage.value += parsed.content || ''
-              } else if (event === 'done') {
-                const assistantMessage: Message = {
-                  id: parsed.messageId,
-                  conversation_id: currentConversation.value!.id,
-                  role: 'assistant',
-                  content: parsed.content || streamingMessage.value,
-                  tokens_used: parsed.tokensUsed,
-                  is_error: false,
-                  created_at: new Date().toISOString()
+              switch (event) {
+                case 'delta':
+                  streamingMessage.value += parsed.content || ''
+                  break
+                case 'thinking_delta':
+                  streamState.value.thinking += parsed.content || ''
+                  break
+                case 'thinking_start':
+                  streamState.value.thinking = ''
+                  break
+                case 'thinking_end':
+                  streamState.value.thinking = parsed.content || streamState.value.thinking
+                  break
+                case 'tool_call': {
+                  const existing = streamState.value.toolCalls.find(tc => tc.id === parsed.id)
+                  if (existing) {
+                    existing.status = parsed.status || 'completed'
+                  } else {
+                    streamState.value.toolCalls.push({
+                      id: parsed.id,
+                      name: parsed.name,
+                      arguments: parsed.arguments,
+                      status: parsed.status || 'running'
+                    })
+                  }
+                  break
                 }
-                messages.value.push(assistantMessage)
-                streamingMessage.value = ''
-                // Refresh conversations to update title/order
-                await fetchConversations()
-              } else if (event === 'error') {
-                console.error('Stream error event:', parsed)
-                streamingMessage.value = ''
+                case 'tool_result': {
+                  const tc = streamState.value.toolCalls.find(t => t.id === parsed.id)
+                  if (tc) {
+                    tc.status = 'completed'
+                    tc.result = parsed.result
+                  }
+                  break
+                }
+                case 'done': {
+                  const assistantMessage: Message = {
+                    id: parsed.messageId,
+                    conversation_id: currentConversation.value!.id,
+                    role: 'assistant',
+                    content: parsed.content || streamingMessage.value,
+                    tokens_used: parsed.tokensUsed,
+                    is_error: false,
+                    kb_citations: parsed.kbCitations || null,
+                    tool_calls: parsed.toolCalls || null,
+                    created_at: new Date().toISOString()
+                  }
+                  messages.value.push(assistantMessage)
+                  streamingMessage.value = ''
+                  streamState.value = { thinking: '', toolCalls: [] }
+                  await fetchConversations()
+                  break
+                }
+                case 'error':
+                  console.error('Stream error event:', parsed)
+                  streamingMessage.value = ''
+                  streamState.value = { thinking: '', toolCalls: [] }
+                  break
               }
             } catch {
               // ignore parse errors
@@ -114,6 +157,7 @@ export const useChatStore = defineStore('chat', () => {
         console.error('Stream error:', err)
       }
       streamingMessage.value = ''
+      streamState.value = { thinking: '', toolCalls: [] }
     } finally {
       isStreaming.value = false
       abortController.value = null
@@ -154,5 +198,5 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  return { conversations, currentConversation, messages, streamingMessage, isStreaming, fetchConversations, createConversation, selectConversation, sendMessage, cancelStream, deleteConversation, clearMessages, toggleConversationKbEnabled }
+  return { conversations, currentConversation, messages, streamingMessage, isStreaming, streamState, fetchConversations, createConversation, selectConversation, sendMessage, cancelStream, deleteConversation, clearMessages, toggleConversationKbEnabled }
 })

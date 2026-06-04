@@ -77,6 +77,10 @@ app.use(errorMiddleware)
 const db = connectDatabase()
 runMigrations(db)
 
+// Register builtin tools for agent
+import { registerBuiltinTools } from './services/ai/builtin-tools.js'
+registerBuiltinTools()
+
 app.listen(Number(PORT), '0.0.0.0', () => {
   console.log(`OnePlace server running on http://0.0.0.0:${PORT}`)
   console.log(`Environment: ${isProduction ? 'production' : 'development'}`)

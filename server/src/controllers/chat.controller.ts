@@ -17,7 +17,10 @@ export function getConversation(req: Request, res: Response): void {
 }
 
 export function updateConversation(req: Request, res: Response): void {
-  const conv = chatService.updateConversation(Number(req.params.id), req.body)
+  const { title, model, provider, kb_enabled, tools_enabled, max_tool_rounds } = req.body
+  const conv = chatService.updateConversation(Number(req.params.id), {
+    title, model, provider, kb_enabled, tools_enabled, max_tool_rounds
+  })
   if (!conv) { res.status(404).json({ error: 'NotFound' }); return }
   res.json(conv)
 }

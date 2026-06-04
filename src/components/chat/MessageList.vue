@@ -24,20 +24,45 @@ onMounted(scrollToBottom)
     ref="listEl"
     class="message-list"
   >
-    <MessageBubble v-for="msg in chatStore.messages" :key="msg.id" :message="msg" />
+    <MessageBubble
+      v-for="msg in chatStore.messages"
+      :key="msg.id"
+      :message="msg"
+    />
 
-    <!-- Streaming message with typing animation -->
-    <div v-if="chatStore.isStreaming && chatStore.streamingMessage" class="message-list__streaming animate-fadeIn">
+    <!-- Streaming message with live thinking/tools -->
+    <div v-if="chatStore.isStreaming && (chatStore.streamingMessage || chatStore.streamState.thinking || chatStore.streamState.toolCalls.length > 0)" class="message-list__streaming animate-fadeIn">
       <div class="message-list__streaming-inner">
         <div class="message-list__avatar">AI</div>
-        <div class="message-list__bubble">
-          <span>{{ chatStore.streamingMessage }}</span>
-          <span class="message-list__cursor" />
+        <div class="message-list__bubble" style="flex-direction: column; align-items: flex-start;">
+          <!-- Live thinking -->
+          <div v-if="chatStore.streamState.thinking" class="stream-thinking">
+            <span class="stream-thinking__label">💭 思考中...</span>
+            <p class="stream-thinking__text">{{ chatStore.streamState.thinking }}</p>
+          </div>
+          <!-- Live tool calls -->
+          <div v-if="chatStore.streamState.toolCalls.length > 0" class="stream-tools">
+            <div v-for="tc in chatStore.streamState.toolCalls" :key="tc.id" class="stream-tool">
+              <span>{{ tc.status === 'running' ? '⏳' : '✓' }} {{ tc.name }}</span>
+              <span v-if="tc.status === 'running'" class="stream-tool__running">执行中...</span>
+            </div>
+          </div>
+          <!-- Streaming text -->
+          <div v-if="chatStore.streamingMessage">
+            <span>{{ chatStore.streamingMessage }}</span>
+            <span class="message-list__cursor" />
+          </div>
+          <!-- Thinking dots (no text yet) -->
+          <div v-if="!chatStore.streamingMessage && !chatStore.streamState.thinking && chatStore.streamState.toolCalls.length === 0" class="message-list__dots">
+            <span class="message-list__dot" style="--delay: 0ms" />
+            <span class="message-list__dot" style="--delay: 150ms" />
+            <span class="message-list__dot" style="--delay: 300ms" />
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- Thinking indicator -->
+    <!-- Thinking indicator (fallback) -->
     <div v-else-if="chatStore.isStreaming" class="message-list__thinking animate-fadeIn">
       <div class="message-list__thinking-inner">
         <div class="message-list__avatar">AI</div>
@@ -127,6 +152,55 @@ onMounted(scrollToBottom)
 /* Thinking dots */
 .message-list__bubble--thinking {
   padding: 12px 16px;
+}
+
+/* Streaming thinking */
+.stream-thinking {
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed var(--border-subtle);
+}
+
+.stream-thinking__label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.stream-thinking__text {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  font-style: italic;
+  margin: 2px 0 0;
+  max-height: 100px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+}
+
+/* Streaming tool calls */
+.stream-tools {
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed var(--border-subtle);
+}
+
+.stream-tool {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  color: var(--text-primary);
+}
+
+.stream-tool__running {
+  color: var(--accent-primary);
+  font-size: 0.6875rem;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }
 
 .message-list__dots {
