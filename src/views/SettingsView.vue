@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onUnmounted } from 'vue'
 import { useSettingsStore } from '@/stores/settings.store'
 import { useKnowledgeBaseStore } from '@/stores/knowledge_base.store'
 import { useILinkStore } from '@/stores/ilink.store'
 import AppLayout from '@/components/common/AppLayout.vue'
+
 
 const settingsStore = useSettingsStore()
 const ilinkStore = useILinkStore()
@@ -13,7 +14,6 @@ const rebuilding = ref(false)
 
 // iLink config
 const ilinkConfig = ref({
-  bot_token: '',
   provider: 'qwen',
   model: 'qwen-turbo',
   system_prompt: '你是一个智能助手，可以通过微信为用户提供服务。请用中文回复。',
@@ -90,7 +90,6 @@ onMounted(async () => {
   await ilinkStore.fetchStatus()
   if (ilinkStore.config) {
     ilinkConfig.value = {
-      bot_token: ilinkStore.config.bot_token || '',
       provider: ilinkStore.config.provider || 'qwen',
       model: ilinkStore.config.model || 'qwen-turbo',
       system_prompt: ilinkStore.config.system_prompt || '你是一个智能助手，可以通过微信为用户提供服务。请用中文回复。',
@@ -240,7 +239,9 @@ async function handleStartBot() {
   try {
     const result = await ilinkStore.startBot()
     if (result.success) {
-      message.success('Bot 已启动')
+      message.success('Bot 已启动，请查看控制台获取二维码')
+      // 开始轮询状态
+      startStatusPolling()
     } else {
       message.error('启动失败: ' + result.error)
     }
@@ -254,11 +255,36 @@ async function handleStopBot() {
     const result = await ilinkStore.stopBot()
     if (result.success) {
       message.success('Bot 已停止')
+      stopStatusPolling()
     } else {
       message.error('停止失败: ' + result.error)
     }
   } catch (err: any) {
     message.error('停止失败: ' + (err.message || '未知错误'))
+  }
+}
+
+async function handleResetLogin() {
+  await ilinkStore.resetLogin()
+  message.info('登录状态已重置')
+}
+
+// 状态轮询
+let statusPollTimer: ReturnType<typeof setInterval> | null = null
+
+function startStatusPolling() {
+  if (statusPollTimer) {
+    clearInterval(statusPollTimer)
+  }
+  statusPollTimer = setInterval(async () => {
+    await ilinkStore.fetchStatus()
+  }, 3000)
+}
+
+function stopStatusPolling() {
+  if (statusPollTimer) {
+    clearInterval(statusPollTimer)
+    statusPollTimer = null
   }
 }
 
@@ -275,6 +301,11 @@ function formatUptime(ms: number): string {
     return `${seconds}秒`
   }
 }
+
+// 清理定时器
+onUnmounted(() => {
+  stopLoginPolling()
+})
 </script>
 
 <template>
@@ -533,7 +564,7 @@ function formatUptime(ms: number): string {
                     启动 Bot
                   </n-button>
                   <n-button
-                    v-else
+                    v-if="ilinkStore.status?.running"
                     type="error"
                     :loading="ilinkStore.isLoading"
                     @click="handleStopBot"
@@ -541,18 +572,44 @@ function formatUptime(ms: number): string {
                     停止 Bot
                   </n-button>
                 </div>
+                <div class="settings-field__hint">启动后将自动显示二维码，扫码登录即可</div>
               </div>
 
-              <!-- Bot Token -->
+              <!-- 登录状态 -->
               <div class="settings-field">
-                <label class="settings-field__label">Bot Token</label>
-                <n-input
-                  v-model:value="ilinkConfig.bot_token"
-                  type="password"
-                  show-password-on="click"
-                  placeholder="从 iLink 平台获取的 Bot Token"
-                />
-                <div class="settings-field__hint">登录后自动获取，或从 iLink 平台手动复制</div>
+                <label class="settings-field__label">登录状态</label>
+                <div class="ilink-login">
+                  <!-- 登录中 -->
+                  <div v-if="ilinkStore.status?.login.status === 'waiting'" class="ilink-login__qrcode">
+                    <div class="qrcode-status">
+                      <div class="status-dot status-dot--waiting" />
+                      <span>等待扫码登录...</span>
+                    </div>
+                    <div class="settings-field__hint">请查看服务器控制台获取二维码链接</div>
+                  </div>
+
+                  <!-- 已扫码 -->
+                  <div v-else-if="ilinkStore.status?.login.status === 'scanned'" class="ilink-login__scanned">
+                    <div class="status-dot status-dot--running" />
+                    <span>已扫码，请在手机上确认登录</span>
+                  </div>
+
+                  <!-- 已登录 -->
+                  <div v-else-if="ilinkStore.status?.login.status === 'confirmed'" class="ilink-login__logged">
+                    <div class="status-dot status-dot--running" />
+                    <span>已登录</span>
+                    <n-button size="small" @click="handleResetLogin">
+                      重新登录
+                    </n-button>
+                  </div>
+
+                  <!-- 未启动 -->
+                  <div v-else class="ilink-login__idle">
+                    <div class="status-dot status-dot--stopped" />
+                    <span>未启动</span>
+                    <div class="settings-field__hint">点击「启动 Bot」后将自动显示二维码</div>
+                  </div>
+                </div>
               </div>
 
               <!-- AI 配置 -->
@@ -848,6 +905,60 @@ function formatUptime(ms: number): string {
 .ilink-actions {
   display: flex;
   gap: 8px;
+}
+
+.ilink-login {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ilink-login__qrcode {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.qrcode-container {
+  width: 200px;
+  height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: white;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.qrcode-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.qrcode-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.ilink-login__logged {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: rgba(34, 197, 94, 0.06);
+  border: 1px solid rgba(34, 197, 94, 0.2);
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
+  color: #16a34a;
 }
 
 /* Animations */

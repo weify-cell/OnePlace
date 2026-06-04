@@ -8,6 +8,10 @@ ilinkRouter.get('/status', ilinkController.getStatus)
 ilinkRouter.get('/config', ilinkController.getConfig)
 ilinkRouter.put('/config', ilinkController.updateConfig)
 
+// 登录状态
+ilinkRouter.get('/login/status', ilinkController.getLoginStatus)
+ilinkRouter.post('/login/reset', ilinkController.resetLogin)
+
 // Bot 控制
 ilinkRouter.post('/start', ilinkController.startBot)
 ilinkRouter.post('/stop', ilinkController.stopBot)

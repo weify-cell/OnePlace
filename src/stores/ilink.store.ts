@@ -8,17 +8,19 @@ export interface ILinkBotStatus {
   messages_processed: number
   last_message_at: string | null
   error: string | null
+  login: {
+    status: 'idle' | 'waiting' | 'scanned' | 'confirmed' | 'expired'
+    qrcode: string | null
+  }
   config: {
     enabled: boolean
     provider: string
     model: string
-    has_token: boolean
   }
 }
 
 export interface ILinkConfig {
   enabled: boolean
-  bot_token: string
   provider: string
   model: string
   system_prompt: string
@@ -101,6 +103,15 @@ export const useILinkStore = defineStore('ilink', () => {
     }
   }
 
+  async function resetLogin() {
+    try {
+      await api.post('/ilink/login/reset')
+      await fetchStatus()
+    } catch (err) {
+      console.error('Failed to reset login:', err)
+    }
+  }
+
   function clearError() {
     error.value = null
   }
@@ -115,6 +126,7 @@ export const useILinkStore = defineStore('ilink', () => {
     updateConfig,
     startBot,
     stopBot,
+    resetLogin,
     clearError
   }
 })

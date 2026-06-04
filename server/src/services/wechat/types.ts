@@ -60,6 +60,7 @@ export interface SendTypingRequest {
 export interface ILinkBotConfig {
   enabled: boolean
   bot_token: string
+  api_base_url: string
   provider: string
   model: string
   system_prompt: string
@@ -79,6 +80,7 @@ export interface ILinkBotStatus {
 export const DEFAULT_ILINK_CONFIG: ILinkBotConfig = {
   enabled: false,
   bot_token: '',
+  api_base_url: ILINK_BASE_URL,
   provider: 'qwen',
   model: 'qwen-turbo',
   system_prompt: '你是一个智能助手，可以通过微信为用户提供服务。请用中文回复。',

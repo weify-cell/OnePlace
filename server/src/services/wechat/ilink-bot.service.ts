@@ -1,27 +1,29 @@
-import { ilinkClient } from './ilink.client.js'
+import { WeChatBot } from '@wechatbot/wechatbot'
 import { streamChatWithPi } from '../ai/pi-ai.adapter.js'
-import { getSettingValue } from '../settings.service.js'
-import type { InboundMessage, ILinkBotConfig, ILinkBotStatus, DEFAULT_ILINK_CONFIG } from './types.js'
+import { getSettingValue, setSetting } from '../settings.service.js'
 
-// Bot 状态
+// Bot 实例
+let bot: WeChatBot | null = null
 let botRunning = false
 let botStartTime: number | null = null
 let messagesProcessed = 0
 let lastMessageAt: string | null = null
 let lastError: string | null = null
-let abortController: AbortController | null = null
 
-// 消息上下文缓存（context_token → 最近的消息历史）
+// 登录状态
+let loginQRCode: string | null = null
+let loginStatus: 'idle' | 'waiting' | 'scanned' | 'confirmed' | 'expired' = 'idle'
+
+// 消息历史（userId → 消息列表）
 const messageHistory = new Map<string, Array<{ role: 'user' | 'assistant'; content: string }>>()
 const MAX_HISTORY_LENGTH = 20
 
 /**
  * 获取 Bot 配置
  */
-export function getILinkConfig(): ILinkBotConfig {
+export function getILinkConfig() {
   return {
     enabled: getSettingValue<boolean>('ilink_enabled', false),
-    bot_token: getSettingValue<string>('ilink_bot_token', ''),
     provider: getSettingValue<string>('ilink_provider', 'qwen'),
     model: getSettingValue<string>('ilink_model', 'qwen-turbo'),
     system_prompt: getSettingValue<string>('ilink_system_prompt', '你是一个智能助手，可以通过微信为用户提供服务。请用中文回复。'),
@@ -32,138 +34,28 @@ export function getILinkConfig(): ILinkBotConfig {
 /**
  * 获取 Bot 状态
  */
-export function getILinkBotStatus(): ILinkBotStatus {
+export function getILinkBotStatus() {
   return {
     running: botRunning,
     uptime: botStartTime ? Date.now() - botStartTime : null,
     messages_processed: messagesProcessed,
     last_message_at: lastMessageAt,
-    error: lastError
-  }
-}
-
-/**
- * 处理单条消息
- */
-async function handleMessage(message: InboundMessage, config: ILinkBotConfig): Promise<void> {
-  const { context_token, content, msg_type, from_user } = message
-
-  // 只处理文本消息
-  if (msg_type !== 'text') {
-    console.log(`[ilink] skipping non-text message from ${from_user}: ${msg_type}`)
-    return
-  }
-
-  console.log(`[ilink] processing message from ${from_user}: ${content.slice(0, 50)}`)
-
-  // 发送"正在输入"状态
-  await ilinkClient.sendTyping(config.bot_token, { context_token })
-
-  // 获取或创建消息历史
-  let history = messageHistory.get(from_user) || []
-  history.push({ role: 'user', content })
-
-  // 保持历史长度限制
-  if (history.length > MAX_HISTORY_LENGTH) {
-    history = history.slice(-MAX_HISTORY_LENGTH)
-  }
-
-  try {
-    // 调用 pi-ai 处理消息
-    const result = await streamChatWithPi(
-      config.provider,
-      config.model,
-      history,
-      config.system_prompt,
-      {
-        onStart: () => {},
-        onDelta: () => {},
-        onDone: () => {},
-        onError: (error) => {
-          throw error
-        }
-      },
-      {
-        toolsEnabled: true,
-        maxRounds: config.max_tool_rounds
-      }
-    )
-
-    // 发送回复
-    await ilinkClient.sendTextMessage(config.bot_token, context_token, result.content)
-
-    // 更新消息历史
-    history.push({ role: 'assistant', content: result.content })
-    messageHistory.set(from_user, history)
-
-    // 更新统计
-    messagesProcessed++
-    lastMessageAt = new Date().toISOString()
-    lastError = null
-
-    console.log(`[ilink] replied to ${from_user}: ${result.content.slice(0, 50)}...`)
-  } catch (error) {
-    const errMsg = (error as Error).message || 'Unknown error'
-    console.error(`[ilink] failed to process message from ${from_user}:`, errMsg)
-    lastError = errMsg
-
-    // 发送错误回复
-    try {
-      await ilinkClient.sendTextMessage(
-        config.bot_token,
-        context_token,
-        '抱歉，处理您的消息时出现了错误，请稍后再试。'
-      )
-    } catch (sendErr) {
-      console.error('[ilink] failed to send error reply:', sendErr)
+    error: lastError,
+    login: {
+      status: loginStatus,
+      qrcode: loginQRCode
     }
   }
 }
 
 /**
- * 消息循环
+ * 获取登录状态
  */
-async function messageLoop(config: ILinkBotConfig): Promise<void> {
-  console.log('[ilink] starting message loop')
-
-  while (botRunning) {
-    try {
-      // 长轮询获取消息
-      const response = await ilinkClient.getUpdates(config.bot_token)
-
-      if (response.error) {
-        console.error('[ilink] getUpdates error:', response.error)
-        lastError = response.error
-
-        // 如果是 token 失效，停止 Bot
-        if (response.error.includes('token') || response.error.includes('unauthorized')) {
-          console.error('[ilink] token invalid, stopping bot')
-          break
-        }
-
-        // 等待后重试
-        await new Promise(resolve => setTimeout(resolve, 5000))
-        continue
-      }
-
-      // 处理消息
-      for (const message of response.messages) {
-        if (!botRunning) break
-        await handleMessage(message, config)
-      }
-    } catch (error) {
-      if (!botRunning) break
-
-      const errMsg = (error as Error).message || 'Unknown error'
-      console.error('[ilink] message loop error:', errMsg)
-      lastError = errMsg
-
-      // 等待后重试
-      await new Promise(resolve => setTimeout(resolve, 5000))
-    }
+export function getLoginStatus() {
+  return {
+    status: loginStatus,
+    qrcode: loginQRCode
   }
-
-  console.log('[ilink] message loop stopped')
 }
 
 /**
@@ -179,57 +71,162 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
     return { success: false, error: 'Bot is not enabled' }
   }
 
-  if (!config.bot_token) {
-    return { success: false, error: 'Bot token is not configured' }
-  }
-
-  // 验证 token
   try {
-    const testResponse = await ilinkClient.getUpdates(config.bot_token, 1)
-    if (testResponse.error) {
-      return { success: false, error: `Token validation failed: ${testResponse.error}` }
-    }
+    // 创建 Bot 实例
+    bot = new WeChatBot({
+      storage: 'file',
+      logLevel: 'info',
+      loginCallbacks: {
+        onQrUrl: (url: string) => {
+          console.log('[ilink] QR code URL:', url)
+          loginQRCode = url
+          loginStatus = 'waiting'
+        },
+        onScanned: () => {
+          console.log('[ilink] QR code scanned')
+          loginStatus = 'scanned'
+        },
+        onExpired: () => {
+          console.log('[ilink] QR code expired')
+          loginStatus = 'expired'
+          loginQRCode = null
+        }
+      }
+    })
+
+    // 监听事件
+    bot.on('login', (creds: any) => {
+      console.log('[ilink] logged in:', creds.accountId)
+      loginStatus = 'confirmed'
+      loginQRCode = null
+    })
+
+    bot.on('session:expired', () => {
+      console.log('[ilink] session expired')
+      lastError = 'Session expired'
+    })
+
+    bot.on('error', (err: Error) => {
+      console.error('[ilink] bot error:', err)
+      lastError = err.message
+    })
+
+    // 消息处理
+    bot.onMessage(async (msg: any) => {
+      console.log(`[ilink] message from ${msg.userId}: ${msg.text?.slice(0, 50)}`)
+
+      // 只处理文本消息
+      if (!msg.text) {
+        console.log(`[ilink] skipping non-text message`)
+        return
+      }
+
+      // 发送"正在输入"状态
+      await bot!.sendTyping(msg.userId)
+
+      // 获取或创建消息历史
+      let history = messageHistory.get(msg.userId) || []
+      history.push({ role: 'user', content: msg.text })
+
+      // 保持历史长度限制
+      if (history.length > MAX_HISTORY_LENGTH) {
+        history = history.slice(-MAX_HISTORY_LENGTH)
+      }
+
+      try {
+        // 调用 pi-ai 处理消息
+        const result = await streamChatWithPi(
+          config.provider,
+          config.model,
+          history,
+          config.system_prompt,
+          {
+            onStart: () => {},
+            onDelta: () => {},
+            onDone: () => {},
+            onError: (error) => {
+              throw error
+            }
+          },
+          {
+            toolsEnabled: true,
+            maxRounds: config.max_tool_rounds
+          }
+        )
+
+        // 回复消息
+        await bot!.reply(msg, result.content)
+
+        // 更新消息历史
+        history.push({ role: 'assistant', content: result.content })
+        messageHistory.set(msg.userId, history)
+
+        // 更新统计
+        messagesProcessed++
+        lastMessageAt = new Date().toISOString()
+        lastError = null
+
+        console.log(`[ilink] replied to ${msg.userId}: ${result.content.slice(0, 50)}...`)
+      } catch (error) {
+        const errMsg = (error as Error).message || 'Unknown error'
+        console.error(`[ilink] failed to process message:`, errMsg)
+        lastError = errMsg
+
+        // 发送错误回复
+        try {
+          await bot!.reply(msg, '抱歉，处理您的消息时出现了错误，请稍后再试。')
+        } catch (replyErr) {
+          console.error('[ilink] failed to send error reply:', replyErr)
+        }
+      }
+    })
+
+    // 登录
+    console.log('[ilink] logging in...')
+    await bot.login()
+
+    // 启动
+    console.log('[ilink] starting bot...')
+    await bot.start()
+
+    botRunning = true
+    botStartTime = Date.now()
+    lastError = null
+
+    console.log('[ilink] bot started')
+    return { success: true }
   } catch (error) {
-    return { success: false, error: `Token validation failed: ${(error as Error).message}` }
+    const errMsg = (error as Error).message || 'Unknown error'
+    console.error('[ilink] failed to start bot:', errMsg)
+    lastError = errMsg
+    bot = null
+    return { success: false, error: errMsg }
   }
-
-  // 启动 Bot
-  botRunning = true
-  botStartTime = Date.now()
-  lastError = null
-  abortController = new AbortController()
-
-  // 异步启动消息循环
-  messageLoop(config).catch(error => {
-    console.error('[ilink] message loop crashed:', error)
-    lastError = (error as Error).message
-    botRunning = false
-    botStartTime = null
-  })
-
-  console.log('[ilink] bot started')
-  return { success: true }
 }
 
 /**
  * 停止 Bot
  */
 export function stopILinkBot(): { success: boolean; error?: string } {
-  if (!botRunning) {
+  if (!botRunning || !bot) {
     return { success: false, error: 'Bot is not running' }
   }
 
-  botRunning = false
-  abortController?.abort()
-  abortController = null
-  botStartTime = null
+  try {
+    // WeChatBot 没有 stop 方法，直接清理状态
+    bot = null
+    botRunning = false
+    botStartTime = null
 
-  console.log('[ilink] bot stopped')
-  return { success: true }
+    console.log('[ilink] bot stopped')
+    return { success: true }
+  } catch (error) {
+    return { success: false, error: (error as Error).message }
+  }
 }
 
 /**
- * 获取消息历史（用于调试）
+ * 获取消息历史（调试用）
  */
 export function getMessageHistory(userId: string): Array<{ role: string; content: string }> {
   return messageHistory.get(userId) || []
@@ -244,4 +241,12 @@ export function clearMessageHistory(userId?: string): void {
   } else {
     messageHistory.clear()
   }
+}
+
+/**
+ * 重置登录状态
+ */
+export function resetLoginState(): void {
+  loginStatus = 'idle'
+  loginQRCode = null
 }
