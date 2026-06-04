@@ -59,7 +59,7 @@ export function getLoginStatus() {
 }
 
 /**
- * 启动 Bot
+ * 启动 Bot（异步启动，不等待登录完成）
  */
 export async function startILinkBot(): Promise<{ success: boolean; error?: string }> {
   if (botRunning) {
@@ -75,49 +75,39 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
     // 创建 Bot 实例
     bot = new WeChatBot({
       storage: 'file',
-      logLevel: 'info',
-      loginCallbacks: {
-        onQrUrl: (url: string) => {
-          console.log('[ilink] QR code URL:', url)
-          loginQRCode = url
-          loginStatus = 'waiting'
-        },
-        onScanned: () => {
-          console.log('[ilink] QR code scanned')
-          loginStatus = 'scanned'
-        },
-        onExpired: () => {
-          console.log('[ilink] QR code expired')
-          loginStatus = 'expired'
-          loginQRCode = null
-        }
-      }
+      logLevel: 'info'
     })
 
     // 监听事件
     bot.on('login', (creds: any) => {
-      console.log('[ilink] logged in:', creds.accountId)
+      console.log('[ilink] ================================')
+      console.log('[ilink] 登录成功!', creds.accountId)
+      console.log('[ilink] ================================')
       loginStatus = 'confirmed'
       loginQRCode = null
+      botRunning = true
+      botStartTime = Date.now()
+      lastError = null
     })
 
     bot.on('session:expired', () => {
-      console.log('[ilink] session expired')
+      console.log('[ilink] 会话已过期')
       lastError = 'Session expired'
+      botRunning = false
     })
 
     bot.on('error', (err: Error) => {
-      console.error('[ilink] bot error:', err)
+      console.error('[ilink] Bot 错误:', err)
       lastError = err.message
     })
 
     // 消息处理
     bot.onMessage(async (msg: any) => {
-      console.log(`[ilink] message from ${msg.userId}: ${msg.text?.slice(0, 50)}`)
+      console.log(`[ilink] 收到消息 ${msg.userId}: ${msg.text?.slice(0, 50)}`)
 
       // 只处理文本消息
       if (!msg.text) {
-        console.log(`[ilink] skipping non-text message`)
+        console.log(`[ilink] 跳过非文本消息`)
         return
       }
 
@@ -166,38 +156,72 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
         lastMessageAt = new Date().toISOString()
         lastError = null
 
-        console.log(`[ilink] replied to ${msg.userId}: ${result.content.slice(0, 50)}...`)
+        console.log(`[ilink] 已回复 ${msg.userId}: ${result.content.slice(0, 50)}...`)
       } catch (error) {
         const errMsg = (error as Error).message || 'Unknown error'
-        console.error(`[ilink] failed to process message:`, errMsg)
+        console.error(`[ilink] 处理消息失败:`, errMsg)
         lastError = errMsg
 
         // 发送错误回复
         try {
           await bot!.reply(msg, '抱歉，处理您的消息时出现了错误，请稍后再试。')
         } catch (replyErr) {
-          console.error('[ilink] failed to send error reply:', replyErr)
+          console.error('[ilink] 发送错误回复失败:', replyErr)
         }
       }
     })
 
-    // 登录
-    console.log('[ilink] logging in...')
-    await bot.login()
+    // 异步启动（不等待登录完成）
+    console.log('[ilink] 正在启动 Bot...')
+    loginStatus = 'waiting'
 
-    // 启动
-    console.log('[ilink] starting bot...')
-    await bot.start()
+    // 异步执行登录和启动
+    ;(async () => {
+      try {
+        // 登录（会显示二维码）
+        console.log('[ilink] 正在获取二维码...')
+        await bot!.login({
+          callbacks: {
+            onQrUrl: (url: string) => {
+              console.log('[ilink] ================================')
+              console.log('[ilink] 请扫描二维码登录:')
+              console.log('[ilink]', url)
+              console.log('[ilink] ================================')
+              loginQRCode = url
+              loginStatus = 'waiting'
+            },
+            onScanned: () => {
+              console.log('[ilink] 已扫码，请在手机上确认登录')
+              loginStatus = 'scanned'
+            },
+            onExpired: () => {
+              console.log('[ilink] 二维码已过期')
+              loginStatus = 'expired'
+              loginQRCode = null
+            }
+          }
+        })
 
-    botRunning = true
-    botStartTime = Date.now()
-    lastError = null
+        // 登录成功后启动消息循环
+        console.log('[ilink] 登录成功，正在启动消息循环...')
+        await bot!.start()
+        console.log('[ilink] Bot 已启动并运行')
+      } catch (err) {
+        console.error('[ilink] Bot 启动失败:', err)
+        lastError = (err as Error).message
+        loginStatus = 'idle'
+        botRunning = false
+        bot = null
+      }
+    })()
 
-    console.log('[ilink] bot started')
+    // 等待一小段时间，让二维码 URL 显示
+    await new Promise(resolve => setTimeout(resolve, 1000))
+
     return { success: true }
   } catch (error) {
     const errMsg = (error as Error).message || 'Unknown error'
-    console.error('[ilink] failed to start bot:', errMsg)
+    console.error('[ilink] 创建 Bot 失败:', errMsg)
     lastError = errMsg
     bot = null
     return { success: false, error: errMsg }

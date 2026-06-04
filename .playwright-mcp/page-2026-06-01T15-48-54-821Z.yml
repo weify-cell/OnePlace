@@ -1,0 +1,14 @@
+- generic [ref=e5]:
+  - generic [ref=e6]:
+    - generic [ref=e7]: 📌
+    - heading "OnePlace" [level=1] [ref=e8]
+    - paragraph [ref=e9]: 个人效率工具
+  - generic [ref=e10]:
+    - generic [ref=e11]:
+      - generic [ref=e12]: 访问密码
+      - generic [ref=e15]:
+        - textbox "请输入密码" [active] [ref=e16]
+        - generic:
+          - generic: 请输入密码
+    - button "登录" [ref=e17] [cursor=pointer]:
+      - generic [ref=e18]: 登录

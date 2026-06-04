@@ -193,6 +193,10 @@ function handleEditLegacyNote() {
               </template>
               {{ note.is_pinned ? '取消置顶' : '置顶' }}
             </n-button>
+            <div class="note-toolbar__kb">
+              <span class="note-toolbar__kb-label">知识库</span>
+              <n-switch size="small" :value="note.is_knowledge_base" @update:value="(v) => noteStore.updateNote(note.id, { is_knowledge_base: v })" />
+            </div>
           </template>
           <template v-else>
             <n-button size="small" type="primary" class="note-toolbar__btn" @click="handleDoneEdit">
@@ -356,6 +360,17 @@ function handleEditLegacyNote() {
 
 .note-toolbar__btn:hover {
   box-shadow: 0 4px 12px rgba(245, 158, 11, 0.35);
+}
+
+.note-toolbar__kb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.note-toolbar__kb-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
 }
 
 /* Save status indicator */
