@@ -138,6 +138,10 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
         return
       }
 
+      // 添加时间戳到消息
+      const timestamp = formatBeijingTime()
+      const messageWithTime = `${timestamp} ${msg.text}`
+
       // 发送"正在输入"状态
       await bot!.sendTyping(msg.userId)
 
@@ -156,11 +160,11 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
         const timeInfo = `\n\n当前时间：${now.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}（北京时间）`
         const systemPromptWithTime = config.system_prompt + timeInfo
 
-        // 调用 pi-ai 处理消息
+        // 调用 pi-ai 处理消息（使用带时间戳的消息）
         const result = await streamChatWithPi(
           config.provider,
           config.model,
-          history,
+          [...history.slice(0, -1), { role: 'user', content: messageWithTime }],
           systemPromptWithTime,
           {
             onStart: () => {},
@@ -179,7 +183,7 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
         // 回复消息
         await bot!.reply(msg, result.content)
 
-        // 更新消息历史
+        // 更新消息历史（使用原始消息）
         history.push({ role: 'assistant', content: result.content })
         messageHistory.set(msg.userId, history)
 
