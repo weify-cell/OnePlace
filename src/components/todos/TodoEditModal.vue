@@ -20,6 +20,8 @@ const form = ref({
   status: 'todo' as TodoStatus,
   type: null as TodoType | null,
   due_date: null as string | null,
+  reminder_time: null as string | null,
+  reminder_enabled: true,
   tags: [] as string[]
 })
 
@@ -34,6 +36,8 @@ watch(
       status: todo.status,
       type: todo.type,
       due_date: todo.due_date,
+      reminder_time: todo.reminder_time ?? null,
+      reminder_enabled: todo.reminder_enabled ?? true,
       tags: [...todo.tags]
     }
   },
@@ -63,6 +67,8 @@ async function handleSave() {
       status: form.value.status,
       type: form.value.type,
       due_date: form.value.due_date,
+      reminder_time: form.value.reminder_time,
+      reminder_enabled: form.value.reminder_enabled,
       tags: form.value.tags
     })
     await todoStore.fetchAllTags()
@@ -107,6 +113,14 @@ async function handleSave() {
       <n-form-item label="截止日期">
         <n-date-picker v-model:formatted-value="form.due_date" type="date" value-format="yyyy-MM-dd" placeholder="请选择截止日期" clearable class="w-full" />
       </n-form-item>
+      <div class="grid grid-cols-2 gap-4">
+        <n-form-item label="提醒时间">
+          <n-date-picker v-model:formatted-value="form.reminder_time" type="datetime" value-format="yyyy-MM-dd HH:mm" placeholder="不设置则使用截止日期" clearable class="w-full" />
+        </n-form-item>
+        <n-form-item label="启用提醒">
+          <n-switch v-model:value="form.reminder_enabled" />
+        </n-form-item>
+      </div>
       <n-form-item label="标签">
         <TagInput :tags="form.tags" @update:tags="form.tags = $event" />
       </n-form-item>

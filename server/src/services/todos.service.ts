@@ -8,6 +8,8 @@ export interface Todo {
   status: 'todo' | 'in_progress' | 'done' | 'cancelled'
   type: string | null
   due_date: string | null
+  reminder_time: string | null
+  reminder_enabled: boolean
   tags: string[]
   is_deleted: boolean
   completed_at: string | null
@@ -23,6 +25,8 @@ interface TodoRow {
   status: string
   type: string | null
   due_date: string | null
+  reminder_time: string | null
+  reminder_enabled: number
   tags: string
   is_deleted: number
   completed_at: string | null
@@ -35,6 +39,7 @@ function rowToTodo(row: TodoRow): Todo {
     ...row,
     tags: JSON.parse(row.tags || '[]'),
     is_deleted: row.is_deleted === 1,
+    reminder_enabled: row.reminder_enabled === 1,
     completed_at: row.completed_at || null
   } as Todo
 }
@@ -92,8 +97,8 @@ export function getTodoById(id: number): Todo | null {
 export function createTodo(data: Partial<Todo>): Todo {
   const db = connectDatabase()
   const result = db.prepare(`
-    INSERT INTO todos (title, description, priority, status, type, due_date, tags)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO todos (title, description, priority, status, type, due_date, reminder_time, reminder_enabled, tags)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     data.title,
     data.description ?? null,
@@ -101,6 +106,8 @@ export function createTodo(data: Partial<Todo>): Todo {
     data.status ?? 'todo',
     data.type ?? null,
     data.due_date ?? null,
+    data.reminder_time ?? null,
+    data.reminder_enabled !== false ? 1 : 0,
     JSON.stringify(data.tags ?? [])
   )
   return getTodoById(result.lastInsertRowid as number)!
@@ -119,6 +126,8 @@ export function updateTodo(id: number, data: Partial<Todo>): Todo | null {
   if (data.priority !== undefined) { updates.push('priority = ?'); params.push(data.priority) }
   if (data.type !== undefined) { updates.push('type = ?'); params.push(data.type) }
   if (data.due_date !== undefined) { updates.push('due_date = ?'); params.push(data.due_date) }
+  if (data.reminder_time !== undefined) { updates.push('reminder_time = ?'); params.push(data.reminder_time) }
+  if (data.reminder_enabled !== undefined) { updates.push('reminder_enabled = ?'); params.push(data.reminder_enabled ? 1 : 0) }
   if (data.tags !== undefined) { updates.push('tags = ?'); params.push(JSON.stringify(data.tags)) }
 
   // Handle status change and completed_at

@@ -1,5 +1,6 @@
 import { Request, Response } from 'express'
 import * as ilinkBot from '../services/wechat/ilink-bot.service.js'
+import * as reminderService from '../services/wechat/todo-reminder.service.js'
 import * as settingsService from '../services/settings.service.js'
 
 /**
@@ -112,5 +113,29 @@ export function getMessageHistory(req: Request, res: Response): void {
 export function clearMessageHistory(req: Request, res: Response): void {
   const { userId } = req.params
   ilinkBot.clearMessageHistory(userId)
+  res.json({ success: true })
+}
+
+/**
+ * 获取提醒状态
+ */
+export function getReminderStatus(req: Request, res: Response): void {
+  const status = reminderService.getReminderStatus()
+  res.json(status)
+}
+
+/**
+ * 手动触发提醒
+ */
+export async function triggerReminder(req: Request, res: Response): Promise<void> {
+  const result = await reminderService.triggerReminder()
+  res.json(result)
+}
+
+/**
+ * 清除已提醒记录
+ */
+export function clearRemindedTodos(req: Request, res: Response): void {
+  reminderService.clearRemindedTodos()
   res.json({ success: true })
 }

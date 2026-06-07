@@ -15,6 +15,8 @@ export interface Todo {
   status: TodoStatus
   type: TodoType | null
   due_date: string | null
+  reminder_time: string | null
+  reminder_enabled: boolean
   tags: string[]
   is_deleted: boolean
   created_at: string
