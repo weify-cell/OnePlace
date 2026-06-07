@@ -1,6 +1,24 @@
 import { WeChatBot } from '@wechatbot/wechatbot'
 import { streamChatWithPi } from '../ai/pi-ai.adapter.js'
 import { getSettingValue, setSetting } from '../settings.service.js'
+import { setReminderBot, startReminderService, stopReminderService, saveWeChatUser } from './todo-reminder.service.js'
+
+/**
+ * 格式化当前时间为北京时间字符串
+ */
+function formatBeijingTime(): string {
+  const now = new Date()
+  const timestamp = now.toLocaleString('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  })
+  return `[${timestamp} 北京时间]`
+}
 
 // Bot 实例
 let bot: WeChatBot | null = null
@@ -88,6 +106,12 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
       botRunning = true
       botStartTime = Date.now()
       lastError = null
+
+      // 启动提醒服务
+      setReminderBot(bot!)
+      const reminderInterval = getSettingValue<number>('ilink_reminder_interval', 60)
+      startReminderService(reminderInterval)
+      console.log(`[ilink] reminder service started (interval: ${reminderInterval}min)`)
     })
 
     bot.on('session:expired', () => {
@@ -104,6 +128,9 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
     // 消息处理
     bot.onMessage(async (msg: any) => {
       console.log(`[ilink] 收到消息 ${msg.userId}: ${msg.text?.slice(0, 50)}`)
+
+      // 保存用户 ID（用于提醒服务）
+      saveWeChatUser(msg.userId)
 
       // 只处理文本消息
       if (!msg.text) {
@@ -124,12 +151,17 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
       }
 
       try {
+        // 动态注入当前时间到 systemPrompt
+        const now = new Date()
+        const timeInfo = `\n\n当前时间：${now.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}（北京时间）`
+        const systemPromptWithTime = config.system_prompt + timeInfo
+
         // 调用 pi-ai 处理消息
         const result = await streamChatWithPi(
           config.provider,
           config.model,
           history,
-          config.system_prompt,
+          systemPromptWithTime,
           {
             onStart: () => {},
             onDelta: () => {},
@@ -237,6 +269,9 @@ export function stopILinkBot(): { success: boolean; error?: string } {
   }
 
   try {
+    // 停止提醒服务
+    stopReminderService()
+
     // WeChatBot 没有 stop 方法，直接清理状态
     bot = null
     botRunning = false
