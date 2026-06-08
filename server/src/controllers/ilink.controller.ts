@@ -37,7 +37,7 @@ export function getConfig(req: Request, res: Response): void {
  * 更新 Bot 配置
  */
 export function updateConfig(req: Request, res: Response): void {
-  const { enabled, provider, model, system_prompt, max_tool_rounds } = req.body
+  const { enabled, provider, model, system_prompt, max_tool_rounds, reminder_interval } = req.body
 
   if (enabled !== undefined) {
     settingsService.setSetting('ilink_enabled', enabled)
@@ -53,6 +53,9 @@ export function updateConfig(req: Request, res: Response): void {
   }
   if (max_tool_rounds !== undefined) {
     settingsService.setSetting('ilink_max_tool_rounds', max_tool_rounds)
+  }
+  if (reminder_interval !== undefined) {
+    settingsService.setSetting('ilink_reminder_interval', reminder_interval)
   }
 
   res.json({ success: true })

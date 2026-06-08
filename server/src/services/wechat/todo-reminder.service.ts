@@ -16,13 +16,43 @@ export function setReminderBot(botInstance: WeChatBot): void {
 }
 
 /**
+ * 获取北京时间字符串
+ */
+function getBeijingTime(): string {
+  const now = new Date()
+  const options: Intl.DateTimeFormatOptions = {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }
+  const formatter = new Intl.DateTimeFormat('zh-CN', options)
+  const parts = formatter.formatToParts(now)
+  const year = parts.find(p => p.type === 'year')?.value || ''
+  const month = parts.find(p => p.type === 'month')?.value || ''
+  const day = parts.find(p => p.type === 'day')?.value || ''
+  const hour = parts.find(p => p.type === 'hour')?.value || ''
+  const minute = parts.find(p => p.type === 'minute')?.value || ''
+  const second = parts.find(p => p.type === 'second')?.value || ''
+  return `${year}-${month}-${day} ${hour}:${minute}:${second}`
+}
+
+/**
  * 获取需要提醒的任务
  */
 function getDueTodos(): Array<{ id: number; title: string; due_date: string; priority: string; reminder_time: string }> {
   const db = connectDatabase()
   const now = new Date()
-  const currentTime = now.toISOString().replace('T', ' ').slice(0, 16) // YYYY-MM-DD HH:mm
-  const today = now.toISOString().split('T')[0]
+
+  // 使用北京时间进行比较
+  const currentTime = getBeijingTime().slice(0, 16) // YYYY-MM-DD HH:mm
+  const today = getBeijingTime().slice(0, 10) // YYYY-MM-DD
+
+  console.log(`[reminder] checking with Beijing time: ${currentTime}, today: ${today}`)
 
   const rows = db.prepare(`
     SELECT id, title, due_date, priority, reminder_time
@@ -95,6 +125,7 @@ async function sendReminder(userId: string, todos: Array<{ id: number; title: st
     console.log(`[reminder] sent reminder to ${userId} for ${todos.length} todos`)
   } catch (err) {
     console.error(`[reminder] failed to send reminder to ${userId}:`, err)
+    throw err // 重新抛出异常，让调用者知道发送失败
   }
 }
 
@@ -141,12 +172,23 @@ async function checkAndRemind(): Promise<void> {
     }
 
     // 发送提醒给每个用户
+    let successCount = 0
     for (const userId of users) {
-      await sendReminder(userId, newTodos)
+      try {
+        await sendReminder(userId, newTodos)
+        successCount++
+      } catch (err) {
+        console.error(`[reminder] failed to send to ${userId}:`, err)
+      }
     }
 
-    // 标记已提醒
-    newTodos.forEach(t => remindedTodos.add(t.id))
+    // 只有在至少一个用户发送成功时才标记已提醒
+    if (successCount > 0) {
+      newTodos.forEach(t => remindedTodos.add(t.id))
+      console.log(`[reminder] marked ${newTodos.length} todos as reminded`)
+    } else {
+      console.log('[reminder] no reminders sent successfully, will retry next cycle')
+    }
   } catch (err) {
     console.error('[reminder] check failed:', err)
   }

@@ -106,12 +106,6 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
       botRunning = true
       botStartTime = Date.now()
       lastError = null
-
-      // 启动提醒服务
-      setReminderBot(bot!)
-      const reminderInterval = getSettingValue<number>('ilink_reminder_interval', 60)
-      startReminderService(reminderInterval)
-      console.log(`[ilink] reminder service started (interval: ${reminderInterval}min)`)
     })
 
     bot.on('session:expired', () => {
@@ -240,6 +234,15 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
 
         // 登录成功后启动消息循环
         console.log('[ilink] 登录成功，正在启动消息循环...')
+
+        // 延迟启动提醒服务（等待 contextStore 加载完成）
+        setTimeout(() => {
+          setReminderBot(bot!)
+          const reminderInterval = getSettingValue<number>('ilink_reminder_interval', 60)
+          startReminderService(reminderInterval)
+          console.log(`[ilink] reminder service started (interval: ${reminderInterval}min)`)
+        }, 2000) // 延迟 2 秒，确保 contextStore 加载完成
+
         await bot!.start()
         console.log('[ilink] Bot 已启动并运行')
       } catch (err) {
