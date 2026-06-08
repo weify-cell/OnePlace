@@ -1,10 +1,9 @@
 import { config } from 'dotenv'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
+import { registerBuiltinTools } from './services/ai/builtin-tools.js'
 
-// Load .env from project root (2 levels up from server/src/)
-const __dirname = dirname(fileURLToPath(import.meta.url))
-config({ path: resolve(__dirname, '../../.env') })
+
 
 import express from 'express'
 import cors from 'cors'
@@ -21,6 +20,10 @@ import { foldersRouter } from './routes/folders.routes.js'
 import { uploadRouter } from './routes/upload.routes.js'
 import { kbRouter } from './routes/knowledge-base.routes.js'
 import { ilinkRouter } from './routes/ilink.routes.js'
+
+// Load .env from project root (2 levels up from server/src/)
+const __dirname = dirname(fileURLToPath(import.meta.url))
+config({ path: resolve(__dirname, '../../.env') })
 
 const app = express()
 const PORT = process.env.PORT || 3000
@@ -80,7 +83,6 @@ const db = connectDatabase()
 runMigrations(db)
 
 // Register builtin tools for agent
-import { registerBuiltinTools } from './services/ai/builtin-tools.js'
 registerBuiltinTools()
 
 app.listen(Number(PORT), '0.0.0.0', () => {

@@ -149,17 +149,12 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
       }
 
       try {
-        // 动态注入当前时间到 systemPrompt
-        const now = new Date()
-        const timeInfo = `\n\n当前时间：${now.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}（北京时间）`
-        const systemPromptWithTime = config.system_prompt + timeInfo
-
         // 调用 pi-ai 处理消息（使用带时间戳的消息）
         const result = await streamChatWithPi(
           config.provider,
           config.model,
           [...history.slice(0, -1), { role: 'user', content: messageWithTime }],
-          systemPromptWithTime,
+          config.system_prompt,
           {
             onStart: () => {},
             onDelta: () => {},
