@@ -95,6 +95,10 @@ export function getTodoById(id: number): Todo | null {
 }
 
 export function createTodo(data: Partial<Todo>): Todo {
+  // 解析参数当开启提醒时， 提醒时间必须设置
+  if(data.reminder_enabled && !data.reminder_time){
+    throw new Error('提醒时间必须设置')
+  }
   const db = connectDatabase()
   const result = db.prepare(`
     INSERT INTO todos (title, description, priority, status, type, due_date, reminder_time, reminder_enabled, tags)

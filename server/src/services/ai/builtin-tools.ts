@@ -68,7 +68,7 @@ export function registerBuiltinTools(): void {
       description: Type.Optional(Type.String({ description: '任务描述' })),
       priority: Type.Optional(Type.String({ description: '优先级: low/medium/high/urgent，默认 medium' })),
       due_date: Type.Optional(Type.String({ description: '截止日期，格式 YYYY-MM-DD' })),
-      reminder_time: Type.Optional(Type.String({ description: '提醒时间，格式 YYYY-MM-DD HH:mm，不设置则使用截止日期当天 09:00' })),
+      reminder_time: Type.Optional(Type.String({ description: '提醒时间，格式 YYYY-MM-DD HH:mm，启用提醒时必须填提醒时间' })),
       reminder_enabled: Type.Optional(Type.Boolean({ description: '是否启用提醒，默认 true' })),
       tags: Type.Optional(Type.Array(Type.String(), { description: '标签列表' }))
     })
