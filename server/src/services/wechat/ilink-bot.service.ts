@@ -2,6 +2,7 @@ import { WeChatBot } from '@wechatbot/wechatbot'
 import { streamChatWithPi } from '../ai/pi-ai.adapter.js'
 import { getSettingValue, setSetting } from '../settings.service.js'
 import { setReminderBot, startReminderService, stopReminderService, saveWeChatUser } from './todo-reminder.service.js'
+import { setProactiveBot, startProactiveChatService, stopProactiveChatService } from './proactive-chat.service.js'
 
 /**
  * 格式化当前时间为北京时间字符串
@@ -230,12 +231,17 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
         // 登录成功后启动消息循环
         console.log('[ilink] 登录成功，正在启动消息循环...')
 
-        // 延迟启动提醒服务（等待 contextStore 加载完成）
+        // 延迟启动提醒服务和主动聊天服务（等待 contextStore 加载完成）
         setTimeout(() => {
           setReminderBot(bot!)
           const reminderInterval = getSettingValue<number>('ilink_reminder_interval', 60)
           startReminderService(reminderInterval)
           console.log(`[ilink] reminder service started (interval: ${reminderInterval}min)`)
+
+          // 启动主动聊天服务
+          setProactiveBot(bot!)
+          startProactiveChatService()
+          console.log('[ilink] proactive chat service started')
         }, 2000) // 延迟 2 秒，确保 contextStore 加载完成
 
         await bot!.start()
@@ -273,6 +279,9 @@ export function stopILinkBot(): { success: boolean; error?: string } {
   try {
     // 停止提醒服务
     stopReminderService()
+
+    // 停止主动聊天服务
+    stopProactiveChatService()
 
     // WeChatBot 没有 stop 方法，直接清理状态
     bot = null
