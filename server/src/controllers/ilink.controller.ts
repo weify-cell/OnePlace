@@ -1,6 +1,7 @@
 import { Request, Response } from 'express'
 import * as ilinkBot from '../services/wechat/ilink-bot.service.js'
 import * as reminderService from '../services/wechat/todo-reminder.service.js'
+import * as proactiveChat from '../services/wechat/proactive-chat.service.js'
 import * as settingsService from '../services/settings.service.js'
 
 /**
@@ -140,5 +141,53 @@ export async function triggerReminder(req: Request, res: Response): Promise<void
  */
 export function clearRemindedTodos(req: Request, res: Response): void {
   reminderService.clearRemindedTodos()
+  res.json({ success: true })
+}
+
+/**
+ * 获取主动聊天配置
+ */
+export function getProactiveChatConfig(req: Request, res: Response): void {
+  const status = proactiveChat.getProactiveChatStatus()
+  res.json({
+    enabled: status.config.enabled,
+    min_interval: status.config.minInterval,
+    quiet_hours_start: status.config.quietHoursStart,
+    quiet_hours_end: status.config.quietHoursEnd,
+    check_interval: status.config.checkInterval
+  })
+}
+
+/**
+ * 更新主动聊天配置
+ */
+export function updateProactiveChatConfig(req: Request, res: Response): void {
+  const { enabled, min_interval, quiet_hours_start, quiet_hours_end, check_interval } = req.body
+
+  if (enabled !== undefined) {
+    settingsService.setSetting('ilink_proactive_chat_enabled', enabled)
+  }
+  if (min_interval !== undefined) {
+    settingsService.setSetting('ilink_proactive_chat_min_interval', min_interval)
+  }
+  if (quiet_hours_start !== undefined) {
+    settingsService.setSetting('ilink_proactive_chat_quiet_hours_start', quiet_hours_start)
+  }
+  if (quiet_hours_end !== undefined) {
+    settingsService.setSetting('ilink_proactive_chat_quiet_hours_end', quiet_hours_end)
+  }
+  if (check_interval !== undefined) {
+    settingsService.setSetting('ilink_proactive_chat_check_interval', check_interval)
+  }
+
+  // 通知服务配置已更新
+  proactiveChat.updateProactiveChatConfig({
+    enabled,
+    minInterval: min_interval,
+    quietHoursStart: quiet_hours_start,
+    quietHoursEnd: quiet_hours_end,
+    checkInterval: check_interval
+  })
+
   res.json({ success: true })
 }

@@ -24,3 +24,7 @@ ilinkRouter.post('/reminder/clear', ilinkController.clearRemindedTodos)
 // 消息历史（调试）
 ilinkRouter.get('/history/:userId', ilinkController.getMessageHistory)
 ilinkRouter.delete('/history/:userId', ilinkController.clearMessageHistory)
+
+// 主动聊天配置
+ilinkRouter.get('/proactive-chat/config', ilinkController.getProactiveChatConfig)
+ilinkRouter.put('/proactive-chat/config', ilinkController.updateProactiveChatConfig)
