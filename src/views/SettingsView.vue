@@ -304,7 +304,7 @@ function formatUptime(ms: number): string {
 
 // 清理定时器
 onUnmounted(() => {
-  stopLoginPolling()
+  stopStatusPolling()
 })
 </script>
 

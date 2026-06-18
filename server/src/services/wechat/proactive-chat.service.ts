@@ -2,6 +2,7 @@ import { WeChatBot } from '@wechatbot/wechatbot'
 import { streamChatWithPi } from '../ai/pi-ai.adapter.js'
 import { getSettingValue } from '../settings.service.js'
 import { connectDatabase } from '../../database/index.js'
+import {addMessageToHistory} from './ilink-bot.service.js'
 
 // 定时器
 let proactiveTimer: ReturnType<typeof setInterval> | null = null
@@ -152,21 +153,18 @@ async function generateProactiveMessage(userId: string): Promise<string> {
   const systemPrompt = `你是一个友好的微信助手。现在你想主动找用户聊天，保持轻松友好的语气。
 请生成一条简短、自然的问候或话题开启消息，就像朋友之间发微信一样。
 注意：
-1. 不要太长，控制在 1-2 句话
+1. 发送的内容要有实时依据，最好是你利用工具获取到的信息
 2. 不要太正式，要亲切自然
-3. 可以问问用户今天怎么样，或者分享一个有趣的话题
-4. 使用中文
-5. 不要使用表情符号`
+3. 可以使用表情符号
+4. 你可以参考用户笔记本内容，或代办事项`
 
-  const messages = [
-    { role: 'user' as const, content: '请生成一条主动聊天的消息' }
-  ]
 
+// 主动聊天不需要历史消息（用户未参与对话），传空数组避免连续assistant消息
   try {
     const result = await streamChatWithPi(
       provider,
       model,
-      messages,
+      [],
       systemPrompt,
       {
         onStart: () => {},
@@ -207,6 +205,7 @@ async function sendProactiveMessage(userId: string): Promise<boolean> {
 
   try {
     const message = await generateProactiveMessage(userId)
+    addMessageToHistory(userId, 'assistant', message) // 将主动消息添加到历史记录中
     await bot.send(userId, message)
 
     // 更新发送时间

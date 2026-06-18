@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { useSettingsStore } from '@/stores/settings.store'
 import { useAuthStore } from '@/stores/auth.store'
-import { darkTheme, lightTheme } from 'naive-ui'
+import { darkTheme, lightTheme} from 'naive-ui'
 import LoginReminderModal from '@/components/common/LoginReminderModal.vue'
 
 const settingsStore = useSettingsStore()
@@ -10,7 +10,7 @@ const authStore = useAuthStore()
 const route = useRoute()
 
 function shouldLoadSettings(): boolean {
-  // 未认证时不加载设置
+  // 未认证时不加载设   置
   if (!authStore.token) return false
   return route.path !== '/login' && route.path !== '/setup'
 }

@@ -298,8 +298,23 @@ export function stopILinkBot(): { success: boolean; error?: string } {
 /**
  * 获取消息历史（调试用）
  */
-export function getMessageHistory(userId: string): Array<{ role: string; content: string }> {
+export function getMessageHistory(userId: string): Array<{ role: 'user' | 'assistant'; content: string }> {
   return messageHistory.get(userId) || []
+}
+
+/**
+ * 添加消息到历史记录
+ */
+export function addMessageToHistory(userId: string, role: 'user' | 'assistant', content: string): void {
+  let history = messageHistory.get(userId) || []
+  history.push({ role, content })
+
+  // 保持历史长度限制
+  if (history.length > MAX_HISTORY_LENGTH) {
+    history = history.slice(-MAX_HISTORY_LENGTH)
+  }
+
+  messageHistory.set(userId, history)
 }
 
 /**

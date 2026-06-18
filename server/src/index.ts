@@ -3,8 +3,6 @@ import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { registerBuiltinTools } from './services/ai/builtin-tools.js'
 
-
-
 import express from 'express'
 import cors from 'cors'
 import { connectDatabase } from './database/index.js'
