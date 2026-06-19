@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import * as chatController from '../controllers/chat.controller.js'
+import * as chatService from '../services/chat.service.js'
 
 export const chatRouter = Router()
 
@@ -14,7 +15,7 @@ chatRouter.post('/:id/chat', chatController.streamChat)
 chatRouter.patch('/:id/kb', (req, res) => {
   const { id } = req.params
   const { kb_enabled } = req.body
-  const conv = chatController.updateConversation(Number(id), { kb_enabled })
+  const conv = chatService.updateConversation(Number(id), { kb_enabled })
   if (!conv) { res.status(404).json({ error: 'NotFound' }); return }
-  res.json({ success: true })
+  res.json(conv)
 })

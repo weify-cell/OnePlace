@@ -21,6 +21,16 @@ interface SearchResult {
   payload: Record<string, unknown>
 }
 
+function normalizePointId(id: unknown): string {
+  if (typeof id === 'string' || typeof id === 'number') {
+    return String(id)
+  }
+  if (id && typeof id === 'object' && 'uuid' in id) {
+    return String((id as { uuid: string }).uuid)
+  }
+  return String(id)
+}
+
 export function getQdrantUrl(): string {
   return getSettingValue<string>('qdrant_url', 'http://localhost:6333')
 }
@@ -80,7 +90,12 @@ export async function searchChunks(queryVector: number[], topK: number): Promise
   const collection = getCollectionName()
   console.log(`[vector] searchChunks: collection=${collection}, vectorLen=${queryVector.length}`)
   try {
-    const res = await request<{ result?: Array<{ id: number; score: number; payload?: Record<string, unknown> }>; status?: string; error?: string }>('POST', `/collections/${collection}/points/search`, {
+    const res = await request<{
+      result?: Array<{ id: unknown; score: number; payload?: Record<string, unknown> }>
+      results?: Array<{ id: unknown; score: number; payload?: Record<string, unknown> }>
+      status?: string
+      error?: string
+    }>('POST', `/collections/${collection}/points/search`, {
       vector: queryVector,
       limit: topK,
       with_payload: true,
@@ -88,15 +103,17 @@ export async function searchChunks(queryVector: number[], topK: number): Promise
 
     console.log(`[vector] searchChunks response:`, JSON.stringify(res).slice(0, 500))
 
-    if (!res.result) {
+    const resultItems = res.result || res.results
+
+    if (!resultItems) {
       console.error('[vector] searchChunks: no result field, response:', res)
       return []
     }
 
-    return res.result.map((r) => {
+    return resultItems.map((r) => {
       console.log(`[vector] point id=${r.id}, score=${r.score}, payload=`, JSON.stringify(r.payload).slice(0, 200))
       return {
-        id: String(r.id),
+        id: normalizePointId(r.id),
         score: r.score,
         payload: r.payload || {},
       }

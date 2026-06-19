@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { useSettingsStore } from '@/stores/settings.store'
 import { useAuthStore } from '@/stores/auth.store'
-import { darkTheme, lightTheme} from 'naive-ui'
+import { darkTheme, lightTheme } from 'naive-ui'
 import LoginReminderModal from '@/components/common/LoginReminderModal.vue'
 
 const settingsStore = useSettingsStore()
@@ -10,7 +10,6 @@ const authStore = useAuthStore()
 const route = useRoute()
 
 function shouldLoadSettings(): boolean {
-  // 未认证时不加载设   置
   if (!authStore.token) return false
   return route.path !== '/login' && route.path !== '/setup'
 }
@@ -19,22 +18,35 @@ const showReminderModal = computed(() => {
   return authStore.isAuthenticated && route.path !== '/login' && route.path !== '/setup'
 })
 
-onMounted(() => {
-  if (shouldLoadSettings()) {
-    settingsStore.loadSettings()
-  }
-})
-
-// 路由切换后加载设置（登录后）
-watch(() => route.path, () => {
-  if (shouldLoadSettings()) {
-    settingsStore.loadSettings()
-  }
-})
-
 const systemDark = ref(window.matchMedia('(prefers-color-scheme: dark)').matches)
 const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
-mediaQuery.addEventListener('change', (e) => { systemDark.value = e.matches })
+
+function handleColorSchemeChange(event: MediaQueryListEvent) {
+  systemDark.value = event.matches
+}
+
+onMounted(() => {
+  mediaQuery.addEventListener('change', handleColorSchemeChange)
+})
+
+onUnmounted(() => {
+  mediaQuery.removeEventListener('change', handleColorSchemeChange)
+})
+
+watch(
+  [() => authStore.token, () => route.path],
+  async ([token]) => {
+    if (!token) {
+      settingsStore.resetSettingsState()
+      return
+    }
+
+    if (shouldLoadSettings()) {
+      await settingsStore.loadSettings()
+    }
+  },
+  { immediate: true }
+)
 
 const isDark = computed(() => {
   if (settingsStore.theme === 'dark') return true

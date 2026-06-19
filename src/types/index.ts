@@ -117,7 +117,7 @@ export interface Message {
   created_at: string
 }
 
-/** 实时流式状态（SSE 推送，非持久化） */
+// Runtime stream state for SSE updates.
 export interface StreamState {
   thinking: string
   toolCalls: Array<{ id: string; name: string; arguments: Record<string, any>; status: 'running' | 'completed'; result?: string }>
@@ -145,21 +145,40 @@ export interface Settings {
 
 // Constants
 export const TODO_PRIORITY_LABELS: Record<TodoPriority, string> = {
-  low: '低', medium: '中', high: '高', urgent: '紧急'
+  low: '低',
+  medium: '中',
+  high: '高',
+  urgent: '紧急'
 }
 
 export const TODO_STATUS_LABELS: Record<TodoStatus, string> = {
-  todo: '待办', in_progress: '进行中', done: '已完成', cancelled: '已取消'
+  todo: '待办',
+  in_progress: '进行中',
+  done: '已完成',
+  cancelled: '已取消'
 }
 
 export const TODO_TYPE_LABELS: Record<TodoType, string> = {
-  work: '工作', study: '学习', personal: '个人', health: '健康', finance: '财务', family: '家庭'
+  work: '工作',
+  study: '学习',
+  personal: '个人',
+  health: '健康',
+  finance: '财务',
+  family: '家庭'
 }
 
 export const TODO_PRIORITY_COLORS: Record<TodoPriority, string> = {
-  low: 'info', medium: 'default', high: 'warning', urgent: 'error'
+  low: 'info',
+  medium: 'default',
+  high: 'warning',
+  urgent: 'error'
 }
 
 export const TODO_TYPE_ICONS: Record<TodoType, string> = {
-  work: '💼', study: '📚', personal: '👤', health: '❤️', finance: '💰', family: '🏠'
+  work: '💼',
+  study: '📚',
+  personal: '👤',
+  health: '❤️',
+  finance: '💰',
+  family: '🏡'
 }

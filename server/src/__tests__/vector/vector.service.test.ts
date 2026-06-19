@@ -6,7 +6,7 @@ const mockFetch = vi.fn()
 global.fetch = mockFetch
 
 // Mock settings service
-vi.mock('../services/settings.service.js', () => ({
+vi.mock('../../services/settings.service.js', () => ({
   getSettingValue: vi.fn((key: string, defaultValue: string) => {
     if (key === 'qdrant_url') return 'http://localhost:6333'
     if (key === 'qdrant_collection') return 'notes_knowledge_base'
@@ -121,7 +121,7 @@ describe('vector.service', () => {
       const call = mockFetch.mock.calls[0]
       expect(call[0]).toBe('http://localhost:6333/collections/notes_knowledge_base/points/delete')
       const body = JSON.parse(call[1].body as string)
-      expect(body.points).toEqual(['chunk-1', 'chunk-2'])
+      expect(body.points).toEqual({ ids: ['chunk-1', 'chunk-2'] })
     })
   })
 })

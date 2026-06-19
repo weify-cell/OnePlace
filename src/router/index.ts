@@ -1,6 +1,8 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth.store'
 
+const PUBLIC_PATHS = new Set(['/login', '/setup'])
+
 const router = createRouter({
   history: createWebHistory(),
   routes: [
@@ -25,59 +27,31 @@ const router = createRouter({
   ]
 })
 
-// 导航守卫锁，防止并发执行
-let isNavigating = false
-
-router.beforeEach(async (to, from, next) => {
-  // 防止并发导航
-  if (isNavigating) {
-    console.log('[Router] Navigation in progress, waiting...')
-    // 等待当前导航完成后再试
-    setTimeout(() => next(), 50)
-    return
-  }
-
-  isNavigating = true
-  console.log('[Router] === BeforeEach === from:', from.path, 'to:', to.path)
-
+router.beforeEach(async (to) => {
   try {
     const authStore = useAuthStore()
-    console.log('[Router] needsSetup value:', authStore.needsSetup)
-
     const needsSetup = await authStore.checkSetup()
-    console.log('[Router] checkSetup returned:', needsSetup)
 
-    // 情况1: 需要设置密码且不在 /setup 页面
     if (needsSetup && to.path !== '/setup') {
-      console.log('[Router] -> Redirect to /setup')
-      return next('/setup')
+      return '/setup'
     }
 
-    // 情况2: 不需要设置密码，但在 /setup 页面 -> 重定向到登录
     if (!needsSetup && to.path === '/setup') {
-      console.log('[Router] -> Redirect to /login (setup complete)')
-      return next('/login')
+      return authStore.isAuthenticated ? '/todos' : '/login'
     }
 
-    // 情况3: 需要认证但没有 token
     if (to.meta.requiresAuth && !authStore.token) {
-      console.log('[Router] -> Redirect to /login (needs auth)')
-      return next('/login')
+      return '/login'
     }
 
-    // 情况4: 已登录用户在登录/设置页面 -> 重定向到首页
-    if ((to.path === '/login' || to.path === '/setup') && authStore.isAuthenticated && !needsSetup) {
-      console.log('[Router] -> Redirect to /todos (already auth)')
-      return next('/todos')
+    if (PUBLIC_PATHS.has(to.path) && authStore.isAuthenticated && !needsSetup) {
+      return '/todos'
     }
 
-    console.log('[Router] -> Proceed to', to.path)
-    next()
+    return true
   } catch (err) {
-    console.error('[Router] Error in beforeEach:', err)
-    next()
-  } finally {
-    isNavigating = false
+    console.error('[router] beforeEach failed:', err)
+    return true
   }
 })
 

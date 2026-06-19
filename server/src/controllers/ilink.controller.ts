@@ -4,6 +4,11 @@ import * as reminderService from '../services/wechat/todo-reminder.service.js'
 import * as proactiveChat from '../services/wechat/proactive-chat.service.js'
 import * as settingsService from '../services/settings.service.js'
 
+function getSingleParam(value: string | string[] | undefined): string | undefined {
+  if (Array.isArray(value)) return value[0]
+  return value
+}
+
 /**
  * 获取 Bot 状态
  */
@@ -106,7 +111,11 @@ export function resetLogin(req: Request, res: Response): void {
  * 获取消息历史（调试用）
  */
 export function getMessageHistory(req: Request, res: Response): void {
-  const { userId } = req.params
+  const userId = getSingleParam(req.params.userId)
+  if (!userId) {
+    res.status(400).json({ error: 'BadRequest', message: 'userId is required' })
+    return
+  }
   const history = ilinkBot.getMessageHistory(userId)
   res.json(history)
 }
@@ -115,7 +124,7 @@ export function getMessageHistory(req: Request, res: Response): void {
  * 清除消息历史
  */
 export function clearMessageHistory(req: Request, res: Response): void {
-  const { userId } = req.params
+  const userId = getSingleParam(req.params.userId)
   ilinkBot.clearMessageHistory(userId)
   res.json({ success: true })
 }

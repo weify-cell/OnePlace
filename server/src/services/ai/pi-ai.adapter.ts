@@ -174,7 +174,8 @@ async function processEventStream(
         console.log(`[pi-ai] event #${eventCount}: done reason=${stopReason} tokens=${tokensUsed} content=${content.length}c tools=${toolCalls.length}`)
         break
       case 'error': {
-        const msg = event.errorMessage || 'Unknown error'
+        const errorPayload = event.error as { content?: Array<{ type?: string; text?: string }> } | undefined
+        const msg = errorPayload?.content?.find(item => item.type === 'text')?.text || `Stream ${event.reason}`
         console.error(`[pi-ai] event #${eventCount}: error: ${msg}`)
         if (content) {
           return { content, tokensUsed, stopReason: 'error', toolCalls }

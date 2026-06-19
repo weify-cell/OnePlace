@@ -115,9 +115,10 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
       botRunning = false
     })
 
-    bot.on('error', (err: Error) => {
+    bot.on('error', (err: unknown) => {
+      const error = err instanceof Error ? err : new Error(String(err))
       console.error('[ilink] Bot 错误:', err)
-      lastError = err.message
+      lastError = error.message
     })
 
     // 消息处理
