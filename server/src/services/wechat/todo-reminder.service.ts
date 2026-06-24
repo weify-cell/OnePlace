@@ -8,6 +8,9 @@ let bot: WeChatBot | null = null
 // 已提醒的任务 ID（避免重复提醒）
 const remindedTodos = new Set<number>()
 
+// 待发送提醒队列（context_token 过期时暂存）
+const pendingReminders = new Map<string, Array<{ message: string; timestamp: number }>>()
+
 /**
  * 设置 Bot 实例
  */
@@ -123,10 +126,67 @@ async function sendReminder(userId: string, todos: Array<{ id: number; title: st
   try {
     await bot.send(userId, message)
     console.log(`[reminder] sent reminder to ${userId} for ${todos.length} todos`)
-  } catch (err) {
-    console.error(`[reminder] failed to send reminder to ${userId}:`, err)
+  } catch (err: any) {
+    console.error(`[reminder] failed to send reminder to ${userId}:`, err.message || err)
+
+    // 如果是 context_token 过期 (ret=-2)，保存到待发送队列
+    if (err.code === 'API_ERROR' && err.payload?.ret === -2) {
+      console.log(`[reminder] context_token expired for ${userId}, saving to pending queue`)
+
+      // 保存到待发送队列
+      const pending = pendingReminders.get(userId) || []
+      pending.push({ message, timestamp: Date.now() })
+      pendingReminders.set(userId, pending)
+
+      // 清除存储中的 context_token
+      try {
+        const fs = await import('node:fs/promises')
+        const path = await import('node:path')
+        const os = await import('node:os')
+        const tokenFile = path.join(os.homedir(), '.wechatbot', 'context_tokens.json')
+        const raw = await fs.readFile(tokenFile, 'utf8').catch(() => '{}')
+        const tokens = JSON.parse(raw)
+        delete tokens[userId]
+        await fs.writeFile(tokenFile, JSON.stringify(tokens, null, 2) + '\n')
+      } catch (clearErr) {
+        console.error('[reminder] failed to clear context_token:', clearErr)
+      }
+    }
+
     throw err // 重新抛出异常，让调用者知道发送失败
   }
+}
+
+/**
+ * 发送积压的提醒（用户重新发消息后调用）
+ */
+export async function sendPendingReminders(userId: string): Promise<void> {
+  const pending = pendingReminders.get(userId)
+  if (!pending || pending.length === 0 || !bot) return
+
+  console.log(`[reminder] sending ${pending.length} pending reminders to ${userId}`)
+
+  // 合并所有积压的提醒为一条消息
+  const messages = pending.map(p => p.message)
+  const combinedMessage = messages.join('\n\n---\n\n')
+
+  try {
+    await bot.send(userId, combinedMessage)
+    console.log(`[reminder] sent ${pending.length} pending reminders to ${userId}`)
+    // 清除队列
+    pendingReminders.delete(userId)
+  } catch (err) {
+    console.error(`[reminder] failed to send pending reminders to ${userId}:`, err)
+    // 如果还是失败，保留队列等待下次重试
+  }
+}
+
+/**
+ * 检查是否有待发送的提醒
+ */
+export function hasPendingReminders(userId: string): boolean {
+  const pending = pendingReminders.get(userId)
+  return pending !== undefined && pending.length > 0
 }
 
 /**

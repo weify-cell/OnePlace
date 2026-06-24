@@ -1,7 +1,7 @@
 import { WeChatBot } from '@wechatbot/wechatbot'
 import { streamChatWithPi } from '../ai/pi-ai.adapter.js'
 import { getSettingValue, setSetting } from '../settings.service.js'
-import { setReminderBot, startReminderService, stopReminderService, saveWeChatUser } from './todo-reminder.service.js'
+import { setReminderBot, startReminderService, stopReminderService, saveWeChatUser, sendPendingReminders, hasPendingReminders } from './todo-reminder.service.js'
 import { setProactiveBot, startProactiveChatService, stopProactiveChatService } from './proactive-chat.service.js'
 
 /**
@@ -127,6 +127,12 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
 
       // 保存用户 ID（用于提醒服务）
       saveWeChatUser(msg.userId)
+
+      // 检查是否有待发送的提醒（context_token 过期后积压的）
+      if (hasPendingReminders(msg.userId)) {
+        console.log(`[ilink] 发现待发送提醒，正在补发给 ${msg.userId}`)
+        await sendPendingReminders(msg.userId)
+      }
 
       // 只处理文本消息
       if (!msg.text) {
