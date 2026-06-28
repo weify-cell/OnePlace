@@ -148,7 +148,7 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
       saveWeChatUser(msg.userId)
 
       // 命令解析：/学习 主题
-      if (msg.text.startsWith('/学习 ')) {
+      if (msg.text?.startsWith('/学习 ')) {
         const topic = msg.text.slice(4).trim()
         if (!topic) {
           await bot!.reply(msg, '请指定学习主题，例如：/学习 Python')
@@ -160,7 +160,7 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
       }
 
       // 命令解析：/退出
-      if (msg.text.trim() === '/退出') {
+      if (msg.text?.trim() === '/退出') {
         userModes.delete(msg.userId)
         await bot!.reply(msg, '已退出学习模式，恢复普通聊天。')
         return
