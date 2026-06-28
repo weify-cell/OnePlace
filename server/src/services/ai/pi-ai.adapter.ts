@@ -217,6 +217,18 @@ export async function streamChatWithPi(
   const maxRounds = options?.maxRounds ?? 5
 
   console.log(`[pi-ai] streamChatWithPi: provider=${provider} model=${modelId} tools=${tools.length} maxRounds=${maxRounds}`)
+  console.log(`[pi-ai] ========== 上下文 START ==========`)
+  if (systemPrompt) {
+    console.log(`[pi-ai] systemPrompt: ${systemPrompt.slice(0, 200)}${systemPrompt.length > 200 ? '...' : ''}`)
+  }
+  messages.forEach((m, i) => {
+    const preview = m.content.slice(0, 100)
+    console.log(`[pi-ai] msg[${i}] ${m.role}: ${preview}${m.content.length > 100 ? '...' : ''}`)
+  })
+  if (tools.length > 0) {
+    console.log(`[pi-ai] tools: ${tools.map(t => t.name).join(', ')}`)
+  }
+  console.log(`[pi-ai] ========== 上下文 END ==========`)
 
   let fullContent = ''
   let tokensUsed: number | null = null

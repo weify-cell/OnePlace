@@ -63,15 +63,10 @@ function getDueTodos(): Array<{ id: number; title: string; due_date: string; pri
     WHERE is_deleted = 0
       AND status NOT IN ('done', 'cancelled')
       AND reminder_enabled = 1
-      AND (
-        (reminder_time IS NOT NULL AND reminder_time <= ?)
-        OR
-        (reminder_time IS NULL AND due_date IS NOT NULL AND due_date <= ?)
-      )
-    ORDER BY
-      CASE WHEN reminder_time IS NOT NULL THEN reminder_time ELSE due_date END ASC,
-      priority DESC
-  `).all(currentTime, today) as Array<{ id: number; title: string; due_date: string; priority: string; reminder_time: string }>
+      AND reminder_time IS NOT NULL
+      AND reminder_time <= ?
+    ORDER BY reminder_time ASC, priority DESC
+  `).all(currentTime) as Array<{ id: number; title: string; due_date: string; priority: string; reminder_time: string }>
 
   return rows
 }

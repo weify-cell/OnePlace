@@ -35,7 +35,9 @@ export function getConfig(req: Request, res: Response): void {
     provider: config.provider,
     model: config.model,
     system_prompt: config.system_prompt,
-    max_tool_rounds: config.max_tool_rounds
+    max_tool_rounds: config.max_tool_rounds,
+    proactive_system_prompt: settingsService.getSettingValue<string>('ilink_proactive_chat_system_prompt', ''),
+    proactive_user_message: settingsService.getSettingValue<string>('ilink_proactive_chat_user_message', '请生成一条主动问候消息')
   })
 }
 
@@ -43,7 +45,7 @@ export function getConfig(req: Request, res: Response): void {
  * 更新 Bot 配置
  */
 export function updateConfig(req: Request, res: Response): void {
-  const { enabled, provider, model, system_prompt, max_tool_rounds, reminder_interval } = req.body
+  const { enabled, provider, model, system_prompt, max_tool_rounds, reminder_interval, proactive_user_message, proactive_system_prompt } = req.body
 
   if (enabled !== undefined) {
     settingsService.setSetting('ilink_enabled', enabled)
@@ -62,6 +64,12 @@ export function updateConfig(req: Request, res: Response): void {
   }
   if (reminder_interval !== undefined) {
     settingsService.setSetting('ilink_reminder_interval', reminder_interval)
+  }
+  if (proactive_user_message !== undefined) {
+    settingsService.setSetting('ilink_proactive_chat_user_message', proactive_user_message)
+  }
+  if (proactive_system_prompt !== undefined) {
+    settingsService.setSetting('ilink_proactive_chat_system_prompt', proactive_system_prompt)
   }
 
   res.json({ success: true })
@@ -163,7 +171,9 @@ export function getProactiveChatConfig(req: Request, res: Response): void {
     min_interval: status.config.minInterval,
     quiet_hours_start: status.config.quietHoursStart,
     quiet_hours_end: status.config.quietHoursEnd,
-    check_interval: status.config.checkInterval
+    check_interval: status.config.checkInterval,
+    system_prompt: settingsService.getSettingValue<string>('ilink_proactive_chat_system_prompt', ''),
+    user_message: settingsService.getSettingValue<string>('ilink_proactive_chat_user_message', '请生成一条主动问候消息')
   })
 }
 
@@ -171,7 +181,7 @@ export function getProactiveChatConfig(req: Request, res: Response): void {
  * 更新主动聊天配置
  */
 export function updateProactiveChatConfig(req: Request, res: Response): void {
-  const { enabled, min_interval, quiet_hours_start, quiet_hours_end, check_interval } = req.body
+  const { enabled, min_interval, quiet_hours_start, quiet_hours_end, check_interval, system_prompt, user_message } = req.body
 
   if (enabled !== undefined) {
     settingsService.setSetting('ilink_proactive_chat_enabled', enabled)
@@ -187,6 +197,12 @@ export function updateProactiveChatConfig(req: Request, res: Response): void {
   }
   if (check_interval !== undefined) {
     settingsService.setSetting('ilink_proactive_chat_check_interval', check_interval)
+  }
+  if (system_prompt !== undefined) {
+    settingsService.setSetting('ilink_proactive_chat_system_prompt', system_prompt)
+  }
+  if (user_message !== undefined) {
+    settingsService.setSetting('ilink_proactive_chat_user_message', user_message)
   }
 
   // 通知服务配置已更新

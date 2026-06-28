@@ -18,7 +18,11 @@ function formatBeijingTime(): string {
     minute: '2-digit',
     second: '2-digit'
   })
-  return `[${timestamp} 北京时间]`
+  const weekDay = now.toLocaleString('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    weekday: 'long'
+  })
+  return `[${timestamp} ${weekDay} 北京时间]`
 }
 
 // Bot 实例
@@ -35,7 +39,7 @@ let loginStatus: 'idle' | 'waiting' | 'scanned' | 'confirmed' | 'expired' = 'idl
 
 // 消息历史（userId → 消息列表）
 const messageHistory = new Map<string, Array<{ role: 'user' | 'assistant'; content: string }>>()
-const MAX_HISTORY_LENGTH = 20
+const MAX_HISTORY_LENGTH = 100
 
 /**
  * 获取 Bot 配置
@@ -140,16 +144,15 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
         return
       }
 
-      // 添加时间戳到消息
-      const timestamp = formatBeijingTime()
-      const messageWithTime = `${timestamp} ${msg.text}`
+      // 获取或创建消息历史
+      let history = messageHistory.get(msg.userId) || []
 
       // 发送"正在输入"状态
       await bot!.sendTyping(msg.userId)
 
-      // 获取或创建消息历史
-      let history = messageHistory.get(msg.userId) || []
-      history.push({ role: 'user', content: msg.text })
+      // 添加时间戳到消息，存入历史
+      const timestamp = formatBeijingTime()
+      history.push({ role: 'user', content: `${timestamp} ${msg.text}` })
 
       // 保持历史长度限制
       if (history.length > MAX_HISTORY_LENGTH) {
@@ -157,11 +160,11 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
       }
 
       try {
-        // 调用 pi-ai 处理消息（使用带时间戳的消息）
+        // 调用 pi-ai 处理消息
         const result = await streamChatWithPi(
           config.provider,
           config.model,
-          [...history.slice(0, -1), { role: 'user', content: messageWithTime }],
+          history,
           config.system_prompt,
           {
             onStart: () => {},

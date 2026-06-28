@@ -105,20 +105,21 @@ async function generateProactiveMessage(userId: string): Promise<string> {
   const provider = getSettingValue<string>('ilink_provider', 'qwen')
   const model = getSettingValue<string>('ilink_model', 'qwen-turbo')
 
-  const systemPrompt = `你是一个友好的微信助手。现在你想主动找用户聊天，保持轻松友好的语气。
-请生成一条简短、自然的问候或话题开启消息，就像朋友之间发微信一样。
-注意：
-1. 控制在 1-2 句话，简短自然
-2. 语气亲切随意，不要太正式
-3. 可以使用表情符号
-4. 不要重复之前聊过的内容
-5. 直接输出消息内容即可，不要加任何前缀或解释`
+  // 主动聊天专用 systemPrompt
+  const systemPrompt = getSettingValue<string>('ilink_proactive_chat_system_prompt', '你是一个友好的微信助手，请主动找用户聊天。语气亲切随意，控制在1-2句话，可以使用表情符号。')
+
+  // 获取可配置的用户消息，作为主动聊天的触发指令
+  const userMessage = getSettingValue<string>('ilink_proactive_chat_user_message', '请生成一条主动问候消息')
+  // 共用 messageHistory，加上触发指令
+  const { getMessageHistory } = await import('./ilink-bot.service.js')
+  const history = getMessageHistory(userId) || []
+  history.push({ role: 'user', content: userMessage })
 
   try {
     const result = await streamChatWithPi(
       provider,
       model,
-      [{ role: 'user', content: '请生成一条主动问候消息' }],
+      history,
       systemPrompt,
       {
         onStart: () => {},
@@ -157,7 +158,9 @@ async function sendProactiveMessage(userId: string): Promise<boolean> {
     const message = await generateProactiveMessage(userId)
     await bot.send(userId, message)
 
-    // Persist AFTER successful send only.
+    // 共用 messageHistory：也写入触发指令，保证交替格式
+    const userMessage = getSettingValue<string>('ilink_proactive_chat_user_message', '请生成一条主动问候消息')
+    addMessageToHistory(userId, 'user', userMessage)
     addMessageToHistory(userId, 'assistant', message)
     setDbLastSentTime(userId, Date.now())
 

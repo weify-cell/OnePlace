@@ -29,7 +29,8 @@ const isProduction = process.env.NODE_ENV === 'production'
 
 // CORS: 生产环境允许所有来源（同域部署），开发环境限制 localhost
 app.use(cors(isProduction ? { origin: true, credentials: true } : { origin: ['http://localhost:5173', 'http://localhost:4173'] }))
-app.use(express.json())
+app.use(express.json({ limit: '10mb' }))
+app.use(express.urlencoded({ extended: true, limit: '10mb' }))
 
 // Health check (no auth required)
 app.get('/api/health', (req, res) => {

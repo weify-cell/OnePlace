@@ -17,7 +17,9 @@ const ilinkConfig = ref({
   provider: 'qwen',
   model: 'qwen-turbo',
   system_prompt: '你是一个智能助手，可以通过微信为用户提供服务。请用中文回复。',
-  max_tool_rounds: 5
+  max_tool_rounds: 5,
+  proactive_user_message: '请生成一条主动问候消息',
+  proactive_system_prompt: '你是一个友好的微信助手，请主动找用户聊天。语气亲切随意，控制在1-2句话。'
 })
 
 const ilinkProviderModels = computed(() => {
@@ -93,7 +95,9 @@ onMounted(async () => {
       provider: ilinkStore.config.provider || 'qwen',
       model: ilinkStore.config.model || 'qwen-turbo',
       system_prompt: ilinkStore.config.system_prompt || '你是一个智能助手，可以通过微信为用户提供服务。请用中文回复。',
-      max_tool_rounds: ilinkStore.config.max_tool_rounds || 5
+      max_tool_rounds: ilinkStore.config.max_tool_rounds || 5,
+      proactive_user_message: ilinkStore.config.proactive_user_message || '请生成一条主动问候消息',
+      proactive_system_prompt: ilinkStore.config.proactive_system_prompt || '你是一个友好的微信助手，请主动找用户聊天。'
     }
   }
 })
@@ -642,6 +646,30 @@ onUnmounted(() => {
                   :rows="3"
                   placeholder="定义 Bot 的角色和行为"
                 />
+              </div>
+
+              <!-- Proactive Chat System Prompt -->
+              <div class="settings-field">
+                <label class="settings-field__label">主动聊天系统提示词</label>
+                <n-input
+                  v-model:value="ilinkConfig.proactive_system_prompt"
+                  type="textarea"
+                  :rows="3"
+                  placeholder="主动聊天时的 Bot 人设"
+                />
+                <div class="settings-field__hint">仅用于主动聊天模式，不影响普通对话</div>
+              </div>
+
+              <!-- Proactive Chat User Message -->
+              <div class="settings-field">
+                <label class="settings-field__label">主动聊天触发指令</label>
+                <n-input
+                  v-model:value="ilinkConfig.proactive_user_message"
+                  type="textarea"
+                  :rows="2"
+                  placeholder="主动聊天时发送给 AI 的指令"
+                />
+                <div class="settings-field__hint">控制主动聊天时 AI 生成的对话风格和内容</div>
               </div>
 
               <!-- Max Tool Rounds -->
