@@ -41,6 +41,21 @@ let loginStatus: 'idle' | 'waiting' | 'scanned' | 'confirmed' | 'expired' = 'idl
 const messageHistory = new Map<string, Array<{ role: 'user' | 'assistant'; content: string }>>()
 const MAX_HISTORY_LENGTH = 100
 
+// 用户模式状态
+const userModes = new Map<string, { mode: 'normal' | 'learning'; learningTopic: string }>()
+
+// 学习模式 systemPrompt 模板
+function getLearningPrompt(topic: string): string {
+  return `你是一个学习导师，正在帮助用户学习「${topic}」。
+请按以下方式教学：
+1. 先使用 search_knowledge_base 和 get_note 工具检索用户的笔记资料
+2. 以问答方式测试用户对知识点的掌握
+3. 根据用户的回答给予反馈和补充解释
+4. 控制每次提问1-2个问题，不要连续轰炸
+5. 用户答对时鼓励，答错时耐心纠正
+6. 如果笔记中没有相关内容，诚实告知并给出通用知识`
+}
+
 /**
  * 获取 Bot 配置
  */
@@ -132,6 +147,25 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
       // 保存用户 ID（用于提醒服务）
       saveWeChatUser(msg.userId)
 
+      // 命令解析：/学习 主题
+      if (msg.text.startsWith('/学习 ')) {
+        const topic = msg.text.slice(4).trim()
+        if (!topic) {
+          await bot!.reply(msg, '请指定学习主题，例如：/学习 Python')
+          return
+        }
+        userModes.set(msg.userId, { mode: 'learning', learningTopic: topic })
+        await bot!.reply(msg, `已进入学习模式，正在准备「${topic}」的学习内容...`)
+        return
+      }
+
+      // 命令解析：/退出
+      if (msg.text.trim() === '/退出') {
+        userModes.delete(msg.userId)
+        await bot!.reply(msg, '已退出学习模式，恢复普通聊天。')
+        return
+      }
+
       // 检查是否有待发送的提醒（context_token 过期后积压的）
       if (hasPendingReminders(msg.userId)) {
         console.log(`[ilink] 发现待发送提醒，正在补发给 ${msg.userId}`)
@@ -160,12 +194,18 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
       }
 
       try {
+        // 根据模式选择 systemPrompt
+        const userMode = userModes.get(msg.userId)
+        const effectivePrompt = userMode?.mode === 'learning'
+          ? getLearningPrompt(userMode.learningTopic)
+          : config.system_prompt
+
         // 调用 pi-ai 处理消息
         const result = await streamChatWithPi(
           config.provider,
           config.model,
           history,
-          config.system_prompt,
+          effectivePrompt,
           {
             onStart: () => {},
             onDelta: () => {},
