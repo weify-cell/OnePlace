@@ -110,10 +110,11 @@ async function generateProactiveMessage(userId: string): Promise<string> {
 
   // 获取可配置的用户消息，作为主动聊天的触发指令
   const userMessage = getSettingValue<string>('ilink_proactive_chat_user_message', '请生成一条主动问候消息')
-  // 共用 messageHistory，加上触发指令
-  const { getMessageHistory } = await import('./ilink-bot.service.js')
+  // 共用 messageHistory，加上触发指令（附加时间戳）
+  const { getMessageHistory, formatBeijingTime } = await import('./ilink-bot.service.js')
+  const timestamp = formatBeijingTime()
   const history = getMessageHistory(userId) || []
-  history.push({ role: 'user', content: userMessage })
+  history.push({ role: 'user', content: `${timestamp} ${userMessage}` })
 
   try {
     const result = await streamChatWithPi(
@@ -159,8 +160,10 @@ async function sendProactiveMessage(userId: string): Promise<boolean> {
     await bot.send(userId, message)
 
     // 共用 messageHistory：也写入触发指令，保证交替格式
+    const { formatBeijingTime } = await import('./ilink-bot.service.js')
+    const timestamp = formatBeijingTime()
     const userMessage = getSettingValue<string>('ilink_proactive_chat_user_message', '请生成一条主动问候消息')
-    addMessageToHistory(userId, 'user', userMessage)
+    addMessageToHistory(userId, 'user', `${timestamp} ${userMessage}`)
     addMessageToHistory(userId, 'assistant', message)
     setDbLastSentTime(userId, Date.now())
 

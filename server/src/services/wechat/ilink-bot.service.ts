@@ -1,13 +1,14 @@
 import { WeChatBot } from '@wechatbot/wechatbot'
 import { streamChatWithPi } from '../ai/pi-ai.adapter.js'
 import { getSettingValue, setSetting } from '../settings.service.js'
+import { connectDatabase } from '../../database/index.js'
 import { setReminderBot, startReminderService, stopReminderService, saveWeChatUser, sendPendingReminders, hasPendingReminders } from './todo-reminder.service.js'
 import { setProactiveBot, startProactiveChatService, stopProactiveChatService } from './proactive-chat.service.js'
 
 /**
  * 格式化当前时间为北京时间字符串
  */
-function formatBeijingTime(): string {
+export function formatBeijingTime(): string {
   const now = new Date()
   const timestamp = now.toLocaleString('zh-CN', {
     timeZone: 'Asia/Shanghai',
@@ -37,8 +38,7 @@ let lastError: string | null = null
 let loginQRCode: string | null = null
 let loginStatus: 'idle' | 'waiting' | 'scanned' | 'confirmed' | 'expired' = 'idle'
 
-// 消息历史（userId → 消息列表）
-const messageHistory = new Map<string, Array<{ role: 'user' | 'assistant'; content: string }>>()
+// 消息历史持久化到数据库
 const MAX_HISTORY_LENGTH = 100
 
 // 用户模式状态
@@ -178,8 +178,8 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
         return
       }
 
-      // 获取或创建消息历史
-      let history = messageHistory.get(msg.userId) || []
+      // 获取或创建消息历史（从数据库）
+      let history = getMessageHistory(msg.userId)
 
       // 发送"正在输入"状态
       await bot!.sendTyping(msg.userId)
@@ -223,9 +223,9 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
         // 回复消息
         await bot!.reply(msg, result.content)
 
-        // 更新消息历史（使用原始消息）
+        // 更新消息历史（持久化到数据库）
         history.push({ role: 'assistant', content: result.content })
-        messageHistory.set(msg.userId, history)
+        addMessageToHistory(msg.userId, 'assistant', result.content)
 
         // 更新统计
         messagesProcessed++
@@ -346,35 +346,50 @@ export function stopILinkBot(): { success: boolean; error?: string } {
 }
 
 /**
- * 获取消息历史（调试用）
+ * 获取消息历史（从数据库读取，最近100条）
  */
 export function getMessageHistory(userId: string): Array<{ role: 'user' | 'assistant'; content: string }> {
-  return messageHistory.get(userId) || []
+  const db = connectDatabase()
+  const rows = db.prepare(`
+    SELECT role, content FROM wechat_messages
+    WHERE user_id = ?
+    ORDER BY id DESC
+    LIMIT ?
+  `).all(userId, MAX_HISTORY_LENGTH) as Array<{ role: string; content: string }>
+  return rows.reverse()
 }
 
 /**
- * 添加消息到历史记录
+ * 添加消息到历史记录（持久化到数据库）
  */
 export function addMessageToHistory(userId: string, role: 'user' | 'assistant', content: string): void {
-  let history = messageHistory.get(userId) || []
-  history.push({ role, content })
+  const db = connectDatabase()
+  db.prepare(`
+    INSERT INTO wechat_messages (user_id, role, content)
+    VALUES (?, ?, ?)
+  `).run(userId, role, content)
 
-  // 保持历史长度限制
-  if (history.length > MAX_HISTORY_LENGTH) {
-    history = history.slice(-MAX_HISTORY_LENGTH)
-  }
-
-  messageHistory.set(userId, history)
+  // 删除超出限制的旧消息
+  db.prepare(`
+    DELETE FROM wechat_messages
+    WHERE user_id = ? AND id NOT IN (
+      SELECT id FROM wechat_messages
+      WHERE user_id = ?
+      ORDER BY id DESC
+      LIMIT ?
+    )
+  `).run(userId, userId, MAX_HISTORY_LENGTH)
 }
 
 /**
  * 清除消息历史
  */
 export function clearMessageHistory(userId?: string): void {
+  const db = connectDatabase()
   if (userId) {
-    messageHistory.delete(userId)
+    db.prepare('DELETE FROM wechat_messages WHERE user_id = ?').run(userId)
   } else {
-    messageHistory.clear()
+    db.prepare('DELETE FROM wechat_messages').run()
   }
 }
 
