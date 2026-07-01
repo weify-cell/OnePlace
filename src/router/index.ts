@@ -23,7 +23,10 @@ const router = createRouter({
     { path: '/toolbox/base64-codec', component: () => import('@/views/tools/Base64CodecToolView.vue'), meta: { requiresAuth: true } },
     { path: '/toolbox/url-codec', component: () => import('@/views/tools/UrlCodecToolView.vue'), meta: { requiresAuth: true } },
     { path: '/toolbox/hash', component: () => import('@/views/tools/HashToolView.vue'), meta: { requiresAuth: true } },
-    { path: '/settings', component: () => import('@/views/SettingsView.vue'), meta: { requiresAuth: true } }
+    { path: '/settings', redirect: '/settings/general' },
+    { path: '/settings/general', component: () => import('@/views/settings/GeneralSettings.vue'), meta: { requiresAuth: true } },
+    { path: '/settings/kb', component: () => import('@/views/settings/KnowledgeBaseSettings.vue'), meta: { requiresAuth: true } },
+    { path: '/settings/bot', component: () => import('@/views/settings/WeChatBotSettings.vue'), meta: { requiresAuth: true } }
   ]
 })
 

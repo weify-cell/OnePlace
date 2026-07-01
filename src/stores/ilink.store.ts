@@ -27,6 +27,7 @@ export interface ILinkConfig {
   max_tool_rounds: number
   proactive_user_message: string
   proactive_system_prompt: string
+  learning_prompt: string
 }
 
 export const useILinkStore = defineStore('ilink', () => {

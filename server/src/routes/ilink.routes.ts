@@ -8,6 +8,9 @@ ilinkRouter.get('/status', ilinkController.getStatus)
 ilinkRouter.get('/config', ilinkController.getConfig)
 ilinkRouter.put('/config', ilinkController.updateConfig)
 
+// 学习模式
+ilinkRouter.get('/learning-mode', ilinkController.getLearningModeStatus)
+
 // 登录状态
 ilinkRouter.get('/login/status', ilinkController.getLoginStatus)
 ilinkRouter.post('/login/reset', ilinkController.resetLogin)

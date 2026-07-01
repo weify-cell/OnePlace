@@ -19,7 +19,8 @@ const ilinkConfig = ref({
   system_prompt: '你是一个智能助手，可以通过微信为用户提供服务。请用中文回复。',
   max_tool_rounds: 5,
   proactive_user_message: '请生成一条主动问候消息',
-  proactive_system_prompt: '你是一个友好的微信助手，请主动找用户聊天。语气亲切随意，控制在1-2句话。'
+  proactive_system_prompt: '你是一个友好的微信助手，请主动找用户聊天。语气亲切随意，控制在1-2句话。',
+  learning_prompt: '你是一个学习导师，正在帮助用户学习「{topic}」。请按以下方式教学：1. 先使用 search_knowledge_base 和 get_note 工具检索用户的笔记资料 2. 以问答方式测试用户对知识点的掌握 3. 根据用户的回答给予反馈和补充解释 4. 控制每次提问1-2个问题，不要连续轰炸 5. 用户答对时鼓励，答错时耐心纠正 6. 如果笔记中没有相关内容，诚实告知并给出通用知识'
 })
 
 const ilinkProviderModels = computed(() => {
@@ -97,7 +98,8 @@ onMounted(async () => {
       system_prompt: ilinkStore.config.system_prompt || '你是一个智能助手，可以通过微信为用户提供服务。请用中文回复。',
       max_tool_rounds: ilinkStore.config.max_tool_rounds || 5,
       proactive_user_message: ilinkStore.config.proactive_user_message || '请生成一条主动问候消息',
-      proactive_system_prompt: ilinkStore.config.proactive_system_prompt || '你是一个友好的微信助手，请主动找用户聊天。'
+      proactive_system_prompt: ilinkStore.config.proactive_system_prompt || '你是一个友好的微信助手，请主动找用户聊天。',
+      learning_prompt: ilinkStore.config.learning_prompt || '你是一个学习导师，正在帮助用户学习「{topic}」...'
     }
   }
 })
@@ -670,6 +672,18 @@ onUnmounted(() => {
                   placeholder="主动聊天时发送给 AI 的指令"
                 />
                 <div class="settings-field__hint">控制主动聊天时 AI 生成的对话风格和内容</div>
+              </div>
+
+              <!-- Learning Mode Prompt -->
+              <div class="settings-field">
+                <label class="settings-field__label">学习模式提示词</label>
+                <n-input
+                  v-model:value="ilinkConfig.learning_prompt"
+                  type="textarea"
+                  :rows="4"
+                  placeholder="学习模式的 systemPrompt，使用 {topic} 作为主题占位符"
+                />
+                <div class="settings-field__hint">用户发送 /学习 主题 时使用，{topic} 会被替换为实际主题</div>
               </div>
 
               <!-- Max Tool Rounds -->

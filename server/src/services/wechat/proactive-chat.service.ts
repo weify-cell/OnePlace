@@ -2,7 +2,7 @@ import { WeChatBot } from '@wechatbot/wechatbot'
 import { streamChatWithPi } from '../ai/pi-ai.adapter.js'
 import { getSettingValue } from '../settings.service.js'
 import { connectDatabase } from '../../database/index.js'
-import { addMessageToHistory } from './ilink-bot.service.js'
+import { addMessageToHistory, isUserInLearningMode } from './ilink-bot.service.js'
 
 let proactiveTimer: ReturnType<typeof setInterval> | null = null
 let proactiveInitTimer: ReturnType<typeof setTimeout> | null = null
@@ -186,6 +186,11 @@ async function checkAndSendProactiveMessages(): Promise<void> {
   console.log(`[proactive] checking ${users.length} users`)
 
   for (const userId of users) {
+    // 学习模式下不触发主动聊天
+    if (isUserInLearningMode(userId)) {
+      console.log(`[proactive] user ${userId} is in learning mode, skipping`)
+      continue
+    }
     if (!hasMinIntervalPassed(userId, config.minInterval)) continue
     const lastInteraction = getUserLastInteractionTime(userId)
     const weight = calculateTriggerWeight(lastInteraction)

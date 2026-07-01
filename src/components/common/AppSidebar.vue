@@ -14,7 +14,9 @@ const navItems = [
   { path: '/notes', label: '笔记', icon: '📝' },
   { path: '/chat', label: 'AI 对话', icon: '🤖' },
   { path: '/toolbox', label: '百宝箱', icon: '🧰' },
-  { path: '/settings', label: '设置', icon: '⚙️' }
+  { path: '/settings/general', label: '通用设置', icon: '⚙️' },
+  { path: '/settings/kb', label: '知识库', icon: '📚' },
+  { path: '/settings/bot', label: '微信Bot', icon: '💬' }
 ]
 
 function logout() {

@@ -17,11 +17,33 @@ export function getStatus(req: Request, res: Response): void {
   const config = ilinkBot.getILinkConfig()
   res.json({
     ...status,
+    learning_modes: Object.fromEntries(
+      // 返回所有在学习模式的用户（通过 history API 的用户列表推断）
+      // 这里简化处理，通过请求参数 userId 查询
+      []
+    ),
     config: {
       enabled: config.enabled,
       provider: config.provider,
       model: config.model
     }
+  })
+}
+
+/**
+ * 查询用户学习模式状态
+ */
+export function getLearningModeStatus(req: Request, res: Response): void {
+  const userId = req.query.userId as string
+  if (!userId) {
+    res.status(400).json({ error: 'userId is required' })
+    return
+  }
+  const mode = ilinkBot.getUserLearningMode(userId)
+  res.json({
+    userId,
+    mode: mode?.mode || 'normal',
+    learningTopic: mode?.learningTopic || null
   })
 }
 
@@ -37,7 +59,8 @@ export function getConfig(req: Request, res: Response): void {
     system_prompt: config.system_prompt,
     max_tool_rounds: config.max_tool_rounds,
     proactive_system_prompt: settingsService.getSettingValue<string>('ilink_proactive_chat_system_prompt', ''),
-    proactive_user_message: settingsService.getSettingValue<string>('ilink_proactive_chat_user_message', '请生成一条主动问候消息')
+    proactive_user_message: settingsService.getSettingValue<string>('ilink_proactive_chat_user_message', '请生成一条主动问候消息'),
+    learning_prompt: settingsService.getSettingValue<string>('ilink_learning_prompt', '你是一个学习导师，正在帮助用户学习「{topic}」。请按以下方式教学：1. 先使用 search_knowledge_base 和 get_note 工具检索用户的笔记资料 2. 以问答方式测试用户对知识点的掌握 3. 根据用户的回答给予反馈和补充解释 4. 控制每次提问1-2个问题，不要连续轰炸 5. 用户答对时鼓励，答错时耐心纠正 6. 如果笔记中没有相关内容，诚实告知并给出通用知识')
   })
 }
 
@@ -45,7 +68,7 @@ export function getConfig(req: Request, res: Response): void {
  * 更新 Bot 配置
  */
 export function updateConfig(req: Request, res: Response): void {
-  const { enabled, provider, model, system_prompt, max_tool_rounds, reminder_interval, proactive_user_message, proactive_system_prompt } = req.body
+  const { enabled, provider, model, system_prompt, max_tool_rounds, reminder_interval, proactive_user_message, proactive_system_prompt, learning_prompt } = req.body
 
   if (enabled !== undefined) {
     settingsService.setSetting('ilink_enabled', enabled)
@@ -70,6 +93,9 @@ export function updateConfig(req: Request, res: Response): void {
   }
   if (proactive_system_prompt !== undefined) {
     settingsService.setSetting('ilink_proactive_chat_system_prompt', proactive_system_prompt)
+  }
+  if (learning_prompt !== undefined) {
+    settingsService.setSetting('ilink_learning_prompt', learning_prompt)
   }
 
   res.json({ success: true })
