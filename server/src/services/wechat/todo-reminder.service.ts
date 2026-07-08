@@ -5,8 +5,6 @@ import { connectDatabase } from '../../database/index.js'
 let reminderTimer: ReturnType<typeof setInterval> | null = null
 let bot: WeChatBot | null = null
 
-// 已提醒的任务 ID（避免重复提醒）
-const remindedTodos = new Set<number>()
 
 // 待发送提醒队列（context_token 过期时暂存）
 const pendingReminders = new Map<string, Array<{ message: string; timestamp: number }>>()
@@ -47,7 +45,7 @@ function getBeijingTime(): string {
 /**
  * 获取需要提醒的任务
  */
-function getDueTodos(): Array<{ id: number; title: string; due_date: string; priority: string; reminder_time: string }> {
+function getDueTodos(): Array<{ id: number; title: string; due_date: string; priority: string; reminder_time: string; task_kind: string }> {
   const db = connectDatabase()
   const now = new Date()
 
@@ -58,7 +56,7 @@ function getDueTodos(): Array<{ id: number; title: string; due_date: string; pri
   console.log(`[reminder] checking with Beijing time: ${currentTime}, today: ${today}`)
 
   const rows = db.prepare(`
-    SELECT id, title, due_date, priority, reminder_time
+    SELECT id, title, due_date, priority, reminder_time, task_kind
     FROM todos
     WHERE is_deleted = 0
       AND status NOT IN ('done', 'cancelled')
@@ -66,7 +64,7 @@ function getDueTodos(): Array<{ id: number; title: string; due_date: string; pri
       AND reminder_time IS NOT NULL
       AND reminder_time <= ?
     ORDER BY reminder_time ASC, priority DESC
-  `).all(currentTime) as Array<{ id: number; title: string; due_date: string; priority: string; reminder_time: string }>
+  `).all(currentTime) as Array<{ id: number; title: string; due_date: string; priority: string; reminder_time: string; task_kind: string }>
 
   return rows
 }
@@ -202,23 +200,49 @@ function getWeChatUsers(): string[] {
 }
 
 /**
- * 检查并发送提醒
+ * 将 reminder_time 推迟一天（保持相同的 HH:mm）。
+ * 入参格式："2026-07-08 14:30"，返回 "2026-07-09 14:30"。
+ */
+function advanceReminderByOneDay(reminderTime: string): string {
+  // 解析 "YYYY-MM-DD HH:mm" 格式
+  const [datePart, timePart] = reminderTime.split(' ')
+  if (!datePart || !timePart) return reminderTime
+
+  // 用北京时间计算明天
+  const now = new Date()
+  const beijingFormatter = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+  const parts = beijingFormatter.formatToParts(now)
+  const year = parts.find(p => p.type === 'year')?.value || ''
+  const month = parts.find(p => p.type === 'month')?.value || ''
+  const day = parts.find(p => p.type === 'day')?.value || ''
+
+  // 今天 + 1 天
+  const tomorrow = new Date(Number(year), Number(month) - 1, Number(day) + 1)
+  const tYear = tomorrow.getFullYear()
+  const tMonth = String(tomorrow.getMonth() + 1).padStart(2, '0')
+  const tDay = String(tomorrow.getDate()).padStart(2, '0')
+
+  return `${tYear}-${tMonth}-${tDay} ${timePart}`
+}
+
+/**
+ * 检查并发送提醒，长期任务自动将提醒时间推迟到明天。
  */
 async function checkAndRemind(): Promise<void> {
   try {
-    // 获取到期的任务
     const dueTodos = getDueTodos()
 
-    // 过滤已提醒的任务
-    const newTodos = dueTodos.filter(t => !remindedTodos.has(t.id))
-
-    if (newTodos.length === 0) {
+    if (dueTodos.length === 0) {
       return
     }
 
-    console.log(`[reminder] found ${newTodos.length} due todos`)
+    console.log(`[reminder] found ${dueTodos.length} due todos`)
 
-    // 获取所有用户
     const users = getWeChatUsers()
 
     if (users.length === 0) {
@@ -226,24 +250,45 @@ async function checkAndRemind(): Promise<void> {
       return
     }
 
-    // 发送提醒给每个用户
     let successCount = 0
     for (const userId of users) {
       try {
-        await sendReminder(userId, newTodos)
+        await sendReminder(userId, dueTodos)
         successCount++
       } catch (err) {
         console.error(`[reminder] failed to send to ${userId}:`, err)
       }
     }
 
-    // 只有在至少一个用户发送成功时才标记已提醒
-    if (successCount > 0) {
-      newTodos.forEach(t => remindedTodos.add(t.id))
-      console.log(`[reminder] marked ${newTodos.length} todos as reminded`)
-    } else {
+    if (successCount === 0) {
       console.log('[reminder] no reminders sent successfully, will retry next cycle')
+      return
     }
+
+    const db = connectDatabase()
+
+    // 长期任务：reminder_time 推迟一天，明天继续提醒
+    const longTermTodos = dueTodos.filter(t => t.task_kind === 'long_term')
+    if (longTermTodos.length > 0) {
+      const advanceStmt = db.prepare('UPDATE todos SET reminder_time = ? WHERE id = ?')
+      for (const t of longTermTodos) {
+        const nextTime = advanceReminderByOneDay(t.reminder_time)
+        advanceStmt.run(nextTime, t.id)
+        console.log(`[reminder] advanced long-term todo #${t.id} "${t.title}" reminder: ${t.reminder_time} → ${nextTime}`)
+      }
+    }
+
+    // 短期任务：关闭提醒开关，持久化防止重启后重复提醒
+    const shortTermTodos = dueTodos.filter(t => t.task_kind !== 'long_term')
+    if (shortTermTodos.length > 0) {
+      const disableStmt = db.prepare('UPDATE todos SET reminder_enabled = 0 WHERE id = ?')
+      for (const t of shortTermTodos) {
+        disableStmt.run(t.id)
+        console.log(`[reminder] disabled short-term todo #${t.id} "${t.title}" reminder`)
+      }
+    }
+
+    console.log(`[reminder] done: ${longTermTodos.length} long-term (auto-advanced), ${shortTermTodos.length} short-term (disabled)`)
   } catch (err) {
     console.error('[reminder] check failed:', err)
   }
@@ -284,28 +329,42 @@ export function stopReminderService(): void {
 export async function triggerReminder(): Promise<{ success: boolean; count: number }> {
   try {
     const dueTodos = getDueTodos()
-    const newTodos = dueTodos.filter(t => !remindedTodos.has(t.id))
 
-    if (newTodos.length === 0) {
+    if (dueTodos.length === 0) {
       return { success: true, count: 0 }
     }
 
-    // 获取用户
     const users = getWeChatUsers()
 
     if (users.length === 0) {
       return { success: true, count: 0 }
     }
 
-    // 发送提醒
     for (const userId of users) {
-      await sendReminder(userId, newTodos)
+      await sendReminder(userId, dueTodos)
     }
 
-    // 标记已提醒
-    newTodos.forEach(t => remindedTodos.add(t.id))
+    const db = connectDatabase()
 
-    return { success: true, count: newTodos.length }
+    // 长期任务：推迟到明天
+    const longTermTodos = dueTodos.filter(t => t.task_kind === 'long_term')
+    if (longTermTodos.length > 0) {
+      const advanceStmt = db.prepare('UPDATE todos SET reminder_time = ? WHERE id = ?')
+      for (const t of longTermTodos) {
+        advanceStmt.run(advanceReminderByOneDay(t.reminder_time), t.id)
+      }
+    }
+
+    // 短期任务：关闭提醒
+    const shortTermTodos = dueTodos.filter(t => t.task_kind !== 'long_term')
+    if (shortTermTodos.length > 0) {
+      const disableStmt = db.prepare('UPDATE todos SET reminder_enabled = 0 WHERE id = ?')
+      for (const t of shortTermTodos) {
+        disableStmt.run(t.id)
+      }
+    }
+
+    return { success: true, count: dueTodos.length }
   } catch (err) {
     console.error('[reminder] trigger failed:', err)
     return { success: false, count: 0 }
@@ -317,21 +376,28 @@ export async function triggerReminder(): Promise<{ success: boolean; count: numb
  */
 export function getReminderStatus(): {
   running: boolean
-  remindedCount: number
-  dueTodos: Array<{ id: number; title: string; due_date: string; priority: string; reminder_time: string }>
+  activeReminders: number
+  dueTodos: Array<{ id: number; title: string; due_date: string; priority: string; reminder_time: string; task_kind: string }>
 } {
+  const db = connectDatabase()
+  const countRow = db.prepare(
+    "SELECT COUNT(*) as c FROM todos WHERE is_deleted = 0 AND status NOT IN ('done','cancelled') AND reminder_enabled = 1 AND reminder_time IS NOT NULL"
+  ).get() as { c: number }
   return {
     running: reminderTimer !== null,
-    remindedCount: remindedTodos.size,
+    activeReminders: countRow.c,
     dueTodos: getDueTodos()
   }
 }
 
 /**
- * 清除已提醒记录（用于测试）
+ * 重置所有已提醒的短期任务（将 reminder_enabled 恢复为 1），用于测试。
  */
 export function clearRemindedTodos(): void {
-  remindedTodos.clear()
+  const db = connectDatabase()
+  db.prepare(
+    "UPDATE todos SET reminder_enabled = 1 WHERE is_deleted = 0 AND status NOT IN ('done','cancelled') AND task_kind != 'long_term' AND reminder_time IS NOT NULL AND reminder_enabled = 0"
+  ).run()
 }
 
 /**

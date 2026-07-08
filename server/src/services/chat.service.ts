@@ -1,16 +1,31 @@
-import { Response } from 'express'
+﻿import { Response } from 'express'
 import { connectDatabase } from '../database/index.js'
 import { streamChatWithPi } from './ai/pi-ai.adapter.js'
 import { getSettingValue } from './settings.service.js'
+import { DEFAULT_NOTE_TOOLS_PROMPT, DEFAULT_CHAT_SYSTEM_PROMPT } from './prompt-defaults.js'
 
 interface ConversationRow {
-  id: number; title: string; model: string; provider: string;
-  is_deleted: number; kb_enabled: number; tools_enabled: number; max_tool_rounds: number;
-  created_at: string; updated_at: string
+  id: number
+  title: string
+  model: string
+  provider: string
+  is_deleted: number
+  kb_enabled: number
+  tools_enabled: number
+  max_tool_rounds: number
+  created_at: string
+  updated_at: string
 }
+
 interface MessageRow {
-  id: number; conversation_id: number; role: string; content: string;
-  tokens_used: number | null; is_error: number; kb_citations: string | null; tool_calls: string | null;
+  id: number
+  conversation_id: number
+  role: string
+  content: string
+  tokens_used: number | null
+  is_error: number
+  kb_citations: string | null
+  tool_calls: string | null
   created_at: string
 }
 
@@ -34,14 +49,23 @@ function rowToMessage(row: MessageRow) {
 
 export function getConversations() {
   const db = connectDatabase()
-  return (db.prepare('SELECT * FROM conversations WHERE is_deleted = 0 ORDER BY updated_at DESC').all() as ConversationRow[]).map(rowToConversation)
+  return (db.prepare('SELECT * FROM conversations WHERE is_deleted = 0 ORDER BY updated_at DESC').all() as ConversationRow[])
+    .map(rowToConversation)
 }
 
-export function createConversation(data?: { title?: string; model?: string; provider?: string; tools_enabled?: boolean; kb_enabled?: boolean }) {
+export function createConversation(data?: {
+  title?: string
+  model?: string
+  provider?: string
+  tools_enabled?: boolean
+  kb_enabled?: boolean
+}) {
   const db = connectDatabase()
   const defaultModel = getSettingValue<string>('default_model', 'qwen-turbo')
   const defaultProvider = getSettingValue<string>('default_provider', 'qwen')
-  const result = db.prepare('INSERT INTO conversations (title, model, provider, tools_enabled, kb_enabled) VALUES (?, ?, ?, ?, ?)').run(
+  const result = db.prepare(
+    'INSERT INTO conversations (title, model, provider, tools_enabled, kb_enabled) VALUES (?, ?, ?, ?, ?)'
+  ).run(
     data?.title || '新对话',
     data?.model || defaultModel,
     data?.provider || defaultProvider,
@@ -58,12 +82,17 @@ export function getConversationById(id: number) {
 }
 
 export function updateConversation(id: number, data: {
-  title?: string; model?: string; provider?: string;
-  kb_enabled?: boolean; tools_enabled?: boolean; max_tool_rounds?: number
+  title?: string
+  model?: string
+  provider?: string
+  kb_enabled?: boolean
+  tools_enabled?: boolean
+  max_tool_rounds?: number
 }) {
   const db = connectDatabase()
   const updates: string[] = []
   const params: (string | number)[] = []
+
   if (data.title !== undefined) { updates.push('title = ?'); params.push(data.title) }
   if (data.model !== undefined) { updates.push('model = ?'); params.push(data.model) }
   if (data.provider !== undefined) { updates.push('provider = ?'); params.push(data.provider) }
@@ -71,6 +100,7 @@ export function updateConversation(id: number, data: {
   if (data.tools_enabled !== undefined) { updates.push('tools_enabled = ?'); params.push(data.tools_enabled ? 1 : 0) }
   if (data.max_tool_rounds !== undefined) { updates.push('max_tool_rounds = ?'); params.push(data.max_tool_rounds) }
   if (updates.length === 0) return getConversationById(id)
+
   updates.push("updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')")
   params.push(id)
   db.prepare(`UPDATE conversations SET ${updates.join(', ')} WHERE id = ?`).run(...params)
@@ -79,13 +109,14 @@ export function updateConversation(id: number, data: {
 
 export function deleteConversation(id: number): boolean {
   const db = connectDatabase()
-  const result = db.prepare("UPDATE conversations SET is_deleted = 1 WHERE id = ? AND is_deleted = 0").run(id)
+  const result = db.prepare('UPDATE conversations SET is_deleted = 1 WHERE id = ? AND is_deleted = 0').run(id)
   return result.changes > 0
 }
 
 export function getMessages(conversationId: number) {
   const db = connectDatabase()
-  return (db.prepare('SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC').all(conversationId) as MessageRow[]).map(rowToMessage)
+  return (db.prepare('SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC').all(conversationId) as MessageRow[])
+    .map(rowToMessage)
 }
 
 export function clearMessages(conversationId: number): void {
@@ -102,18 +133,17 @@ export async function streamChat(
   const conversation = getConversationById(conversationId)
   if (!conversation) throw new Error('Conversation not found')
 
-  // Save user message
-  const userMsgResult = db.prepare('INSERT INTO messages (conversation_id, role, content) VALUES (?, ?, ?)').run(conversationId, 'user', userContent)
+  const userMsgResult = db.prepare('INSERT INTO messages (conversation_id, role, content) VALUES (?, ?, ?)')
+    .run(conversationId, 'user', userContent)
   const userMessageId = userMsgResult.lastInsertRowid as number
 
-  // Set SSE headers
   res.setHeader('Content-Type', 'text/event-stream')
   res.setHeader('Cache-Control', 'no-cache')
   res.setHeader('Connection', 'keep-alive')
   res.setHeader('X-Accel-Buffering', 'no')
 
-  // Save assistant message placeholder
-  const assistantMsgResult = db.prepare('INSERT INTO messages (conversation_id, role, content) VALUES (?, ?, ?)').run(conversationId, 'assistant', '')
+  const assistantMsgResult = db.prepare('INSERT INTO messages (conversation_id, role, content) VALUES (?, ?, ?)')
+    .run(conversationId, 'assistant', '')
   const assistantMessageId = assistantMsgResult.lastInsertRowid as number
 
   function writeSSE(event: string, data: unknown) {
@@ -123,16 +153,14 @@ export async function streamChat(
   writeSSE('start', { messageId: assistantMessageId, conversationId, userMessageId })
 
   try {
-    // Get conversation history
-    const messages = (db.prepare('SELECT role, content FROM messages WHERE conversation_id = ? AND is_error = 0 ORDER BY created_at ASC').all(conversationId) as { role: string; content: string }[])
-      .filter(m => m.content.trim().length > 0)
+    const messages = (db.prepare(
+      'SELECT role, content FROM messages WHERE conversation_id = ? AND is_error = 0 ORDER BY created_at ASC'
+    ).all(conversationId) as { role: string; content: string }[]).filter(m => m.content.trim().length > 0)
 
-    // System prompt for knowledge base awareness
-    const systemPrompt = conversation.kb_enabled
-      ? 'You are an assistant with access to a knowledge base. Use the search_knowledge_base tool to find relevant notes when the user asks about specific topics or content.'
-      : undefined
+    const systemPrompt = (conversation.kb_enabled || conversation.tools_enabled)
+      ? getSettingValue<string>('note_tools_prompt', DEFAULT_NOTE_TOOLS_PROMPT)
+      : DEFAULT_CHAT_SYSTEM_PROMPT
 
-    // 使用 pi-ai 进行流式输出
     const result = await streamChatWithPi(
       conversation.provider,
       conversation.model,
@@ -177,40 +205,26 @@ export async function streamChat(
       }
     )
 
-    // 持久化 tool_calls 记录
     const toolCallsJson = result.toolCallRecords.length > 0 ? JSON.stringify(result.toolCallRecords) : null
 
-    // Update assistant message
-    db.prepare("UPDATE messages SET content = ?, tokens_used = ?, tool_calls = ? WHERE id = ?")
-      .run(
-        result.content,
-        result.tokensUsed,
-        toolCallsJson,
-        assistantMessageId
-      )
+    db.prepare('UPDATE messages SET content = ?, tokens_used = ?, tool_calls = ? WHERE id = ?').run(
+      result.content,
+      result.tokensUsed,
+      toolCallsJson,
+      assistantMessageId
+    )
 
-    // Update conversation title
     const msgCount = (db.prepare('SELECT COUNT(*) as c FROM messages WHERE conversation_id = ?').get(conversationId) as { c: number }).c
     if (conversation.title === '新对话' && msgCount <= 3) {
       const title = userContent.slice(0, 30)
-      db.prepare("UPDATE conversations SET title = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?").run(title, conversationId)
+      db.prepare("UPDATE conversations SET title = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?")
+        .run(title, conversationId)
     } else {
-      db.prepare("UPDATE conversations SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?").run(conversationId)
+      db.prepare("UPDATE conversations SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?")
+        .run(conversationId)
     }
 
-    // 从 tool_calls 中提取 KB 引用（如果使用了 search_knowledge_base 工具）
-    const kbCitationsFromTools = result.toolCallRecords
-      .filter(r => r.name === 'search_knowledge_base' && !r.isError)
-      .flatMap(r => {
-        try {
-          // 解析工具结果中的笔记信息
-          const matches = r.result.match(/\[(\d+)\]\s+(.+?)\s+\(相关度:\s*(\d+)%\)/g) || []
-          return matches.map(m => {
-            const parts = m.match(/\[(\d+)\]\s+(.+?)\s+\(相关度:\s*(\d+)%\)/)
-            return parts ? { note_id: parseInt(parts[1]), title: parts[2], content: '', score: parseInt(parts[3]) / 100 } : null
-          }).filter(Boolean)
-        } catch { return [] }
-      })
+    const kbCitationsFromTools: Array<{ note_id: number; title: string; content: string; score: number }> = []
 
     console.log(`[chat] done: content=${result.content.length}c, tokens=${result.tokensUsed}, tools=${result.toolCallRecords.length}, stopReason=${result.stopReason}`)
     writeSSE('done', {
