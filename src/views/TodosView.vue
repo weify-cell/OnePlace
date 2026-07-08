@@ -20,54 +20,47 @@ onMounted(() => {
 <template>
   <AppLayout>
     <div class="todos-page">
-      <!-- Background gradient -->
       <div class="todos-page__bg" />
 
-      <!-- Content -->
-      <div class="todos-page__content">
-        <!-- Page header -->
+      <!-- 固定头部：标题 + Tabs + 筛选 -->
+      <div class="todos-page__sticky">
         <div class="todos-header animate-slideIn">
           <div class="todos-header__text">
             <h1 class="todos-header__title">待办事项</h1>
             <p class="todos-header__sub">共 {{ todoStore.total }} 项任务</p>
           </div>
-          <n-button
-            type="primary"
-            class="todos-header__btn"
-            @click="showCreateModal = true"
-          >
+          <n-button type="primary" class="todos-header__btn" @click="showCreateModal = true">
             <template #icon>
-              <span>✨</span>
+              <span>＋</span>
             </template>
             新建待办
           </n-button>
         </div>
 
-        <!-- Tabs -->
         <div class="animate-slideIn" style="animation-delay: 50ms">
           <TodoTabs />
         </div>
 
-        <!-- Filters -->
         <div class="animate-slideIn" style="animation-delay: 100ms">
           <TodoFilters />
         </div>
+      </div>
 
-        <!-- List -->
+      <!-- 可滚动列表区域 -->
+      <div class="todos-page__scroll">
         <div class="animate-slideIn" style="animation-delay: 150ms">
           <TodoList />
         </div>
       </div>
-
-      <!-- Create Modal -->
       <TodoCreateModal v-model:show="showCreateModal" />
     </div>
   </AppLayout>
 </template>
-
 <style scoped>
 .todos-page {
-  min-height: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
   position: relative;
   background: var(--bg-primary);
 }
@@ -79,15 +72,29 @@ onMounted(() => {
   pointer-events: none;
 }
 
-.todos-page__content {
+.todos-page__sticky {
+  flex-shrink: 0;
   position: relative;
-  z-index: 1;
+  z-index: 2;
+  padding: 32px 28px 0;
   max-width: 900px;
+  width: 100%;
   margin: 0 auto;
-  padding: 32px 28px;
+  background: var(--bg-primary);
 }
 
-/* Header */
+.todos-page__scroll {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  position: relative;
+  z-index: 1;
+  padding: 0 28px 32px;
+  max-width: 900px;
+  width: 100%;
+  margin: 0 auto;
+}
+
 .todos-header {
   display: flex;
   align-items: center;
@@ -105,7 +112,6 @@ onMounted(() => {
   font-size: 1.75rem;
   font-weight: 800;
   color: var(--text-primary);
-  letter-spacing: -0.02em;
 }
 
 .todos-header__sub {
@@ -126,7 +132,6 @@ onMounted(() => {
   transform: translateY(-1px);
 }
 
-/* Animations */
 @keyframes slideIn {
   from {
     opacity: 0;
