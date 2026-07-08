@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { useSettingsStore } from '@/stores/settings.store'
 import { useAuthStore } from '@/stores/auth.store'
-import { darkTheme, lightTheme } from 'naive-ui'
+import { darkTheme, lightTheme, zhCN, dateZhCN } from 'naive-ui'
 import LoginReminderModal from '@/components/common/LoginReminderModal.vue'
 
 const settingsStore = useSettingsStore()
@@ -86,7 +86,7 @@ watch(isDark, (val) => {
 </script>
 
 <template>
-  <n-config-provider :theme="naiveTheme" :theme-overrides="naiveThemeOverrides" class="h-full">
+  <n-config-provider :theme="naiveTheme" :theme-overrides="naiveThemeOverrides" :locale="zhCN" :date-locale="dateZhCN" class="h-full">
     <n-message-provider>
       <n-dialog-provider>
         <n-notification-provider>
