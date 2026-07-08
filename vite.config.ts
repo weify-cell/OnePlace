@@ -36,12 +36,12 @@ export default defineConfig({
           ]
         }
       ],
-      dts: 'src/auto-imports.d.ts',
+      dts: 'types/auto-imports.d.ts',
       eslintrc: { enabled: false }
     }),
     Components({
       resolvers: [NaiveUiResolver()],
-      dts: 'src/components.d.ts'
+      dts: 'types/components.d.ts'
     })
   ],
   resolve: {
@@ -50,7 +50,7 @@ export default defineConfig({
     }
   },
   server: {
-    port: 5173,
+    host: '0.0.0.0',
     proxy: {
       '/api': {
         target: 'http://localhost:3000',
