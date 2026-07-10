@@ -1,4 +1,4 @@
-import { stream as piStream } from '@earendil-works/pi-ai'
+import { stream as piStream } from '@earendil-works/pi-ai/api/openai-completions'
 import type { Model, Context, Api, Message, UserMessage, AssistantMessage, ToolCall as PiToolCall, AssistantMessageEvent } from '@earendil-works/pi-ai'
 import { getSettingValue } from '../settings.service.js'
 import { executeToolCall, getToolDefinitions, toolCallToRecord, toolResultToRecord } from './tools.registry.js'
@@ -47,7 +47,7 @@ export interface StreamCallbacks {
 // ────────────────────── 内部工具函数 ──────────────────────
 
 /** 创建 pi-ai Model 对象 */
-function createModel(provider: string, modelId: string, baseUrl: string): Model<Api> {
+function createModel(provider: string, modelId: string, baseUrl: string): Model<'openai-completions'> {
   return {
     id: modelId,
     name: modelId,
