@@ -1,8 +1,31 @@
 ﻿import { Response } from 'express'
 import { connectDatabase } from '../database/index.js'
-import { streamChatWithPi } from './ai/pi-ai.adapter.js'
+import { AgentPool } from './ai/agent-pool.js'
+import { createStreamFn, createModel, convertMessages, type ChatMessage } from './ai/pi-ai.adapter.js'
+import { getBuiltinTools } from './ai/builtin-tools.js'
 import { getSettingValue } from './settings.service.js'
 import { DEFAULT_NOTE_TOOLS_PROMPT, DEFAULT_CHAT_SYSTEM_PROMPT } from './prompt-defaults.js'
+
+const chatPools = new Map<string, AgentPool>()
+
+function getChatPool(provider: string, modelId: string): AgentPool {
+  const key = `${provider}:${modelId}`
+  let pool = chatPools.get(key)
+  if (!pool) {
+    const model = createModel(provider, modelId)
+    const tools = getBuiltinTools()
+    pool = new AgentPool(
+      createStreamFn(), tools, model,
+      (p) => {
+        const providersJson = getSettingValue<string>('ai_providers', '{}')
+        const providers = JSON.parse(providersJson) as Record<string, string>
+        return providers[p] || ''
+      }, ''
+    )
+    chatPools.set(key, pool)
+  }
+  return pool
+}
 
 interface ConversationRow {
   id: number
@@ -142,105 +165,82 @@ export async function streamChat(
   res.setHeader('Connection', 'keep-alive')
   res.setHeader('X-Accel-Buffering', 'no')
 
-  const assistantMsgResult = db.prepare('INSERT INTO messages (conversation_id, role, content) VALUES (?, ?, ?)')
-    .run(conversationId, 'assistant', '')
-  const assistantMessageId = assistantMsgResult.lastInsertRowid as number
-
   function writeSSE(event: string, data: unknown) {
     res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
   }
 
-  writeSSE('start', { messageId: assistantMessageId, conversationId, userMessageId })
+  writeSSE('start', { messageId: 0, conversationId, userMessageId })
 
   try {
-    const messages = (db.prepare(
+    const dbMessages = db.prepare(
       'SELECT role, content FROM messages WHERE conversation_id = ? AND is_error = 0 ORDER BY created_at ASC'
-    ).all(conversationId) as { role: string; content: string }[]).filter(m => m.content.trim().length > 0)
+    ).all(conversationId) as { role: string; content: string }[]
+
+    const pool = getChatPool(conversation.provider, conversation.model)
+    const convKey = `conv:${conversationId}`
 
     const systemPrompt = (conversation.kb_enabled || conversation.tools_enabled)
       ? getSettingValue<string>('note_tools_prompt', DEFAULT_NOTE_TOOLS_PROMPT)
       : DEFAULT_CHAT_SYSTEM_PROMPT
 
-    const result = await streamChatWithPi(
-      conversation.provider,
-      conversation.model,
-      messages as { role: 'user' | 'assistant' | 'system'; content: string }[],
-      systemPrompt,
-      {
-        onStart: () => {},
-        onTextStart: () => {},
-        onDelta: (content) => {
-          writeSSE('delta', { content })
-        },
-        onThinkingStart: () => {
-          writeSSE('thinking_start', {})
-        },
-        onThinkingDelta: (content) => {
-          writeSSE('thinking_delta', { content })
-        },
-        onThinkingEnd: (content) => {
-          writeSSE('thinking_end', { content })
-        },
-        onToolCallStart: (toolCall) => {
-          writeSSE('tool_call', { id: toolCall.id, name: toolCall.name, arguments: toolCall.arguments, status: 'running' })
-        },
-        onToolCallDelta: (name, partialArgs) => {
-          writeSSE('tool_call_delta', { name, partialArgs })
-        },
-        onToolCallEnd: (toolCall) => {
-          writeSSE('tool_call', { id: toolCall.id, name: toolCall.name, arguments: toolCall.arguments, status: 'completed' })
-        },
-        onToolResult: (record) => {
-          writeSSE('tool_result', record)
-        },
-        onRoundEnd: () => {},
-        onDone: () => {},
-        onError: (error) => {
-          throw error
+    const systemMsg: ChatMessage = { role: 'system', content: systemPrompt }
+    const userMsg: ChatMessage = { role: 'user', content: userContent }
+
+    let assistantContent = ''
+    const agent = pool.getOrCreate(convKey, () =>
+      convertMessages(dbMessages as ChatMessage[])
+    )
+
+    const unsub = agent.subscribe((event, _signal) => {
+      if (event.type === 'message_update') {
+        const ev = event.assistantMessageEvent
+        if (ev.type === 'text_delta' && ev.delta) {
+          assistantContent += ev.delta
+          writeSSE('delta', { content: ev.delta })
         }
-      },
-      {
-        toolsEnabled: conversation.tools_enabled || conversation.kb_enabled,
-        maxRounds: conversation.max_tool_rounds
+      } else if (event.type === 'agent_end') {
+        const lastMsg = event.messages[event.messages.length - 1]
+        if (lastMsg && lastMsg.role === 'assistant') {
+          let finalContent = ''
+          for (const c of lastMsg.content) {
+            if (c.type === 'text') {
+              finalContent += c.text
+            }
+          }
+          assistantContent = finalContent
+        }
       }
-    )
+    })
 
-    const toolCallsJson = result.toolCallRecords.length > 0 ? JSON.stringify(result.toolCallRecords) : null
+    await agent.prompt(convertMessages([systemMsg, userMsg]))
+    await agent.waitForIdle()
+    unsub()
 
-    db.prepare('UPDATE messages SET content = ?, tokens_used = ?, tool_calls = ? WHERE id = ?').run(
-      result.content,
-      result.tokensUsed,
-      toolCallsJson,
-      assistantMessageId
-    )
+    const assistantMsgResult = db.prepare(
+      'INSERT INTO messages (conversation_id, role, content) VALUES (?, ?, ?)'
+    ).run(conversationId, 'assistant', assistantContent)
+    const assistantMessageId = assistantMsgResult.lastInsertRowid as number
 
     const msgCount = (db.prepare('SELECT COUNT(*) as c FROM messages WHERE conversation_id = ?').get(conversationId) as { c: number }).c
-    if (conversation.title === '新对话' && msgCount <= 3) {
+    if (conversation.title === '新对话' && msgCount <= 2) {
       const title = userContent.slice(0, 30)
-      db.prepare("UPDATE conversations SET title = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?")
-        .run(title, conversationId)
+      db.prepare("UPDATE conversations SET title = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?").run(title, conversationId)
     } else {
-      db.prepare("UPDATE conversations SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?")
-        .run(conversationId)
+      db.prepare("UPDATE conversations SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?").run(conversationId)
     }
 
-    const kbCitationsFromTools: Array<{ note_id: number; title: string; content: string; score: number }> = []
-
-    console.log(`[chat] done: content=${result.content.length}c, tokens=${result.tokensUsed}, tools=${result.toolCallRecords.length}, stopReason=${result.stopReason}`)
     writeSSE('done', {
       messageId: assistantMessageId,
-      tokensUsed: result.tokensUsed,
-      content: result.content,
-      kbCitations: kbCitationsFromTools,
-      toolCalls: result.toolCallRecords,
-      stopReason: result.stopReason
+      tokensUsed: null,
+      content: assistantContent,
+      kbCitations: [],
+      toolCalls: [],
+      stopReason: 'stop',
     })
   } catch (error) {
     const err = error as Error
-    console.error('[chat] streamChat error:', err.message, err.stack)
-    const errMsg = err.message || 'Unknown error'
-    db.prepare('UPDATE messages SET content = ?, is_error = 1 WHERE id = ?').run(`Error: ${errMsg}`, assistantMessageId)
-    writeSSE('error', { code: 'AI_ERROR', message: errMsg })
+    console.error('[chat] streamChat error:', err.message)
+    writeSSE('error', { code: 'AI_ERROR', message: err.message })
   }
 
   res.end()
