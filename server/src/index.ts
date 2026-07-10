@@ -1,7 +1,8 @@
 import { config } from 'dotenv'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
-import { registerBuiltinTools } from './services/ai/builtin-tools.js'
+import { getBuiltinTools } from './services/ai/builtin-tools.js'
+import { registerAgentTools } from './services/ai/tools.registry.js'
 
 import express from 'express'
 import cors from 'cors'
@@ -82,7 +83,7 @@ const db = connectDatabase()
 runMigrations(db)
 
 // Register builtin tools for agent
-registerBuiltinTools()
+registerAgentTools(getBuiltinTools())
 
 app.listen(Number(PORT), '0.0.0.0', () => {
   console.log(`OnePlace server running on http://0.0.0.0:${PORT}`)

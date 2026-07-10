@@ -1,36 +1,37 @@
 import type { Tool, ToolCall, ToolResultMessage, TextContent } from '@earendil-works/pi-ai'
+import type { AgentTool } from '@earendil-works/pi-agent-core'
 
-// 工具执行结果
+// ── 类型 ──
+
+/** 旧式工具执行结果（保留以兼容现有调用方） */
 export interface ToolResult {
   content: string
   isError: boolean
 }
 
-// 工具执行器类型
-export type ToolExecutor = (args: Record<string, any>) => Promise<ToolResult>
+// ── 注册表 ──
 
-// 工具注册项
-interface ToolEntry {
-  definition: Tool
-  executor: ToolExecutor
-}
-
-// 工具注册表：name → { definition, executor }
-const toolRegistry = new Map<string, ToolEntry>()
+const toolRegistry = new Map<string, AgentTool>()
 
 /**
- * 注册工具
+ * 注册 AgentTool 数组
  */
-export function registerTool(definition: Tool, executor: ToolExecutor): void {
-  toolRegistry.set(definition.name, { definition, executor })
-  console.log(`[tools] registered: ${definition.name}`)
+export function registerAgentTools(tools: AgentTool[]): void {
+  for (const tool of tools) {
+    toolRegistry.set(tool.name, tool)
+    console.log(`[tools] registered: ${tool.name}`)
+  }
 }
 
 /**
  * 获取所有工具定义（传给 pi-ai Context.tools）
  */
 export function getToolDefinitions(): Tool[] {
-  return Array.from(toolRegistry.values()).map(e => e.definition)
+  return Array.from(toolRegistry.values()).map(t => ({
+    name: t.name,
+    description: t.description,
+    parameters: t.parameters
+  }))
 }
 
 /**
@@ -39,37 +40,41 @@ export function getToolDefinitions(): Tool[] {
 export async function executeToolCall(
   toolCall: ToolCall
 ): Promise<ToolResultMessage> {
-  const entry = toolRegistry.get(toolCall.name)
+  const tool = toolRegistry.get(toolCall.name)
 
-  if (!entry) {
+  if (!tool) {
     return {
       role: 'toolResult',
       toolCallId: toolCall.id,
       toolName: toolCall.name,
-      content: [{ type: 'text', text: `Unknown tool: ${toolCall.name}` } as TextContent],
+      content: [{ type: 'text' as const, text: `Unknown tool: ${toolCall.name}` }],
       isError: true,
       timestamp: Date.now()
     }
   }
 
   try {
-    const result = await entry.executor(toolCall.arguments)
+    const result = await tool.execute(toolCall.id, toolCall.arguments)
+    const text = result.content
+      .filter((c): c is TextContent => c.type === 'text')
+      .map(c => c.text)
+      .join('\n')
     return {
       role: 'toolResult',
       toolCallId: toolCall.id,
       toolName: toolCall.name,
-      content: [{ type: 'text', text: result.content } as TextContent],
-      isError: result.isError,
+      content: [{ type: 'text' as const, text }],
+      isError: false,
       timestamp: Date.now()
     }
   } catch (err) {
-    const errMsg = (err as Error).message || 'Tool execution failed'
+    const errMsg = err instanceof Error ? err.message : 'Tool execution failed'
     console.error(`[tools] ${toolCall.name} failed:`, errMsg)
     return {
       role: 'toolResult',
       toolCallId: toolCall.id,
       toolName: toolCall.name,
-      content: [{ type: 'text', text: `Error: ${errMsg}` } as TextContent],
+      content: [{ type: 'text' as const, text: `Error: ${errMsg}` }],
       isError: true,
       timestamp: Date.now()
     }
@@ -85,11 +90,11 @@ export function toolResultToRecord(result: ToolResultMessage): {
   result: string
   isError: boolean
 } {
-  const textContent = result.content.find(c => c.type === 'text') as TextContent | undefined
+  const textContent = result.content.find(c => c.type === 'text')
   return {
     id: result.toolCallId,
     name: result.toolName,
-    result: textContent?.text || '',
+    result: textContent && 'text' in textContent ? textContent.text : '',
     isError: result.isError
   }
 }
@@ -100,7 +105,7 @@ export function toolResultToRecord(result: ToolResultMessage): {
 export function toolCallToRecord(toolCall: ToolCall): {
   id: string
   name: string
-  arguments: Record<string, any>
+  arguments: Record<string, unknown>
 } {
   return {
     id: toolCall.id,
