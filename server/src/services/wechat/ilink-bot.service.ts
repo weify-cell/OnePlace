@@ -175,6 +175,14 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
         return
       }
 
+      // 命令解析：/清空上下文
+      if (msg.text?.trim() === '/清空上下文') {
+        clearMessageHistory(msg.userId)
+        userModes.delete(msg.userId)
+        await bot!.reply(msg, '已清空当前对话上下文。')
+        return
+      }
+
       // 检查是否有待发送的提醒（context_token 过期后积压的）
       if (hasPendingReminders(msg.userId)) {
         console.log(`[ilink] 发现待发送提醒，正在补发给 ${msg.userId}`)
@@ -365,8 +373,8 @@ export function getMessageHistory(userId: string): Array<{ role: 'user' | 'assis
     WHERE user_id = ?
     ORDER BY id DESC
     LIMIT ?
-  `).all(userId, MAX_HISTORY_LENGTH) as Array<{ role: string; content: string }>
-  return rows.reverse()
+  `).all(userId, MAX_HISTORY_LENGTH) as { role: string; content: string }[]
+  return rows.reverse() as Array<{ role: 'user' | 'assistant'; content: string }>
 }
 
 /**
