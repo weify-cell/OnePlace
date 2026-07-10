@@ -37,6 +37,9 @@ let lastError: string | null = null
 // 登录状态
 let loginQRCode: string | null = null
 let loginStatus: 'idle' | 'waiting' | 'scanned' | 'confirmed' | 'expired' = 'idle'
+// 消息去重：同一用户相同内容 5 秒内只处理一次
+const recentMessages = new Map<string, number>()
+const DEDUP_WINDOW_MS = 5000
 
 // 消息历史持久化到数据库
 const MAX_HISTORY_LENGTH = 100
@@ -153,8 +156,16 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
     bot.onMessage(async (msg: any) => {
       console.log(`[ilink] 收到消息 ${msg.userId}: ${msg.text?.slice(0, 50)}`)
 
+      // 消息去重：同一用户相同文本 5 秒内跳过
+      const dedupKey = `${msg.userId}::${msg.text}`
+      const lastTime = recentMessages.get(dedupKey)
+      if (lastTime && Date.now() - lastTime < DEDUP_WINDOW_MS) {
+        console.log(`[ilink] 跳过重复消息: ${msg.userId}`)
+        return
+      }
+      recentMessages.set(dedupKey, Date.now())
+
       // 保存用户 ID（用于提醒服务）
-      saveWeChatUser(msg.userId)
 
       // 命令解析：/学习 主题
       if (msg.text?.startsWith('/学习 ')) {
@@ -365,8 +376,8 @@ export function getMessageHistory(userId: string): Array<{ role: 'user' | 'assis
     WHERE user_id = ?
     ORDER BY id DESC
     LIMIT ?
-  `).all(userId, MAX_HISTORY_LENGTH) as Array<{ role: string; content: string }>
-  return rows.reverse()
+  `).all(userId, MAX_HISTORY_LENGTH) as { role: string; content: string }[]
+  return rows.reverse() as Array<{ role: 'user' | 'assistant'; content: string }>
 }
 
 /**
