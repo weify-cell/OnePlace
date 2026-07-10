@@ -37,6 +37,10 @@ let lastError: string | null = null
 // 登录状态
 let loginQRCode: string | null = null
 let loginStatus: 'idle' | 'waiting' | 'scanned' | 'confirmed' | 'expired' = 'idle'
+
+// 消息序号（追踪重复回复用）
+let messageSeq = 0
+
 // 消息去重：同一用户相同内容 5 秒内只处理一次
 const recentMessages = new Map<string, number>()
 const DEDUP_WINDOW_MS = 5000
@@ -154,7 +158,8 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
 
     // 消息处理
     bot.onMessage(async (msg: any) => {
-      console.log(`[ilink] 收到消息 ${msg.userId}: ${msg.text?.slice(0, 50)}`)
+      const reqId = ++messageSeq
+      console.log(`[ilink] #${reqId} 收到消息 ${msg.userId}: ${msg.text?.slice(0, 50)}`)
 
       // 消息去重：同一用户相同文本 5 秒内跳过
       const dedupKey = `${msg.userId}::${msg.text}`
@@ -253,10 +258,10 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
         lastMessageAt = new Date().toISOString()
         lastError = null
 
-        console.log(`[ilink] 已回复 ${msg.userId}: ${result.content.slice(0, 50)}...`)
+        console.log(`[ilink] #${reqId} 已回复 ${msg.userId}: ${result.content.slice(0, 50)}...`)
       } catch (error) {
         const errMsg = (error as Error).message || 'Unknown error'
-        console.error(`[ilink] 处理消息失败:`, errMsg)
+        console.error(`[ilink] #${reqId} 处理消息失败:`, errMsg)
         lastError = errMsg
 
         // 发送错误回复
