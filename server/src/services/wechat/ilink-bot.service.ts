@@ -1,5 +1,7 @@
 import { WeChatBot } from '@wechatbot/wechatbot'
-import { streamChatWithPi } from '../ai/pi-ai.adapter.js'
+import { AgentPool } from '../ai/agent-pool.js'
+import { createStreamFn, createModel, convertMessages, type ChatMessage } from '../ai/pi-ai.adapter.js'
+import { getBuiltinTools } from '../ai/builtin-tools.js'
 import { getSettingValue, setSetting } from '../settings.service.js'
 import { connectDatabase } from '../../database/index.js'
 import { setReminderBot, startReminderService, stopReminderService, saveWeChatUser, sendPendingReminders, hasPendingReminders } from './todo-reminder.service.js'
@@ -38,6 +40,8 @@ let lastError: string | null = null
 let loginQRCode: string | null = null
 let loginStatus: 'idle' | 'waiting' | 'scanned' | 'confirmed' | 'expired' = 'idle'
 
+let agentPool: AgentPool | null = null
+
 // 消息历史持久化到数据库
 const MAX_HISTORY_LENGTH = 100
 
@@ -48,6 +52,21 @@ const userModes = new Map<string, { mode: 'normal' | 'learning'; learningTopic: 
 function getLearningPrompt(topic: string): string {
   const template = getSettingValue<string>('ilink_learning_prompt', '你是一个学习导师，正在帮助用户学习「{topic}」。请按以下方式教学：1. 先使用 search_knowledge_base 和 get_note 工具检索用户的笔记资料 2. 以问答方式测试用户对知识点的掌握 3. 根据用户的回答给予反馈和补充解释 4. 控制每次提问1-2个问题，不要连续轰炸 5. 用户答对时鼓励，答错时耐心纠正 6. 如果笔记中没有相关内容，诚实告知并给出通用知识')
   return template.replace('{topic}', topic)
+}
+
+function initAgentPool(provider: string, modelId: string): void {
+  const model = createModel(provider, modelId)
+  const streamFn = createStreamFn()
+  const tools = getBuiltinTools()
+  agentPool = new AgentPool(
+    streamFn, tools, model,
+    (p) => {
+      const providersJson = getSettingValue<string>('ai_providers', '{}')
+      const providers = JSON.parse(providersJson) as Record<string, string>
+      return providers[p] || ''
+    },
+    ''
+  )
 }
 
 /**
@@ -117,6 +136,7 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
   if (!config.enabled) {
     return { success: false, error: 'Bot is not enabled' }
   }
+  initAgentPool(config.provider, config.model)
 
   try {
     // 创建 Bot 实例
@@ -179,6 +199,7 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
       if (msg.text?.trim() === '/清空上下文') {
         clearMessageHistory(msg.userId)
         userModes.delete(msg.userId)
+        agentPool?.remove(msg.userId)
         await bot!.reply(msg, '已清空当前对话上下文。')
         return
       }
@@ -195,68 +216,54 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
         return
       }
 
-      // 获取或创建消息历史（从数据库）
-      let history = getMessageHistory(msg.userId)
-
       // 发送"正在输入"状态
       await bot!.sendTyping(msg.userId)
 
-      // 添加时间戳到消息，持久化到数据库
-      const timestamp = formatBeijingTime()
-      addMessageToHistory(msg.userId, 'user', `${timestamp} ${msg.text}`)
-      history.push({ role: 'user', content: `${timestamp} ${msg.text}` })
-
-      // 保持历史长度限制
-      if (history.length > MAX_HISTORY_LENGTH) {
-        history = history.slice(-MAX_HISTORY_LENGTH)
-      }
-
       try {
-        // 根据模式选择 systemPrompt
+        const pool = agentPool!
         const userMode = userModes.get(msg.userId)
         const effectivePrompt = userMode?.mode === 'learning'
           ? getLearningPrompt(userMode.learningTopic)
           : config.system_prompt
 
-        // 调用 pi-ai 处理消息
-        const result = await streamChatWithPi(
-          config.provider,
-          config.model,
-          history,
-          effectivePrompt,
-          {
-            onStart: () => {},
-            onDelta: () => {},
-            onDone: () => {},
-            onError: (error) => {
-              throw error
+        const agent = pool.getOrCreate(msg.userId, () => {
+          const dbHistory = getMessageHistory(msg.userId)
+          return convertMessages(dbHistory as ChatMessage[])
+        })
+
+        const timestamp = formatBeijingTime()
+        const systemMsg: ChatMessage = { role: 'system', content: effectivePrompt }
+        const userMsg: ChatMessage = { role: 'user', content: `${timestamp} ${msg.text}` }
+
+        let replyContent = ''
+        const unsub = agent.subscribe((event, _signal) => {
+          if (event.type === 'agent_end') {
+            const lastMsg = event.messages[event.messages.length - 1]
+            if (lastMsg && lastMsg.role === 'assistant') {
+              replyContent = (lastMsg.content as Array<{ type: string; text?: string }>)
+                .filter(c => c.type === 'text')
+                .map(c => c.text || '').join('')
             }
-          },
-          {
-            toolsEnabled: true,
-            maxRounds: config.max_tool_rounds
           }
-        )
+        })
 
-        // 回复消息
-        await bot!.reply(msg, result.content)
+        await agent.prompt(convertMessages([systemMsg, userMsg]))
+        await agent.waitForIdle()
+        unsub()
 
-        // 更新消息历史（持久化到数据库）
-        history.push({ role: 'assistant', content: result.content })
-        addMessageToHistory(msg.userId, 'assistant', result.content)
+        await bot!.reply(msg, replyContent || '抱歉，没有生成回复。')
 
-        // 更新统计
+        addMessageToHistory(msg.userId, 'user', `${timestamp} ${msg.text}`)
+        addMessageToHistory(msg.userId, 'assistant', replyContent)
+
         messagesProcessed++
         lastMessageAt = new Date().toISOString()
         lastError = null
-
-        console.log(`[ilink] 已回复 ${msg.userId}: ${result.content.slice(0, 50)}...`)
+        console.log(`[ilink] 已回复 ${msg.userId}: ${replyContent.slice(0, 50)}...`)
       } catch (error) {
         const errMsg = (error as Error).message || 'Unknown error'
         console.error(`[ilink] 处理消息失败:`, errMsg)
         lastError = errMsg
-
-        // 发送错误回复
         try {
           await bot!.reply(msg, '抱歉，处理您的消息时出现了错误，请稍后再试。')
         } catch (replyErr) {
@@ -352,6 +359,9 @@ export function stopILinkBot(): { success: boolean; error?: string } {
     stopProactiveChatService()
 
     // WeChatBot 没有 stop 方法，直接清理状态
+    agentPool?.shutdown()
+    agentPool = null
+
     bot = null
     botRunning = false
     botStartTime = null
