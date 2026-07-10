@@ -1,5 +1,5 @@
 import { WeChatBot } from '@wechatbot/wechatbot'
-import { streamChatWithPi } from '../ai/pi-ai.adapter.js'
+import { createStreamFn, createModel, convertMessages, type ChatMessage } from '../ai/pi-ai.adapter.js'
 import { getSettingValue } from '../settings.service.js'
 import { connectDatabase } from '../../database/index.js'
 import { addMessageToHistory, isUserInLearningMode } from './ilink-bot.service.js'
@@ -117,20 +117,22 @@ async function generateProactiveMessage(userId: string): Promise<string> {
   history.push({ role: 'user', content: `${timestamp} ${userMessage}` })
 
   try {
-    const result = await streamChatWithPi(
-      provider,
-      model,
-      history,
-      systemPrompt,
-      {
-        onStart: () => {},
-        onDelta: () => {},
-        onDone: () => {},
-        onError: (error) => { throw error }
-      },
-      { toolsEnabled: false }
-    )
-    return result.content?.trim() || pickDefaultMessage()
+    const modelObj = createModel(provider, model)
+    const streamFn = createStreamFn()
+    const messages = convertMessages(history as ChatMessage[])
+    const context = { systemPrompt, messages, tools: undefined }
+
+    let eventStream = streamFn(modelObj, context, {})
+    if (eventStream instanceof Promise) {
+      eventStream = await eventStream
+    }
+    let content = ''
+    for await (const event of eventStream) {
+      if ('content' in event && typeof event.content === 'string') {
+        content += event.content
+      }
+    }
+    return content.trim() || pickDefaultMessage()
   } catch (error) {
     console.error('[proactive] failed to generate message:', error)
     return pickDefaultMessage()
