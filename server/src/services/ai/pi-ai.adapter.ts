@@ -17,8 +17,7 @@ const BASE_URL_MAP: Record<string, string> = {
 }
 
 function getApiConfig(provider: string): { apiKey: string; baseUrl: string } {
-  const providersJson = getSettingValue<string>('ai_providers', '{}')
-  const providers = JSON.parse(providersJson) as Record<string, string>
+  const providers = getSettingValue<Record<string, string>>('ai_providers', {})
   const apiKey = providers[provider] || ''
   const baseUrl = getSettingValue<string>(
     `${provider}_base_url`, BASE_URL_MAP[provider] || ''

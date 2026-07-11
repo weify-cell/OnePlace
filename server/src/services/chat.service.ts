@@ -17,8 +17,7 @@ function getChatPool(provider: string, modelId: string): AgentPool {
     pool = new AgentPool(
       createStreamFn(), tools, model,
       (p) => {
-        const providersJson = getSettingValue<string>('ai_providers', '{}')
-        const providers = JSON.parse(providersJson) as Record<string, string>
+        const providers = getSettingValue<Record<string, string>>('ai_providers', {})
         return providers[p] || ''
       }, ''
     )

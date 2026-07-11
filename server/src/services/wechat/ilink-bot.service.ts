@@ -61,8 +61,7 @@ function initAgentPool(provider: string, modelId: string): void {
   agentPool = new AgentPool(
     streamFn, tools, model,
     (p) => {
-      const providersJson = getSettingValue<string>('ai_providers', '{}')
-      const providers = JSON.parse(providersJson) as Record<string, string>
+      const providers = getSettingValue<Record<string, string>>('ai_providers', {})
       return providers[p] || ''
     },
     ''
