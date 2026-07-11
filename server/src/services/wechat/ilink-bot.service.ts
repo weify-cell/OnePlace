@@ -249,6 +249,10 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
           console.log(`[ilink] stream event: type=${ev.type}`)
           if (ev.type === 'text_delta') replyContent += ev.delta
           else if (ev.type === 'text_end') replyContent += ev.content
+          else if (ev.type === 'error') {
+            console.log(`[ilink] STREAM ERROR reason=${ev.reason}`)
+            console.log(`[ilink] STREAM ERROR message=${JSON.stringify(ev.error).slice(0, 500)}`)
+          }
         }
 
         console.log(`[ilink] direct stream reply: ${replyContent.slice(0, 80)}`)
