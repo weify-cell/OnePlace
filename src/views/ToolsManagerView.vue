@@ -107,7 +107,7 @@ onMounted(fetchTools)
 .card__top { display: flex; align-items: center; justify-content: space-between; }
 .card__actions { display: flex; gap: 2px; }
 .card__label { font-size: 1rem; font-weight: 700; color: var(--text-primary); }
-.card__name { font-size: 0.75rem; color: var(--text-muted); font-family: monospace; }
+.card__name { font-size: 0.75rem; color: var(--accent-primary); background: rgba(245,158,11,.1); padding: 1px 8px; border-radius: 4px; align-self: flex-start; }
 .card__desc { font-size: 0.8125rem; color: var(--text-muted); line-height: 1.5; margin: 0; }
 .card__instruction { font-size: 0.8125rem; color: var(--text-secondary); line-height: 1.5; padding: 10px 12px; background: var(--bg-secondary); border-radius: 8px; }
 .empty { text-align: center; padding: 80px 20px; grid-column: 1 / -1; }
