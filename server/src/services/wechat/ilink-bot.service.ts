@@ -62,7 +62,9 @@ function initAgentPool(provider: string, modelId: string): void {
     streamFn, tools, model,
     (p) => {
       const providers = getSettingValue<Record<string, string>>('ai_providers', {})
-      return providers[p] || ''
+      const key = providers[p] || ''
+      console.log(`[ilink] getApiKey provider=${p} hasKey=${!!key}`)
+      return key
     },
     ''
   )
@@ -235,16 +237,22 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
         const userMsg: ChatMessage = { role: 'user', content: `${timestamp} ${msg.text}` }
 
         let replyContent = ''
+        let agentErrorMessage = ''
         const unsub = agent.subscribe((event, _signal) => {
           if (event.type === 'agent_end') {
             const lastMsg = event.messages[event.messages.length - 1]
+            console.log(`[ilink] agent_end: ${event.messages.length} messages, lastRole=${lastMsg?.role}`)
             if (lastMsg && lastMsg.role === 'assistant') {
               replyContent = (lastMsg.content as Array<{ type: string; text?: string }>)
                 .filter(c => c.type === 'text')
                 .map(c => c.text || '').join('')
+              console.log(`[ilink] replyContent: ${replyContent.slice(0, 80)}`)
             }
           }
         })
+
+        agentErrorMessage = agent.state.errorMessage || ''
+        console.log(`[ilink] calling prompt, state.error=${agentErrorMessage}`)
 
         await agent.prompt(convertMessages([systemMsg, userMsg]))
         await agent.waitForIdle()
