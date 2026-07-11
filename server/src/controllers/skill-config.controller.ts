@@ -19,17 +19,29 @@ export function remove(req: Request, res: Response): void {
   res.status(204).end()
 }
 export async function getFile(req: Request, res: Response): Promise<void> {
-  const id = Number(req.params.id)
-  const content = await service.readSkillFile(id)
-  if (content === null) { res.status(404).json({ error: 'Not found' }); return }
-  res.json({ content })
+  try {
+    const id = Number(req.params.id)
+    const content = await service.readSkillFile(id)
+    if (content === null) { res.status(404).json({ error: 'Not found' }); return }
+    res.json({ content })
+  } catch (error) {
+    res.status(500).json({ error: 'InternalServerError', message: (error as Error).message })
+  }
 }
 export async function putFile(req: Request, res: Response): Promise<void> {
-  const id = Number(req.params.id)
-  const ok = await service.writeSkillFile(id, req.body.content || '')
-  if (!ok) { res.status(404).json({ error: 'Not found' }); return }
-  res.json({ success: true })
+  try {
+    const id = Number(req.params.id)
+    const ok = await service.writeSkillFile(id, req.body.content || '')
+    if (!ok) { res.status(404).json({ error: 'Not found' }); return }
+    res.json({ success: true })
+  } catch (error) {
+    res.status(500).json({ error: 'InternalServerError', message: (error as Error).message })
+  }
 }
 export async function getEnabled(_req: Request, res: Response): Promise<void> {
-  res.json(await service.getEnabledSkills())
+  try {
+    res.json(await service.getEnabledSkills())
+  } catch (error) {
+    res.status(500).json({ error: 'InternalServerError', message: (error as Error).message })
+  }
 }
