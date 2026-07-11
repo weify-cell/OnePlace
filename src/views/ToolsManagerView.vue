@@ -22,32 +22,29 @@ const editing = ref<ToolConfig | null>(null)
 const form = ref({ name: '', label: '', description: '', instruction: '', enabled: 1 })
 
 const columns = [
-  { title: '名称', key: 'name', width: 150 },
-  { title: '标签', key: 'label', width: 120 },
-  { title: '描述', key: 'description', ellipsis: { tooltip: true }, width: 250 },
-  { title: '指令', key: 'instruction', ellipsis: { tooltip: true }, width: 200 },
+  { title: '名称', key: 'name', width: 140 },
+  { title: '标签', key: 'label', width: 100 },
+  { title: '描述', key: 'description', ellipsis: { tooltip: true } },
   {
     title: '启用', key: 'enabled', width: 80,
-    render: (row: ToolConfig) => h('span', { style: { color: row.enabled ? '#18a058' : '#999' } }, row.enabled ? '已启用' : '已禁用'),
+    render: (row: ToolConfig) => row.enabled
+      ? h('span', { class: 'text-[#18a058]' }, '已启用')
+      : h('span', { class: 'text-[var(--text-muted)]' }, '已禁用'),
   },
   {
-    title: '操作', key: 'actions', width: 140,
+    title: '操作', key: 'actions', width: 120,
     render: (row: ToolConfig) =>
       h('div', { style: { display: 'flex', gap: '8px' } }, [
-        h('n-button', { size: 'small', quaternary: true, onClick: () => editTool(row) }, { default: () => '编辑' }),
-        h('n-button', { size: 'small', quaternary: true, type: 'error', onClick: () => removeTool(row) }, { default: () => '删除' }),
+        h('n-button', { size: 'tiny', quaternary: true, onClick: () => editTool(row) }, { default: () => '编辑' }),
+        h('n-button', { size: 'tiny', quaternary: true, type: 'error', onClick: () => removeTool(row) }, { default: () => '删除' }),
       ]),
   },
 ]
 
 async function fetchTools() {
   loading.value = true
-  try {
-    const { data } = await api.get('/tool-config/list')
-    tools.value = data
-  } catch (err) {
-    message.error('加载工具列表失败')
-  }
+  try { const { data } = await api.get('/tool-config/list'); tools.value = data }
+  catch { message.error('加载失败') }
   loading.value = false
 }
 
@@ -66,34 +63,23 @@ function editTool(tool: ToolConfig) {
 async function saveTool() {
   if (!form.value.name) { message.warning('名称不能为空'); return }
   try {
-    if (editing.value) {
-      await api.put(`/tool-config/${editing.value.id}`, form.value)
-      message.success('更新成功')
-    } else {
-      await api.post('/tool-config', form.value)
-      message.success('创建成功')
-    }
+    if (editing.value) await api.put(`/tool-config/${editing.value.id}`, form.value)
+    else await api.post('/tool-config', form.value)
+    message.success(editing.value ? '已更新' : '已创建')
     showModal.value = false
     await fetchTools()
-  } catch (err) {
-    message.error('保存失败')
-  }
+  } catch { message.error('保存失败') }
 }
 
 function removeTool(tool: ToolConfig) {
   dialog.warning({
     title: '确认删除',
-    content: `确定删除工具「${tool.name}」吗？`,
+    content: `确定删除「${tool.name}」？`,
     positiveText: '删除',
     negativeText: '取消',
     onPositiveClick: async () => {
-      try {
-        await api.delete(`/tool-config/${tool.id}`)
-        message.success('已删除')
-        await fetchTools()
-      } catch {
-        message.error('删除失败')
-      }
+      try { await api.delete(`/tool-config/${tool.id}`); message.success('已删除'); await fetchTools() }
+      catch { message.error('删除失败') }
     },
   })
 }
@@ -104,42 +90,38 @@ onMounted(fetchTools)
 <template>
   <AppLayout>
     <div class="page">
-      <div class="page__header">
-        <div>
+      <div class="page__bg" />
+
+      <div class="page__header animate-slideIn">
+        <div class="page__header-text">
           <h1 class="page__title">工具管理</h1>
-          <p class="page__sub">管理 Agent 可用的工具，控制启用状态和自定义指令</p>
+          <p class="page__sub">管理 Agent 可用的工具，匹配内置工具名自动绑定 execute</p>
         </div>
-        <n-button type="primary" @click="openCreate">
-          <template #icon><span>+</span></template>
+        <n-button class="page__btn" @click="openCreate">
+          <template #icon><span>＋</span></template>
           新建工具
         </n-button>
       </div>
 
-      <n-card :bordered="false" class="page__card">
+      <div class="page__table animate-slideIn" style="animation-delay:50ms">
         <n-spin :show="loading">
           <n-data-table :columns="columns" :data="tools" :bordered="false" :single-line="false" size="small" />
         </n-spin>
-      </n-card>
+      </div>
 
-      <n-modal
-        v-model:show="showModal"
-        preset="card"
-        :title="editing ? '编辑工具' : '新建工具'"
-        style="width:600px"
-        :mask-closable="false"
-      >
+      <n-modal v-model:show="showModal" preset="card" :title="editing ? '编辑工具' : '新建工具'" style="width:560px" :mask-closable="false">
         <n-form label-placement="top">
           <n-form-item label="名称" required>
-            <n-input v-model:value="form.name" placeholder="工具名称，匹配内置工具时自动绑定 execute" />
+            <n-input v-model:value="form.name" placeholder="工具名称，匹配内置工具名自动绑定 execute" />
           </n-form-item>
           <n-form-item label="标签">
             <n-input v-model:value="form.label" placeholder="显示标签" />
           </n-form-item>
           <n-form-item label="描述">
-            <n-input type="textarea" v-model:value="form.description" :rows="3" placeholder="工具描述，介绍工具的功能和用途" />
+            <n-input type="textarea" v-model:value="form.description" :rows="3" placeholder="工具描述" />
           </n-form-item>
           <n-form-item label="指令">
-            <n-input type="textarea" v-model:value="form.instruction" :rows="4" placeholder="自定义指令，告诉 AI 如何使用这个工具（可选）" />
+            <n-input type="textarea" v-model:value="form.instruction" :rows="4" placeholder="自定义指令（可选）" />
           </n-form-item>
           <n-form-item label="启用">
             <n-switch v-model:value="form.enabled" :checked-value="1" :unchecked-value="0" />
@@ -158,27 +140,72 @@ onMounted(fetchTools)
 
 <style scoped>
 .page {
-  padding: 32px 28px;
-  max-width: 1100px;
-  margin: 0 auto;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  background: var(--bg-primary);
+}
+.page__bg {
+  position: absolute;
+  inset: 0;
+  background: var(--bg-content-gradient);
+  pointer-events: none;
 }
 .page__header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  margin-bottom: 24px;
+  padding: 32px 28px 0;
+  max-width: 900px;
+  width: 100%;
+  margin: 0 auto 20px;
+  position: relative;
+  z-index: 1;
+}
+.page__header-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 .page__title {
-  font-size: 1.5rem;
-  font-weight: 700;
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: var(--text-primary);
   margin: 0;
 }
 .page__sub {
   font-size: 0.875rem;
   color: var(--text-muted);
-  margin: 4px 0 0;
+  margin: 0;
 }
-.page__card {
-  border-radius: 12px;
+.page__btn {
+  background: var(--accent-gradient) !important;
+  border: none !important;
+  box-shadow: 0 4px 14px rgba(245,158,11,.3);
+  font-weight: 600;
+  transition: all .2s ease;
+}
+.page__btn:hover {
+  box-shadow: 0 6px 20px rgba(245,158,11,.4);
+  transform: translateY(-1px);
+}
+.page__table {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  padding: 0 28px 32px;
+  max-width: 900px;
+  width: 100%;
+  margin: 0 auto;
+  position: relative;
+  z-index: 1;
+}
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-slideIn {
+  animation: slideIn .35s ease-out forwards;
 }
 </style>
