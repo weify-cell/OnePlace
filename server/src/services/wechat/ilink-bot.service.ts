@@ -239,13 +239,13 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
         let replyContent = ''
         const unsub = agent.subscribe((event, _signal) => {
           console.log(`[ilink] event: type=${event.type}`)
-          if (event.type === 'message_update') {
-            console.log(`[ilink]   subEvent: ${event.assistantMessageEvent.type}`)
-            const ev = event.assistantMessageEvent
-            if (ev.type === 'text_delta') {
-              replyContent += ev.delta
-            } else if (ev.type === 'text_end') {
-              replyContent += ev.content
+          if (event.type === 'message_end') {
+            const msg = event.message
+            if (msg.role === 'assistant') {
+              replyContent = (msg.content as Array<{ type?: string; text?: string }>)
+                .filter(c => c.type === 'text')
+                .map(c => c.text || '').join('')
+              console.log(`[ilink] message_end assistant: ${replyContent.slice(0, 80)}`)
             }
           } else if (event.type === 'agent_end') {
             console.log(`[ilink] agent_end, replyContent length=${replyContent.length}`)
