@@ -240,25 +240,22 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
         const unsub = agent.subscribe((event, _signal) => {
           if (event.type === 'message_update') {
             const ev = event.assistantMessageEvent
-            if (ev && 'content' in ev && typeof ev.content === 'string' && ev.content) {
+            if (ev.type === 'text_delta') {
+              replyContent += ev.delta
+            } else if (ev.type === 'text_end') {
               replyContent += ev.content
+            } else if (ev.type === 'done') {
+              const blocks = ev.message.content.filter(
+                (c): c is { type: 'text'; text: string } => c.type === 'text'
+              )
+              replyContent += blocks.map(c => c.text).join('')
             }
           } else if (event.type === 'agent_end') {
-            // 兜底：如果 message_update 没拿到内容，从最后一条 assistant 消息提取
-            if (!replyContent) {
-              const lastMsg = event.messages[event.messages.length - 1]
-              if (lastMsg && lastMsg.role === 'assistant' && Array.isArray(lastMsg.content)) {
-                replyContent = lastMsg.content
-                  .filter((c: { type?: string; text?: string }) => c.type === 'text')
-                  .map((c: { text?: string }) => c.text || '').join('')
-              }
-            }
-            console.log(`[ilink] agent_end, replyContent: ${replyContent.slice(0, 80)}`)
+            console.log(`[ilink] agent_end, replyContent length=${replyContent.length}`)
           }
         })
 
         console.log(`[ilink] calling prompt...`)
-
         await agent.prompt(convertMessages([systemMsg, userMsg]))
         await agent.waitForIdle()
         unsub()
