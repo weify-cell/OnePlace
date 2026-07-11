@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useMessage, useDialog } from 'naive-ui'
 import AppLayout from '@/components/common/AppLayout.vue'
-import axios from 'axios'
+import { api } from '@/api'
 
 interface SkillConfig {
   id: number
@@ -42,7 +42,7 @@ const columns = [
 
 async function fetchSkills() {
   loading.value = true
-  const { data } = await axios.get('/api/skill-config/list')
+  const { data } = await api.get('/api/skill-config/list')
   skills.value = data
   loading.value = false
 }
@@ -64,7 +64,7 @@ async function openEditor(skill: SkillConfig) {
   editorLoading.value = true
   showEditor.value = true
   try {
-    const { data } = await axios.get(`/api/skill-config/${skill.id}/file`)
+    const { data } = await api.get(`/api/skill-config/${skill.id}/file`)
     fileContent.value = data.content || ''
   } catch {
     fileContent.value = ''
@@ -74,7 +74,7 @@ async function openEditor(skill: SkillConfig) {
 
 async function saveFile() {
   if (editingSkillId.value === null) return
-  await axios.put(`/api/skill-config/${editingSkillId.value}/file`, { content: fileContent.value })
+  await api.put(`/api/skill-config/${editingSkillId.value}/file`, { content: fileContent.value })
   message.success('文件已保存')
   showEditor.value = false
 }
@@ -82,10 +82,10 @@ async function saveFile() {
 async function saveSkill() {
   if (!form.value.name) { message.warning('名称不能为空'); return }
   if (editing.value) {
-    await axios.put(`/api/skill-config/${editing.value.id}`, form.value)
+    await api.put(`/api/skill-config/${editing.value.id}`, form.value)
     message.success('更新成功')
   } else {
-    await axios.post('/api/skill-config', form.value)
+    await api.post('/api/skill-config', form.value)
     message.success('创建成功')
   }
   showModal.value = false
@@ -99,7 +99,7 @@ function removeSkill(skill: SkillConfig) {
     positiveText: '删除',
     negativeText: '取消',
     onPositiveClick: async () => {
-      await axios.delete(`/api/skill-config/${skill.id}`)
+      await api.delete(`/api/skill-config/${skill.id}`)
       message.success('已删除')
       await fetchSkills()
     },

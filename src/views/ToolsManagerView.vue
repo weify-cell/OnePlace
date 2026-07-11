@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useMessage, useDialog } from 'naive-ui'
 import AppLayout from '@/components/common/AppLayout.vue'
-import axios from 'axios'
+import { api } from '@/api'
 
 interface ToolConfig {
   id: number
@@ -43,7 +43,7 @@ function h(tag: string, props: Record<string, unknown>, children?: Record<string
 
 async function fetchTools() {
   loading.value = true
-  const { data } = await axios.get('/api/tool-config/list')
+  const { data } = await api.get('/api/tool-config/list')
   tools.value = data
   loading.value = false
 }
@@ -63,10 +63,10 @@ function editTool(tool: ToolConfig) {
 async function saveTool() {
   if (!form.value.name) { message.warning('名称不能为空'); return }
   if (editing.value) {
-    await axios.put(`/api/tool-config/${editing.value.id}`, form.value)
+    await api.put(`/api/tool-config/${editing.value.id}`, form.value)
     message.success('更新成功')
   } else {
-    await axios.post('/api/tool-config', form.value)
+    await api.post('/api/tool-config', form.value)
     message.success('创建成功')
   }
   showModal.value = false
@@ -80,7 +80,7 @@ function removeTool(tool: ToolConfig) {
     positiveText: '删除',
     negativeText: '取消',
     onPositiveClick: async () => {
-      await axios.delete(`/api/tool-config/${tool.id}`)
+      await api.delete(`/api/tool-config/${tool.id}`)
       message.success('已删除')
       await fetchTools()
     },
