@@ -239,10 +239,10 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
         let replyContent = ''
         const unsub = agent.subscribe((event, _signal) => {
           console.log(`[ilink] event: type=${event.type}`)
-          if (event.type === 'message_end') {
+          if (event.type === 'turn_end') {
             const msg = event.message
             if (msg.role === 'assistant') {
-              console.log(`[ilink] assistant content type=${typeof msg.content}, isArray=${Array.isArray(msg.content)}, preview=${JSON.stringify(msg.content).slice(0, 300)}`)
+              console.log(`[ilink] turn_end content preview=${JSON.stringify(msg.content).slice(0, 300)}`)
               if (Array.isArray(msg.content)) {
                 replyContent = msg.content
                   .filter((c: { type?: string; text?: string }) => c.type === 'text')
@@ -250,7 +250,7 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
               } else if (typeof msg.content === 'string') {
                 replyContent = msg.content
               }
-              console.log(`[ilink] message_end assistant: ${replyContent.slice(0, 80)}`)
+              console.log(`[ilink] turn_end assistant: ${replyContent.slice(0, 80)}`)
             }
           } else if (event.type === 'agent_end') {
             console.log(`[ilink] agent_end, replyContent length=${replyContent.length}`)
