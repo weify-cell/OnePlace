@@ -88,7 +88,12 @@ export async function getEnabledSkills(): Promise<EnabledSkill[]> {
   const result: EnabledSkill[] = []
   for (const row of rows) {
     try {
-      const content = await fs.readFile(path.resolve(SKILLS_DIR, row.path), 'utf-8')
+      let content = await fs.readFile(path.resolve(SKILLS_DIR, row.path), 'utf-8')
+      // 剥离 YAML frontmatter (--- ... ---)
+      if (content.startsWith('---')) {
+        const end = content.indexOf('\n---', 3)
+        if (end !== -1) content = content.slice(end + 4).trim()
+      }
       result.push({ name: row.name, content })
     } catch { /* skip unreadable files */ }
   }
