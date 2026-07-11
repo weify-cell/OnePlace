@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const SKILLS_DIR = path.resolve(__dirname, '../../data/skills')
 
+// 确保 skills 目录存在
+await fs.mkdir(SKILLS_DIR, { recursive: true }).catch(() => {})
 export interface SkillConfig {
   id: number
   name: string
