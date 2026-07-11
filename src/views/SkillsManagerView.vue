@@ -21,28 +21,33 @@ const editing = ref<SkillConfig | null>(null)
 const form = ref({ name: '', path: '', enabled: 1 })
 const fileContent = ref('')
 const editorLoading = ref(false)
-const editingSkillId = ref<number | null>(null)
 
 const columns = [
-  { title: '名称', key: 'name', width: 150 },
-  { title: '文件路径', key: 'path', width: 200 },
-  { title: '启用', key: 'enabled', width: 70, render: (row: SkillConfig) => row.enabled ? '✅' : '❌' },
+  { title: '名称', key: 'name', width: 140 },
+  { title: '文件路径', key: 'path', width: 180 },
   {
-    title: '操作', key: 'actions', width: 180,
-    render: (row: SkillConfig) => {
-      return h('div', { style: 'display:flex;gap:8px' }, [
-        h('n-button', { size: 'small', onClick: () => openEditor(row) }, { default: () => '编辑文件' }),
-        h('n-button', { size: 'small', onClick: () => editSkill(row) }, { default: () => '设置' }),
-        h('n-button', { size: 'small', type: 'error', onClick: () => removeSkill(row) }, { default: () => '删除' }),
-      ])
-    },
+    title: '启用', key: 'enabled', width: 80,
+    render: (row: SkillConfig) => h('span', { style: { color: row.enabled ? '#18a058' : '#999' } }, row.enabled ? '已启用' : '已禁用'),
+  },
+  {
+    title: '操作', key: 'actions', width: 200,
+    render: (row: SkillConfig) =>
+      h('div', { style: { display: 'flex', gap: '8px' } }, [
+        h('n-button', { size: 'small', quaternary: true, onClick: () => openEditor(row) }, { default: () => '编辑文件' }),
+        h('n-button', { size: 'small', quaternary: true, onClick: () => editSkill(row) }, { default: () => '设置' }),
+        h('n-button', { size: 'small', quaternary: true, type: 'error', onClick: () => removeSkill(row) }, { default: () => '删除' }),
+      ]),
   },
 ]
 
 async function fetchSkills() {
   loading.value = true
-  const { data } = await api.get('/skill-config/list')
-  skills.value = data
+  try {
+    const { data } = await api.get('/skill-config/list')
+    skills.value = data
+  } catch {
+    message.error('加载技能列表失败')
+  }
   loading.value = false
 }
 
@@ -59,9 +64,9 @@ function editSkill(skill: SkillConfig) {
 }
 
 async function openEditor(skill: SkillConfig) {
-  editingSkillId.value = skill.id
   editorLoading.value = true
   showEditor.value = true
+  editing.value = skill
   try {
     const { data } = await api.get(`/skill-config/${skill.id}/file`)
     fileContent.value = data.content || ''
@@ -72,23 +77,31 @@ async function openEditor(skill: SkillConfig) {
 }
 
 async function saveFile() {
-  if (editingSkillId.value === null) return
-  await api.put(`/skill-config/${editingSkillId.value}/file`, { content: fileContent.value })
-  message.success('文件已保存')
-  showEditor.value = false
+  if (!editing.value) return
+  try {
+    await api.put(`/skill-config/${editing.value.id}/file`, { content: fileContent.value })
+    message.success('文件已保存')
+    showEditor.value = false
+  } catch {
+    message.error('保存文件失败')
+  }
 }
 
 async function saveSkill() {
   if (!form.value.name) { message.warning('名称不能为空'); return }
-  if (editing.value) {
-    await api.put(`/skill-config/${editing.value.id}`, form.value)
-    message.success('更新成功')
-  } else {
-    await api.post('/skill-config', form.value)
-    message.success('创建成功')
+  try {
+    if (editing.value) {
+      await api.put(`/skill-config/${editing.value.id}`, form.value)
+      message.success('更新成功')
+    } else {
+      await api.post('/skill-config', form.value)
+      message.success('创建成功')
+    }
+    showModal.value = false
+    await fetchSkills()
+  } catch {
+    message.error('保存失败')
   }
-  showModal.value = false
-  await fetchSkills()
 }
 
 function removeSkill(skill: SkillConfig) {
@@ -98,9 +111,13 @@ function removeSkill(skill: SkillConfig) {
     positiveText: '删除',
     negativeText: '取消',
     onPositiveClick: async () => {
-      await api.delete(`/skill-config/${skill.id}`)
-      message.success('已删除')
-      await fetchSkills()
+      try {
+        await api.delete(`/skill-config/${skill.id}`)
+        message.success('已删除')
+        await fetchSkills()
+      } catch {
+        message.error('删除失败')
+      }
     },
   })
 }
@@ -111,28 +128,42 @@ onMounted(fetchSkills)
 <template>
   <AppLayout>
     <div class="page">
-      <div class="page-header">
-        <h1>技能管理</h1>
-        <n-button type="primary" @click="openCreate">新建技能</n-button>
+      <div class="page__header">
+        <div>
+          <h1 class="page__title">技能管理</h1>
+          <p class="page__sub">管理 Skills 文件，注入到 System Prompt 中增强 Agent 能力</p>
+        </div>
+        <n-button type="primary" @click="openCreate">
+          <template #icon><span>+</span></template>
+          新建技能
+        </n-button>
       </div>
-      <n-spin :show="loading">
-        <n-data-table :columns="columns" :data="skills" :bordered="false" :single-line="false" />
-      </n-spin>
 
-      <!-- 设置弹窗 -->
-      <n-modal v-model:show="showModal" :title="editing ? '编辑技能' : '新建技能'">
+      <n-card :bordered="false" class="page__card">
+        <n-spin :show="loading">
+          <n-data-table :columns="columns" :data="skills" :bordered="false" :single-line="false" size="small" />
+        </n-spin>
+      </n-card>
+
+      <n-modal
+        v-model:show="showModal"
+        preset="card"
+        :title="editing ? '编辑技能' : '新建技能'"
+        style="width:500px"
+        :mask-closable="false"
+      >
         <n-form label-placement="top">
-          <n-form-item label="名称">
+          <n-form-item label="名称" required>
             <n-input v-model:value="form.name" placeholder="技能名称" />
           </n-form-item>
-          <n-form-item label="文件路径">
+          <n-form-item label="文件路径" required>
             <n-input v-model:value="form.path" placeholder="如 guide.md" />
           </n-form-item>
           <n-form-item label="启用">
             <n-switch v-model:value="form.enabled" :checked-value="1" :unchecked-value="0" />
           </n-form-item>
         </n-form>
-        <template #action>
+        <template #footer>
           <n-space justify="end">
             <n-button @click="showModal = false">取消</n-button>
             <n-button type="primary" @click="saveSkill">保存</n-button>
@@ -140,17 +171,23 @@ onMounted(fetchSkills)
         </template>
       </n-modal>
 
-      <!-- 文件编辑器弹窗 -->
-      <n-modal v-model:show="showEditor" title="编辑技能文件" style="width:800px">
+      <n-modal
+        v-model:show="showEditor"
+        preset="card"
+        title="编辑技能文件"
+        style="width:800px"
+        :mask-closable="false"
+      >
         <n-spin :show="editorLoading">
           <n-input
             type="textarea"
             v-model:value="fileContent"
-            :rows="20"
-            placeholder="编写 Markdown 技能文件内容..."
+            :rows="22"
+            placeholder="编写 Markdown 技能文件..."
+            style="font-family: monospace"
           />
         </n-spin>
-        <template #action>
+        <template #footer>
           <n-space justify="end">
             <n-button @click="showEditor = false">取消</n-button>
             <n-button type="primary" @click="saveFile">保存文件</n-button>
@@ -162,7 +199,28 @@ onMounted(fetchSkills)
 </template>
 
 <style scoped>
-.page { padding: 32px 28px; max-width: 1100px; margin: 0 auto; }
-.page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
-.page-header h1 { font-size: 1.5rem; font-weight: 700; }
+.page {
+  padding: 32px 28px;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+.page__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+.page__title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 0;
+}
+.page__sub {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  margin: 4px 0 0;
+}
+.page__card {
+  border-radius: 12px;
+}
 </style>
