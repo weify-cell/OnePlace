@@ -221,41 +221,57 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
       await bot!.sendTyping(msg.userId)
 
       try {
-        // 临时：绕过 Agent，直接用 streamFn 裸调测试 LLM 是否正常
-        const model = createModel(config.provider, config.model)
-        const streamFn = createStreamFn()
+        const pool = agentPool!
         const userMode = userModes.get(msg.userId)
-        const systemPrompt = userMode?.mode === 'learning'
+        const effectivePrompt = userMode?.mode === 'learning'
           ? getLearningPrompt(userMode.learningTopic)
           : config.system_prompt
 
+        const agent = pool.getOrCreate(msg.userId, () => {
+          const dbHistory = getMessageHistory(msg.userId)
+          return convertMessages(dbHistory as ChatMessage[])
+        })
+
         const timestamp = formatBeijingTime()
-        const messages = convertMessages([
-          { role: 'system', content: systemPrompt } as ChatMessage,
-          { role: 'user', content: `${timestamp} ${msg.text}` } as ChatMessage,
-        ])
-
-        const { apiKey } = (() => {
-          const providers = getSettingValue<Record<string, string>>('ai_providers', {})
-          return { apiKey: providers[config.provider] || '' }
-        })()
-
-        const context = { systemPrompt, messages, tools: undefined }
-        let eventStream = streamFn(model, context, { apiKey })
-        if (eventStream instanceof Promise) eventStream = await eventStream
+        const systemMsg: ChatMessage = { role: 'system', content: effectivePrompt }
+        const userMsg: ChatMessage = { role: 'user', content: `${timestamp} ${msg.text}` }
 
         let replyContent = ''
-        for await (const ev of eventStream) {
-          console.log(`[ilink] stream event: type=${ev.type}`)
-          if (ev.type === 'text_delta') replyContent += ev.delta
-          else if (ev.type === 'text_end') replyContent += ev.content
-          else if (ev.type === 'error') {
-            console.log(`[ilink] STREAM ERROR reason=${ev.reason}`)
-            console.log(`[ilink] STREAM ERROR message=${JSON.stringify(ev.error).slice(0, 500)}`)
+        const unsub = agent.subscribe((event, _signal) => {
+          if (event.type === 'turn_end') {
+            const msg = event.message
+            if (msg.role === 'assistant') {
+              if (Array.isArray(msg.content)) {
+                replyContent = msg.content
+                  .filter(c => (c as { type: string }).type === 'text')
+                  .map(c => (c as { text: string }).text).join('')
+              } else if (typeof msg.content === 'string') {
+                replyContent = msg.content
+              }
+              // 错误日志：通过 errorMessage 字符串存在性判断
+              const errMsg = (msg as { errorMessage?: string }).errorMessage
+              if (!replyContent && errMsg) {
+                console.error(`[ilink] Agent error: ${errMsg}`)
+              }
+            }
+          } else if (event.type === 'agent_end') {
+            if (!replyContent) {
+              const lastMsg = event.messages[event.messages.length - 1]
+              if (lastMsg && lastMsg.role === 'assistant') {
+                replyContent = Array.isArray(lastMsg.content)
+                  ? lastMsg.content
+                      .filter(c => (c as { type: string }).type === 'text')
+                      .map(c => (c as { text: string }).text).join('')
+                  : ''
+              }
+            }
           }
-        }
+        })
 
-        console.log(`[ilink] direct stream reply: ${replyContent.slice(0, 80)}`)
+        await agent.prompt(convertMessages([systemMsg, userMsg]))
+        await agent.waitForIdle()
+        unsub()
+
         await bot!.reply(msg, replyContent || '抱歉，没有生成回复。')
 
         addMessageToHistory(msg.userId, 'user', `${timestamp} ${msg.text}`)
