@@ -62,7 +62,7 @@ async function saveTool() {
     await api.put(`/tool-config/${editing.value.id}`, form.value)
     message.success('更新成功')
   } else {
-    await api.post('/api/tool-config', form.value)
+    await api.post('/tool-config', form.value)
     message.success('创建成功')
   }
   showModal.value = false

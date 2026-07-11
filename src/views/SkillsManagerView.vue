@@ -84,7 +84,7 @@ async function saveSkill() {
     await api.put(`/skill-config/${editing.value.id}`, form.value)
     message.success('更新成功')
   } else {
-    await api.post('/api/skill-config', form.value)
+    await api.post('/skill-config', form.value)
     message.success('创建成功')
   }
   showModal.value = false
