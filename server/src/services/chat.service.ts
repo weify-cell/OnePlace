@@ -189,23 +189,12 @@ export async function streamChat(
     )
 
     const unsub = agent.subscribe((event, _signal) => {
-      if (event.type === 'message_update') {
-        const ev = event.assistantMessageEvent
-        if (ev.type === 'text_delta' && ev.delta) {
-          assistantContent += ev.delta
-          writeSSE('delta', { content: ev.delta })
-        }
-      } else if (event.type === 'agent_end') {
-        const lastMsg = event.messages[event.messages.length - 1]
-        if (lastMsg && lastMsg.role === 'assistant') {
-          let finalContent = ''
-          for (const c of lastMsg.content) {
-            if (c.type === 'text') {
-              finalContent += c.text
-            }
-          }
-          assistantContent = finalContent
-        }
+      if (event.type !== 'turn_end') return
+      const msg = event.message
+      if (msg.role === 'assistant' && Array.isArray(msg.content)) {
+        assistantContent = msg.content
+          .filter(c => (c as { type: string }).type === 'text')
+          .map(c => (c as { text: string }).text).join('')
       }
     })
 

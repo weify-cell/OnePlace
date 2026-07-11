@@ -2,7 +2,7 @@ import { WeChatBot } from '@wechatbot/wechatbot'
 import { AgentPool } from '../ai/agent-pool.js'
 import { createStreamFn, createModel, convertMessages, extractApiKey, type ChatMessage } from '../ai/pi-ai.adapter.js'
 import { getBuiltinTools } from '../ai/builtin-tools.js'
-import { getSetting, getSettingValue, setSetting } from '../settings.service.js'
+import { getSettingValue, setSetting } from '../settings.service.js'
 import { connectDatabase } from '../../database/index.js'
 import { setReminderBot, startReminderService, stopReminderService, saveWeChatUser, sendPendingReminders, hasPendingReminders } from './todo-reminder.service.js'
 import { setProactiveBot, startProactiveChatService, stopProactiveChatService } from './proactive-chat.service.js'
@@ -233,33 +233,12 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
 
         let replyContent = ''
         const unsub = agent.subscribe((event, _signal) => {
-          if (event.type === 'turn_end') {
-            const msg = event.message
-            if (msg.role === 'assistant') {
-              if (Array.isArray(msg.content)) {
-                replyContent = msg.content
-                  .filter(c => (c as { type: string }).type === 'text')
-                  .map(c => (c as { text: string }).text).join('')
-              } else if (typeof msg.content === 'string') {
-                replyContent = msg.content
-              }
-              // 错误日志：通过 errorMessage 字符串存在性判断
-              const errMsg = (msg as { errorMessage?: string }).errorMessage
-              if (!replyContent && errMsg) {
-                console.error(`[ilink] Agent error: ${errMsg}`)
-              }
-            }
-          } else if (event.type === 'agent_end') {
-            if (!replyContent) {
-              const lastMsg = event.messages[event.messages.length - 1]
-              if (lastMsg && lastMsg.role === 'assistant') {
-                replyContent = Array.isArray(lastMsg.content)
-                  ? lastMsg.content
-                      .filter(c => (c as { type: string }).type === 'text')
-                      .map(c => (c as { text: string }).text).join('')
-                  : ''
-              }
-            }
+          if (event.type !== 'turn_end') return
+          const msg = event.message
+          if (msg.role === 'assistant' && Array.isArray(msg.content)) {
+            replyContent = msg.content
+              .filter(c => (c as { type: string }).type === 'text')
+              .map(c => (c as { text: string }).text).join('')
           }
         })
 

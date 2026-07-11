@@ -1,5 +1,5 @@
 import { stream } from '@earendil-works/pi-ai/api/openai-completions'
-import type { Model, Message, UserMessage } from '@earendil-works/pi-ai'
+import type { Model, Message } from '@earendil-works/pi-ai'
 import type { StreamFn } from '@earendil-works/pi-agent-core'
 import { getSettingValue } from '../settings.service.js'
 
@@ -25,15 +25,8 @@ export function extractApiKey(provider: string): string {
   return ''
 }
 
-function getApiConfig(provider: string): { apiKey: string; baseUrl: string } {
-  const apiKey = extractApiKey(provider)
-  const baseUrl = getSettingValue<string>(
-    `${provider}_base_url`, BASE_URL_MAP[provider] || ''
-  )
-  return { apiKey, baseUrl }
-}
 export function createModel(provider: string, modelId: string): Model<'openai-completions'> {
-  const { baseUrl } = getApiConfig(provider)
+  const baseUrl = getSettingValue<string>(`${provider}_base_url`, BASE_URL_MAP[provider] || '')
   return {
     id: modelId, name: modelId, api: 'openai-completions',
     provider: provider as Model<'openai-completions'>['provider'],
