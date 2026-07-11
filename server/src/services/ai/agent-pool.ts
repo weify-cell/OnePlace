@@ -93,6 +93,11 @@ export async function loadSkillPrompt(): Promise<string> {
   const builtinMap = getBuiltinToolMap()
   const textOnlyTools = dbTools.filter(t => !builtinMap.has(t.name))
 
+  console.log(`[agent-pool] loadSkillPrompt: ${skills.length} skills, ${textOnlyTools.length} text-only tools`)
+  for (const skill of skills) {
+    console.log(`[agent-pool]   skill: ${skill.name} content=${skill.content.slice(0, 50)}`)
+  }
+
   const parts: string[] = []
   for (const skill of skills) {
     parts.push(`\n## Skill: ${skill.name}\n${skill.content}`)
@@ -101,5 +106,7 @@ export async function loadSkillPrompt(): Promise<string> {
     const text = tool.instruction || tool.description
     if (text) parts.push(`\n## Tool: ${tool.name}\n${text}`)
   }
-  return parts.join('\n')
+  const result = parts.join('\n')
+  console.log(`[agent-pool] loadSkillPrompt result: ${result.length} chars`)
+  return result
 }
