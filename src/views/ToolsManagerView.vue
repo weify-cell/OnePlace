@@ -208,4 +208,22 @@ onMounted(fetchTools)
 .animate-slideIn {
   animation: slideIn .35s ease-out forwards;
 }
+
+:deep(.n-data-table) {
+  --n-td-padding: 12px 16px;
+}
+:deep(.n-data-table-th) {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-muted) !important;
+  background: transparent !important;
+  border-bottom: 1px solid var(--border-subtle) !important;
+}
+:deep(.n-data-table-td) {
+  font-size: 0.875rem;
+  border-bottom: 1px solid var(--border-subtle) !important;
+}
+:deep(.n-data-table-tr:hover) {
+  background: var(--hover-bg) !important;
+}
 </style>
