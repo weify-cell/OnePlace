@@ -16,15 +16,27 @@ const BASE_URL_MAP: Record<string, string> = {
   kimi: 'https://api.moonshot.cn/v1',
 }
 
+/**
+ * 从 ai_providers 中提取 API Key。
+ * 兼容两种格式：直接字符串 "sk-xxx" 或嵌套对象 { apiKey: "sk-xxx" }
+ */
+export function extractApiKey(provider: string): string {
+  const providers = getSettingValue<Record<string, unknown>>('ai_providers', {})
+  const entry = providers[provider]
+  if (typeof entry === 'string') return entry
+  if (entry && typeof entry === 'object') {
+    return (entry as Record<string, unknown>).apiKey as string || ''
+  }
+  return ''
+}
+
 function getApiConfig(provider: string): { apiKey: string; baseUrl: string } {
-  const providers = getSettingValue<Record<string, string>>('ai_providers', {})
-  const apiKey = providers[provider] || ''
+  const apiKey = extractApiKey(provider)
   const baseUrl = getSettingValue<string>(
     `${provider}_base_url`, BASE_URL_MAP[provider] || ''
   )
   return { apiKey, baseUrl }
 }
-
 export function createModel(provider: string, modelId: string): Model<'openai-completions'> {
   const { baseUrl } = getApiConfig(provider)
   return {

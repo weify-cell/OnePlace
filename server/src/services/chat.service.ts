@@ -1,7 +1,7 @@
 ﻿import { Response } from 'express'
 import { connectDatabase } from '../database/index.js'
 import { AgentPool } from './ai/agent-pool.js'
-import { createStreamFn, createModel, convertMessages, type ChatMessage } from './ai/pi-ai.adapter.js'
+import { createStreamFn, createModel, convertMessages, extractApiKey, type ChatMessage } from './ai/pi-ai.adapter.js'
 import { getBuiltinTools } from './ai/builtin-tools.js'
 import { getSettingValue } from './settings.service.js'
 import { DEFAULT_NOTE_TOOLS_PROMPT, DEFAULT_CHAT_SYSTEM_PROMPT } from './prompt-defaults.js'
@@ -16,10 +16,8 @@ function getChatPool(provider: string, modelId: string): AgentPool {
     const tools = getBuiltinTools()
     pool = new AgentPool(
       createStreamFn(), tools, model,
-      (p) => {
-        const providers = getSettingValue<Record<string, string>>('ai_providers', {})
-        return providers[p] || ''
-      }, ''
+      (p) => extractApiKey(p),
+      ''
     )
     chatPools.set(key, pool)
   }

@@ -1,6 +1,6 @@
 import { WeChatBot } from '@wechatbot/wechatbot'
 import { AgentPool } from '../ai/agent-pool.js'
-import { createStreamFn, createModel, convertMessages, type ChatMessage } from '../ai/pi-ai.adapter.js'
+import { createStreamFn, createModel, convertMessages, extractApiKey, type ChatMessage } from '../ai/pi-ai.adapter.js'
 import { getBuiltinTools } from '../ai/builtin-tools.js'
 import { getSetting, getSettingValue, setSetting } from '../settings.service.js'
 import { connectDatabase } from '../../database/index.js'
@@ -60,14 +60,7 @@ function initAgentPool(provider: string, modelId: string): void {
   const tools = getBuiltinTools()
   agentPool = new AgentPool(
     streamFn, tools, model,
-    (p) => {
-      const rawSetting = getSetting('ai_providers')
-      console.log(`[ilink] getApiKey provider=${p}, raw ai_providers=${rawSetting?.slice(0, 100)}`)
-      const providers = getSettingValue<Record<string, string>>('ai_providers', {})
-      const key = providers[p] || ''
-      console.log(`[ilink] getApiKey hasKey=${!!key} keyPreview=${key.slice(0, 8)}...`)
-      return key
-    },
+    (p) => extractApiKey(p),
     ''
   )
 }
