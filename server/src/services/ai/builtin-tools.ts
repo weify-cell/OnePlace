@@ -9,8 +9,8 @@ function textResult(text: string): AgentToolResult<undefined> {
   return { content: [{ type: 'text' as const, text }], details: undefined }
 }
 
-export function getBuiltinTools(): AgentTool[] {
-  return [
+export function getBuiltinToolMap(): Map<string, AgentTool> {
+  const tools = [
     // ── 1. 列出笔记 ──
     {
       name: 'list_notes',
@@ -305,4 +305,9 @@ export function getBuiltinTools(): AgentTool[] {
       }
     }
   ] as unknown as AgentTool[]
+  return new Map(tools.map(t => [t.name, t]))
+}
+
+export function getBuiltinTools(): AgentTool[] {
+  return Array.from(getBuiltinToolMap().values())
 }
