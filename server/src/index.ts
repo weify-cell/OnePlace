@@ -21,6 +21,8 @@ import { kbRouter } from './routes/knowledge-base.routes.js'
 import { ilinkRouter } from './routes/ilink.routes.js'
 import { toolConfigRouter } from './routes/tool-config.routes.js'
 import { skillConfigRouter } from './routes/skill-config.routes.js'
+import { toolCategoryRouter } from './routes/tool-category.routes.js'
+import { skillCategoryRouter } from './routes/skill-category.routes.js'
 
 // Load .env from project root (2 levels up from server/src/)
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -61,6 +63,8 @@ app.use('/api/knowledge-base', kbRouter)
 app.use('/api/ilink', ilinkRouter)
 app.use('/api/tool-config', toolConfigRouter)
 app.use('/api/skill-config', skillConfigRouter)
+app.use('/api/tool-category', toolCategoryRouter)
+app.use('/api/skill-category', skillCategoryRouter)
 // Static file serving for uploads
 const uploadsPath = resolve(__dirname, '../../uploads')
 app.use('/uploads', express.static(uploadsPath))

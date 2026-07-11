@@ -28,7 +28,9 @@ const router = createRouter({
     { path: '/settings/kb', component: () => import('@/views/settings/KnowledgeBaseSettings.vue'), meta: { requiresAuth: true } },
     { path: '/settings/bot', component: () => import('@/views/settings/WeChatBotSettings.vue'), meta: { requiresAuth: true } },
     { path: '/tools-manager', component: () => import('@/views/ToolsManagerView.vue'), meta: { requiresAuth: true } },
-    { path: '/skills-manager', component: () => import('@/views/SkillsManagerView.vue'), meta: { requiresAuth: true } }
+    { path: '/tools-manager/:categoryId', component: () => import('@/views/ToolsManagerView.vue'), meta: { requiresAuth: true } },
+    { path: '/skills-manager', component: () => import('@/views/SkillsManagerView.vue'), meta: { requiresAuth: true } },
+    { path: '/skills-manager/:categoryId', component: () => import('@/views/SkillsManagerView.vue'), meta: { requiresAuth: true } }
   ]
 })
 
