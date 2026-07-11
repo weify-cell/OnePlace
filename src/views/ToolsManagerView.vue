@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, h } from 'vue'
 import { useMessage, useDialog } from 'naive-ui'
 import AppLayout from '@/components/common/AppLayout.vue'
 import { api } from '@/api'
@@ -36,14 +36,10 @@ const columns = [
   },
 ]
 
-function h(tag: string, props: Record<string, unknown>, children?: Record<string, unknown>) {
-  const { h: createVNode } = require('vue')
-  return createVNode(tag, props, children)
-}
 
 async function fetchTools() {
   loading.value = true
-  const { data } = await api.get('/api/tool-config/list')
+  const { data } = await api.get('/tool-config/list')
   tools.value = data
   loading.value = false
 }
@@ -63,7 +59,7 @@ function editTool(tool: ToolConfig) {
 async function saveTool() {
   if (!form.value.name) { message.warning('名称不能为空'); return }
   if (editing.value) {
-    await api.put(`/api/tool-config/${editing.value.id}`, form.value)
+    await api.put(`/tool-config/${editing.value.id}`, form.value)
     message.success('更新成功')
   } else {
     await api.post('/api/tool-config', form.value)
@@ -80,7 +76,7 @@ function removeTool(tool: ToolConfig) {
     positiveText: '删除',
     negativeText: '取消',
     onPositiveClick: async () => {
-      await api.delete(`/api/tool-config/${tool.id}`)
+      await api.delete(`/tool-config/${tool.id}`)
       message.success('已删除')
       await fetchTools()
     },

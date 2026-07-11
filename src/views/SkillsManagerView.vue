@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, h } from 'vue'
 import { useMessage, useDialog } from 'naive-ui'
 import AppLayout from '@/components/common/AppLayout.vue'
 import { api } from '@/api'
@@ -30,7 +30,6 @@ const columns = [
   {
     title: '操作', key: 'actions', width: 180,
     render: (row: SkillConfig) => {
-      const { h } = require('vue')
       return h('div', { style: 'display:flex;gap:8px' }, [
         h('n-button', { size: 'small', onClick: () => openEditor(row) }, { default: () => '编辑文件' }),
         h('n-button', { size: 'small', onClick: () => editSkill(row) }, { default: () => '设置' }),
@@ -42,7 +41,7 @@ const columns = [
 
 async function fetchSkills() {
   loading.value = true
-  const { data } = await api.get('/api/skill-config/list')
+  const { data } = await api.get('/skill-config/list')
   skills.value = data
   loading.value = false
 }
@@ -64,7 +63,7 @@ async function openEditor(skill: SkillConfig) {
   editorLoading.value = true
   showEditor.value = true
   try {
-    const { data } = await api.get(`/api/skill-config/${skill.id}/file`)
+    const { data } = await api.get(`/skill-config/${skill.id}/file`)
     fileContent.value = data.content || ''
   } catch {
     fileContent.value = ''
@@ -74,7 +73,7 @@ async function openEditor(skill: SkillConfig) {
 
 async function saveFile() {
   if (editingSkillId.value === null) return
-  await api.put(`/api/skill-config/${editingSkillId.value}/file`, { content: fileContent.value })
+  await api.put(`/skill-config/${editingSkillId.value}/file`, { content: fileContent.value })
   message.success('文件已保存')
   showEditor.value = false
 }
@@ -82,7 +81,7 @@ async function saveFile() {
 async function saveSkill() {
   if (!form.value.name) { message.warning('名称不能为空'); return }
   if (editing.value) {
-    await api.put(`/api/skill-config/${editing.value.id}`, form.value)
+    await api.put(`/skill-config/${editing.value.id}`, form.value)
     message.success('更新成功')
   } else {
     await api.post('/api/skill-config', form.value)
@@ -99,7 +98,7 @@ function removeSkill(skill: SkillConfig) {
     positiveText: '删除',
     negativeText: '取消',
     onPositiveClick: async () => {
-      await api.delete(`/api/skill-config/${skill.id}`)
+      await api.delete(`/skill-config/${skill.id}`)
       message.success('已删除')
       await fetchSkills()
     },
