@@ -1,7 +1,6 @@
 import { WeChatBot } from '@wechatbot/wechatbot'
-import { AgentPool } from '../ai/agent-pool.js'
+import { AgentPool, loadToolsFromDb, loadSkillPrompt } from '../ai/agent-pool.js'
 import { createStreamFn, createModel, convertMessages, extractApiKey, type ChatMessage } from '../ai/pi-ai.adapter.js'
-import { getBuiltinTools } from '../ai/builtin-tools.js'
 import { getSettingValue, setSetting } from '../settings.service.js'
 import { connectDatabase } from '../../database/index.js'
 import { setReminderBot, startReminderService, stopReminderService, saveWeChatUser, sendPendingReminders, hasPendingReminders } from './todo-reminder.service.js'
@@ -57,7 +56,7 @@ function getLearningPrompt(topic: string): string {
 function initAgentPool(provider: string, modelId: string): void {
   const model = createModel(provider, modelId)
   const streamFn = createStreamFn()
-  const tools = getBuiltinTools()
+  const tools = loadToolsFromDb()
   agentPool = new AgentPool(
     streamFn, tools, model,
     (p) => extractApiKey(p),
@@ -218,9 +217,10 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
       try {
         const pool = agentPool!
         const userMode = userModes.get(msg.userId)
-        const effectivePrompt = userMode?.mode === 'learning'
+        const skillPrompt = await loadSkillPrompt()
+        const effectivePrompt = (userMode?.mode === 'learning'
           ? getLearningPrompt(userMode.learningTopic)
-          : config.system_prompt
+          : config.system_prompt) + (skillPrompt ? '\n\n' + skillPrompt : '')
 
         const agent = pool.getOrCreate(msg.userId, () => {
           const dbHistory = getMessageHistory(msg.userId)

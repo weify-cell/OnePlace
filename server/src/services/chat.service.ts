@@ -1,8 +1,7 @@
 ﻿import { Response } from 'express'
 import { connectDatabase } from '../database/index.js'
-import { AgentPool } from './ai/agent-pool.js'
+import { AgentPool, loadToolsFromDb, loadSkillPrompt } from './ai/agent-pool.js'
 import { createStreamFn, createModel, convertMessages, extractApiKey, type ChatMessage } from './ai/pi-ai.adapter.js'
-import { getBuiltinTools } from './ai/builtin-tools.js'
 import { getSettingValue } from './settings.service.js'
 import { DEFAULT_NOTE_TOOLS_PROMPT, DEFAULT_CHAT_SYSTEM_PROMPT } from './prompt-defaults.js'
 
@@ -13,7 +12,7 @@ function getChatPool(provider: string, modelId: string): AgentPool {
   let pool = chatPools.get(key)
   if (!pool) {
     const model = createModel(provider, modelId)
-    const tools = getBuiltinTools()
+    const tools = loadToolsFromDb()
     pool = new AgentPool(
       createStreamFn(), tools, model,
       (p) => extractApiKey(p),
@@ -176,13 +175,13 @@ export async function streamChat(
     const pool = getChatPool(conversation.provider, conversation.model)
     const convKey = `conv:${conversationId}`
 
-    const systemPrompt = (conversation.kb_enabled || conversation.tools_enabled)
+    const skillPrompt = await loadSkillPrompt()
+    const systemPrompt = ((conversation.kb_enabled || conversation.tools_enabled)
       ? getSettingValue<string>('note_tools_prompt', DEFAULT_NOTE_TOOLS_PROMPT)
-      : DEFAULT_CHAT_SYSTEM_PROMPT
+      : DEFAULT_CHAT_SYSTEM_PROMPT) + (skillPrompt ? '\n\n' + skillPrompt : '')
 
     const systemMsg: ChatMessage = { role: 'system', content: systemPrompt }
     const userMsg: ChatMessage = { role: 'user', content: userContent }
-
     let assistantContent = ''
     const agent = pool.getOrCreate(convKey, () =>
       convertMessages(dbMessages as ChatMessage[])
