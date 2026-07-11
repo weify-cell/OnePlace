@@ -237,25 +237,27 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
         const userMsg: ChatMessage = { role: 'user', content: `${timestamp} ${msg.text}` }
 
         let replyContent = ''
-        let agentErrorMessage = ''
         const unsub = agent.subscribe((event, _signal) => {
-          if (event.type === 'agent_end') {
-            const lastMsg = event.messages[event.messages.length - 1]
-            console.log(`[ilink] agent_end: ${event.messages.length} messages, lastRole=${lastMsg?.role}`)
-            if (lastMsg && lastMsg.role === 'assistant') {
-              const rawContent = lastMsg.content
-              console.log(`[ilink] assistant content type=${typeof rawContent}, isArray=${Array.isArray(rawContent)}, preview=${JSON.stringify(rawContent).slice(0, 200)}`)
-              const blocks = Array.isArray(rawContent) ? rawContent : []
-              replyContent = blocks
-                .filter((c: { type?: string; text?: string }) => c.type === 'text')
-                .map((c: { text?: string }) => c.text || '').join('')
-              console.log(`[ilink] replyContent extracted: ${replyContent.slice(0, 80)}`)
+          if (event.type === 'message_update') {
+            const ev = event.assistantMessageEvent
+            if (ev && 'content' in ev && typeof ev.content === 'string' && ev.content) {
+              replyContent += ev.content
             }
+          } else if (event.type === 'agent_end') {
+            // 兜底：如果 message_update 没拿到内容，从最后一条 assistant 消息提取
+            if (!replyContent) {
+              const lastMsg = event.messages[event.messages.length - 1]
+              if (lastMsg && lastMsg.role === 'assistant' && Array.isArray(lastMsg.content)) {
+                replyContent = lastMsg.content
+                  .filter((c: { type?: string; text?: string }) => c.type === 'text')
+                  .map((c: { text?: string }) => c.text || '').join('')
+              }
+            }
+            console.log(`[ilink] agent_end, replyContent: ${replyContent.slice(0, 80)}`)
           }
         })
 
-        agentErrorMessage = agent.state.errorMessage || ''
-        console.log(`[ilink] calling prompt, state.error=${agentErrorMessage}`)
+        console.log(`[ilink] calling prompt...`)
 
         await agent.prompt(convertMessages([systemMsg, userMsg]))
         await agent.waitForIdle()
