@@ -52,6 +52,9 @@ export function convertMessages(messages: ChatMessage[]): Message[] {
     if (m.role === 'system') {
       return { role: 'system', content: m.content } as unknown as Message
     }
-    return { role: m.role, content: m.content } as UserMessage
+    if (m.role === 'assistant') {
+      return { role: 'assistant', content: [{ type: 'text' as const, text: m.content }] } as unknown as Message
+    }
+    return { role: 'user', content: m.content } as unknown as Message
   })
 }
