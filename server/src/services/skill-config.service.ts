@@ -13,6 +13,7 @@ export interface SkillConfig {
   name: string
   path: string
   enabled: number
+  category_id: number | null
   created_at: string
   updated_at: string
 }
@@ -20,20 +21,23 @@ export interface SkillConfig {
 function rowToConfig(row: Record<string, unknown>): SkillConfig {
   return {
     id: row.id as number, name: row.name as string, path: row.path as string,
-    enabled: row.enabled as number, created_at: row.created_at as string, updated_at: row.updated_at as string,
+    enabled: row.enabled as number, category_id: (row.category_id ?? null) as number | null,
+    created_at: row.created_at as string, updated_at: row.updated_at as string,
   }
 }
 
-export function listSkills(): SkillConfig[] {
+export function listSkills(categoryId?: number): SkillConfig[] {
   const db = connectDatabase()
-  return (db.prepare('SELECT * FROM skills ORDER BY id ASC').all() as Record<string, unknown>[]).map(rowToConfig)
+  const sql = categoryId != null ? 'SELECT * FROM skills WHERE category_id = ? ORDER BY id ASC' : 'SELECT * FROM skills ORDER BY id ASC'
+  const rows = categoryId != null ? db.prepare(sql).all(categoryId) : db.prepare(sql).all()
+  return rows as unknown as SkillConfig[]
 }
 
 export function createSkill(data: Partial<SkillConfig>): SkillConfig {
   const db = connectDatabase()
   const result = db.prepare(
-    'INSERT INTO skills (name, path, enabled) VALUES (?, ?, ?)'
-  ).run(data.name || '', data.path || '', data.enabled ?? 0)
+    'INSERT INTO skills (name, path, enabled, category_id) VALUES (?, ?, ?, ?)'
+  ).run(data.name || '', data.path || '', data.enabled ?? 0, data.category_id ?? null)
   return db.prepare('SELECT * FROM skills WHERE id = ?').get(result.lastInsertRowid) as unknown as SkillConfig
 }
 
@@ -41,8 +45,8 @@ export function updateSkill(id: number, data: Partial<SkillConfig>): SkillConfig
   const db = connectDatabase()
   if (!db.prepare('SELECT 1 FROM skills WHERE id = ?').get(id)) return null
   db.prepare(
-    `UPDATE skills SET name=?, path=?, enabled=?, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?`
-  ).run(data.name, data.path, data.enabled, id)
+    `UPDATE skills SET name=?, path=?, enabled=?, category_id=?, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?`
+  ).run(data.name, data.path, data.enabled, data.category_id ?? null, id)
   return db.prepare('SELECT * FROM skills WHERE id = ?').get(id) as unknown as SkillConfig
 }
 

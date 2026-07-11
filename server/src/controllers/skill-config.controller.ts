@@ -1,8 +1,9 @@
 import { Request, Response } from 'express'
 import * as service from '../services/skill-config.service.js'
 
-export function list(_req: Request, res: Response): void {
-  res.json(service.listSkills())
+export function list(req: Request, res: Response): void {
+  const categoryId = req.query.category_id ? Number(req.query.category_id) : undefined
+  res.json(service.listSkills(categoryId))
 }
 export function create(req: Request, res: Response): void {
   res.status(201).json(service.createSkill(req.body))
