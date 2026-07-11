@@ -243,10 +243,13 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
             const lastMsg = event.messages[event.messages.length - 1]
             console.log(`[ilink] agent_end: ${event.messages.length} messages, lastRole=${lastMsg?.role}`)
             if (lastMsg && lastMsg.role === 'assistant') {
-              replyContent = (lastMsg.content as Array<{ type: string; text?: string }>)
-                .filter(c => c.type === 'text')
-                .map(c => c.text || '').join('')
-              console.log(`[ilink] replyContent: ${replyContent.slice(0, 80)}`)
+              const rawContent = lastMsg.content
+              console.log(`[ilink] assistant content type=${typeof rawContent}, isArray=${Array.isArray(rawContent)}, preview=${JSON.stringify(rawContent).slice(0, 200)}`)
+              const blocks = Array.isArray(rawContent) ? rawContent : []
+              replyContent = blocks
+                .filter((c: { type?: string; text?: string }) => c.type === 'text')
+                .map((c: { text?: string }) => c.text || '').join('')
+              console.log(`[ilink] replyContent extracted: ${replyContent.slice(0, 80)}`)
             }
           }
         })
