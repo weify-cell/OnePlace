@@ -19,6 +19,8 @@ import { foldersRouter } from './routes/folders.routes.js'
 import { uploadRouter } from './routes/upload.routes.js'
 import { kbRouter } from './routes/knowledge-base.routes.js'
 import { ilinkRouter } from './routes/ilink.routes.js'
+import { toolConfigRouter } from './routes/tool-config.routes.js'
+import { skillConfigRouter } from './routes/skill-config.routes.js'
 
 // Load .env from project root (2 levels up from server/src/)
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -57,7 +59,8 @@ app.use('/api/folders', foldersRouter)
 app.use('/api/upload', uploadRouter)
 app.use('/api/knowledge-base', kbRouter)
 app.use('/api/ilink', ilinkRouter)
-
+app.use('/api/tool-config', toolConfigRouter)
+app.use('/api/skill-config', skillConfigRouter)
 // Static file serving for uploads
 const uploadsPath = resolve(__dirname, '../../uploads')
 app.use('/uploads', express.static(uploadsPath))
