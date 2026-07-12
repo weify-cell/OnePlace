@@ -107,7 +107,7 @@ export function getBuiltinToolMap(): Map<string, AgentTool> {
         }
         const priority = { low: '低', medium: '中', high: '高', urgent: '紧急' }[todo.priority] || todo.priority
         const status = { todo: '待办', in_progress: '进行中', done: '已完成', cancelled: '已取消' }[todo.status] || todo.status
-        return textResult(`# ${todo.title}\n\n状态: ${status}\n优先级: ${priority}\n${todo.description ? `描述: ${todo.description}\n` : ''}${todo.due_date ? `截止日期: ${todo.due_date}\n` : ''}${todo.tags.length > 0 ? `标签: ${todo.tags.join(', ')}` : ''}`)
+        return textResult(`# ${todo.title}\n\n状态: ${status}\n优先级: ${priority}\n${todo.description ? `描述: ${todo.description}\n` : ''}${todo.due_date ? `截止日期: ${todo.due_date}\n` : ''}${todo.reminder_time ? `提醒时间: ${todo.reminder_time}\n` : ''}${todo.tags.length > 0 ? `标签: ${todo.tags.join(', ')}` : ''}`)
       }
     },
 
@@ -286,7 +286,7 @@ export function getBuiltinToolMap(): Map<string, AgentTool> {
           const priority = { low: '🟢低', medium: '🟡中', high: '🟠高', urgent: '🔴紧急' }[t.priority] || t.priority
           const status = { todo: '⬜待办', in_progress: '🔵进行中', done: '✅已完成', cancelled: '❌已取消' }[t.status] || t.status
           const due = t.due_date ? ` 📅${t.due_date}` : ''
-          return `[${t.id}] ${status} ${priority} ${t.title}${due}`
+          const reminder = t.reminder_time ? ` ⏰${t.reminder_time}` : ''
         }).join('\n')
         return textResult(`共 ${total} 条待办:\n${formatted}`)
       }
