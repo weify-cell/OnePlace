@@ -227,6 +227,8 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
           return convertMessages(dbHistory as ChatMessage[])
         })
 
+        // 每次消息动态加载工具，确保管理页的启停即时生效
+        agent.state.tools = loadToolsFromDb()
         const timestamp = formatBeijingTime()
         const systemMsg: ChatMessage = { role: 'system', content: effectivePrompt }
         const userMsg: ChatMessage = { role: 'user', content: `${timestamp} ${msg.text}` }

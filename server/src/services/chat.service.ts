@@ -187,6 +187,7 @@ export async function streamChat(
       convertMessages(dbMessages as ChatMessage[])
     )
 
+    agent.state.tools = loadToolsFromDb()
     const unsub = agent.subscribe((event, _signal) => {
       if (event.type !== 'turn_end') return
       const msg = event.message
