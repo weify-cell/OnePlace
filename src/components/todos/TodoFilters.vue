@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useTodoStore } from '@/stores/todo.store'
-import { TODO_PRIORITY_LABELS, TODO_TYPE_LABELS } from '@/types'
+import { TODO_PRIORITY_LABELS, TODO_TASK_KIND_LABELS, TODO_TYPE_LABELS } from '@/types'
 
 const todoStore = useTodoStore()
 
@@ -8,13 +8,22 @@ const priorityOptions = [
   { label: '全部优先级', value: null },
   ...Object.entries(TODO_PRIORITY_LABELS).map(([value, label]) => ({ label, value }))
 ]
+
+const taskKindOptions = [
+  { label: '全部任务性质', value: null },
+  ...Object.entries(TODO_TASK_KIND_LABELS).map(([value, label]) => ({ label, value }))
+]
+
 const typeOptions = [
   { label: '全部类型', value: null },
   ...Object.entries(TODO_TYPE_LABELS).map(([value, label]) => ({ label, value }))
 ]
 
 const hasFilters = computed(() =>
-  todoStore.filters.priority || todoStore.filters.type || todoStore.filters.search
+  todoStore.filters.priority ||
+  todoStore.filters.task_kind ||
+  todoStore.filters.type ||
+  todoStore.filters.search
 )
 </script>
 
@@ -23,7 +32,7 @@ const hasFilters = computed(() =>
     <div class="todo-filters__search">
       <n-input
         :value="todoStore.filters.search"
-        placeholder="搜索待办..."
+        placeholder="搜索待办事项"
         clearable
         @update:value="todoStore.setFilter('search', $event)"
       >
@@ -32,6 +41,15 @@ const hasFilters = computed(() =>
         </template>
       </n-input>
     </div>
+
+    <n-select
+      :value="todoStore.filters.task_kind"
+      :options="taskKindOptions"
+      placeholder="任务性质"
+      clearable
+      class="todo-filters__select"
+      @update:value="todoStore.setFilter('task_kind', $event)"
+    />
 
     <n-select
       :value="todoStore.filters.priority"
@@ -56,7 +74,7 @@ const hasFilters = computed(() =>
       size="small"
       quaternary
       class="todo-filters__clear"
-      @click="() => { todoStore.setFilter('priority', null); todoStore.setFilter('type', null); todoStore.setFilter('search', '') }"
+      @click="todoStore.resetFilters()"
     >
       清除筛选
     </n-button>
@@ -73,9 +91,9 @@ const hasFilters = computed(() =>
 }
 
 .todo-filters__search {
-  min-width: 180px;
+  min-width: 220px;
   flex: 1;
-  max-width: 280px;
+  max-width: 320px;
 }
 
 .todo-filters__search-icon {
@@ -83,8 +101,8 @@ const hasFilters = computed(() =>
 }
 
 .todo-filters__select {
-  min-width: 130px;
-  max-width: 170px;
+  min-width: 140px;
+  max-width: 180px;
 }
 
 .todo-filters__clear {

@@ -1,8 +1,15 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useSettingsStore } from '@/stores/settings.store'
 import { useILinkStore } from '@/stores/ilink.store'
 import SettingsLayout from './SettingsLayout.vue'
+import {
+  DEFAULT_ILINK_LEARNING_PROMPT,
+  DEFAULT_ILINK_SYSTEM_PROMPT,
+  DEFAULT_NOTE_TOOLS_PROMPT,
+  DEFAULT_PROACTIVE_SYSTEM_PROMPT,
+  DEFAULT_PROACTIVE_USER_MESSAGE
+} from '@/constants/promptDefaults'
 
 const settingsStore = useSettingsStore()
 const ilinkStore = useILinkStore()
@@ -12,17 +19,26 @@ const activeTab = ref('basic')
 const ilinkConfig = ref({
   provider: 'qwen',
   model: 'qwen-turbo',
-  system_prompt: '你是一个智能助手，可以通过微信为用户提供服务。请用中文回复。',
+  system_prompt: DEFAULT_ILINK_SYSTEM_PROMPT,
+  note_tools_prompt: DEFAULT_NOTE_TOOLS_PROMPT,
   max_tool_rounds: 5,
-  proactive_user_message: '请生成一条主动问候消息',
-  proactive_system_prompt: '你是一个友好的微信助手，请主动找用户聊天。语气亲切随意，控制在1-2句话。',
-  learning_prompt: '你是一个学习导师，正在帮助用户学习「{topic}」。请按以下方式教学：1. 先使用 search_knowledge_base 和 get_note 工具检索用户的笔记资料 2. 以问答方式测试用户对知识点的掌握 3. 根据用户的回答给予反馈和补充解释 4. 控制每次提问1-2个问题，不要连续轰炸 5. 用户答对时鼓励，答错时耐心纠正 6. 如果笔记中没有相关内容，诚实告知并给出通用知识'
+  proactive_user_message: DEFAULT_PROACTIVE_USER_MESSAGE,
+  proactive_system_prompt: DEFAULT_PROACTIVE_SYSTEM_PROMPT,
+  learning_prompt: DEFAULT_ILINK_LEARNING_PROMPT
 })
 
 const ilinkProviderModels = computed(() => {
-  const p = settingsStore.availableProviders.find(p => p.name === ilinkConfig.value.provider)
-  return p?.models.map(m => ({ label: m.name, value: m.id })) || []
+  const provider = settingsStore.availableProviders.find(item => item.name === ilinkConfig.value.provider)
+  return provider?.models.map(model => ({ label: model.name, value: model.id })) || []
 })
+
+function handleILinkProviderChange(value: string) {
+  ilinkConfig.value.provider = value
+  const nextModels = settingsStore.availableProviders.find(item => item.name === value)?.models || []
+  ilinkConfig.value.model = nextModels.some(model => model.id === ilinkConfig.value.model)
+    ? ilinkConfig.value.model
+    : (nextModels[0]?.id || '')
+}
 
 let statusPollTimer: ReturnType<typeof setInterval> | null = null
 
@@ -30,16 +46,22 @@ onMounted(async () => {
   await settingsStore.loadSettings()
   await ilinkStore.fetchConfig()
   await ilinkStore.fetchStatus()
+
   if (ilinkStore.config) {
     ilinkConfig.value = {
       provider: ilinkStore.config.provider || 'qwen',
       model: ilinkStore.config.model || 'qwen-turbo',
-      system_prompt: ilinkStore.config.system_prompt || '你是一个智能助手，可以通过微信为用户提供服务。请用中文回复。',
+      system_prompt: ilinkStore.config.system_prompt || DEFAULT_ILINK_SYSTEM_PROMPT,
+      note_tools_prompt: ilinkStore.config.note_tools_prompt || DEFAULT_NOTE_TOOLS_PROMPT,
       max_tool_rounds: ilinkStore.config.max_tool_rounds || 5,
-      proactive_user_message: ilinkStore.config.proactive_user_message || '请生成一条主动问候消息',
-      proactive_system_prompt: ilinkStore.config.proactive_system_prompt || '你是一个友好的微信助手，请主动找用户聊天。',
-      learning_prompt: ilinkStore.config.learning_prompt || '你是一个学习导师，正在帮助用户学习「{topic}」...'
+      proactive_user_message: ilinkStore.config.proactive_user_message || DEFAULT_PROACTIVE_USER_MESSAGE,
+      proactive_system_prompt: ilinkStore.config.proactive_system_prompt || DEFAULT_PROACTIVE_SYSTEM_PROMPT,
+      learning_prompt: ilinkStore.config.learning_prompt || DEFAULT_ILINK_LEARNING_PROMPT
     }
+  }
+  const initialModels = settingsStore.availableProviders.find(item => item.name === ilinkConfig.value.provider)?.models || []
+  if (!initialModels.some(model => model.id === ilinkConfig.value.model)) {
+    ilinkConfig.value.model = initialModels[0]?.id || ''
   }
 })
 
@@ -115,7 +137,6 @@ function formatUptime(ms: number): string {
 
 <template>
   <SettingsLayout title="微信 Bot">
-    <!-- Bot 状态卡片（Tab 之上，始终显示） -->
     <div class="settings-section animate-slideIn" style="animation-delay: 50ms">
       <div class="settings-card">
         <div class="settings-card__header">
@@ -154,7 +175,7 @@ function formatUptime(ms: number): string {
                 启动 Bot
               </n-button>
               <n-button
-                v-if="ilinkStore.status?.running"
+                v-else
                 type="error"
                 :loading="ilinkStore.isLoading"
                 @click="handleStopBot"
@@ -193,11 +214,9 @@ function formatUptime(ms: number): string {
       </div>
     </div>
 
-    <!-- Tab 配置区域 -->
     <div class="settings-section animate-slideIn" style="animation-delay: 100ms">
       <div class="settings-card">
         <n-tabs v-model:value="activeTab" type="line" animated>
-          <!-- 基础配置 -->
           <n-tab-pane name="basic" tab="基础配置">
             <div class="settings-card__body">
               <div class="settings-row">
@@ -205,8 +224,9 @@ function formatUptime(ms: number): string {
                   <label class="settings-field__label">AI 提供商</label>
                   <n-select
                     v-model:value="ilinkConfig.provider"
-                    :options="settingsStore.availableProviders.map(p => ({ label: p.displayName, value: p.name }))"
+                    :options="settingsStore.availableProviders.map(item => ({ label: item.displayName, value: item.name }))"
                     placeholder="选择提供商"
+                    @update:value="handleILinkProviderChange"
                   />
                 </div>
                 <div class="settings-field">
@@ -231,9 +251,20 @@ function formatUptime(ms: number): string {
               </div>
 
               <div class="settings-field">
+                <label class="settings-field__label">笔记工具提示词</label>
+                <n-input
+                  v-model:value="ilinkConfig.note_tools_prompt"
+                  type="textarea"
+                  :rows="4"
+                  placeholder="用于统一约束 Bot 和聊天模块何时调用 list_notes、search_note_lines、get_note_lines。"
+                />
+                <div class="settings-field__hint">这是共享配置，微信 Bot 普通模式、学习模式，以及聊天模块都会使用这段提示词。</div>
+              </div>
+
+              <div class="settings-field">
                 <label class="settings-field__label">最大工具调用轮数</label>
-                <n-input-number v-model:value="ilinkConfig.max_tool_rounds" :min="1" :max="10" />
-                <div class="settings-field__hint">控制 Bot 在一次对话中最多调用工具的次数</div>
+                <n-input-number v-model:value="ilinkConfig.max_tool_rounds" :min="1" :max="100" />
+                <div class="settings-field__hint">控制 Bot 在一次对话中最多调用工具的轮数</div>
               </div>
 
               <div class="settings-field">
@@ -244,7 +275,6 @@ function formatUptime(ms: number): string {
             </div>
           </n-tab-pane>
 
-          <!-- 主动聊天 -->
           <n-tab-pane name="proactive" tab="主动聊天">
             <div class="settings-card__body">
               <div class="settings-field">
@@ -255,7 +285,7 @@ function formatUptime(ms: number): string {
                   :rows="3"
                   placeholder="主动聊天时的 Bot 人设"
                 />
-                <div class="settings-field__hint">仅用于主动聊天模式，不影响普通对话</div>
+                <div class="settings-field__hint">仅用于主动聊天模式，不影响普通对话。</div>
               </div>
 
               <div class="settings-field">
@@ -266,7 +296,7 @@ function formatUptime(ms: number): string {
                   :rows="2"
                   placeholder="主动聊天时发送给 AI 的指令"
                 />
-                <div class="settings-field__hint">控制主动聊天时 AI 生成的对话风格和内容</div>
+                <div class="settings-field__hint">控制主动聊天时 AI 生成的对话风格和内容。</div>
               </div>
 
               <div class="settings-field">
@@ -277,7 +307,6 @@ function formatUptime(ms: number): string {
             </div>
           </n-tab-pane>
 
-          <!-- 学习模式 -->
           <n-tab-pane name="learning" tab="学习模式">
             <div class="settings-card__body">
               <div class="settings-field">
@@ -286,9 +315,9 @@ function formatUptime(ms: number): string {
                   v-model:value="ilinkConfig.learning_prompt"
                   type="textarea"
                   :rows="6"
-                  placeholder="学习模式的 systemPrompt，使用 {topic} 作为主题占位符"
+                  placeholder="学习模式的 system prompt，使用 {topic} 作为主题占位符。"
                 />
-                <div class="settings-field__hint">用户发送 /学习 主题 时使用，{topic} 会被替换为实际主题</div>
+                <div class="settings-field__hint">用户发送 /学习 主题 时使用，{topic} 会被替换为实际主题。</div>
               </div>
 
               <div class="settings-field">

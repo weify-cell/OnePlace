@@ -1,11 +1,15 @@
-// Auth
-export interface AuthCheckResponse { needsSetup: boolean }
-export interface AuthResponse { token: string }
+export interface AuthCheckResponse {
+  needsSetup: boolean
+}
 
-// Todo
+export interface AuthResponse {
+  token: string
+}
+
 export type TodoPriority = 'low' | 'medium' | 'high' | 'urgent'
 export type TodoStatus = 'todo' | 'in_progress' | 'done' | 'cancelled'
 export type TodoType = 'work' | 'study' | 'personal' | 'health' | 'finance' | 'family'
+export type TodoTaskKind = 'one_time' | 'long_term'
 
 export interface Todo {
   id: number
@@ -13,14 +17,25 @@ export interface Todo {
   description: string | null
   priority: TodoPriority
   status: TodoStatus
+  task_kind: TodoTaskKind
+  progress_percent: number | null
+  last_progress_note: string | null
   type: TodoType | null
   due_date: string | null
   reminder_time: string | null
   reminder_enabled: boolean
   tags: string[]
   is_deleted: boolean
+  completed_at: string | null
   created_at: string
   updated_at: string
+}
+
+export interface TodoProgressLog {
+  id: number
+  todo_id: number
+  content: string
+  created_at: string
 }
 
 export interface TodosResponse {
@@ -33,12 +48,12 @@ export interface TodosResponse {
 export interface TodoFilters {
   status: TodoStatus | null
   priority: TodoPriority | null
+  task_kind: TodoTaskKind | null
   type: TodoType | null
   tag: string | null
   search: string
 }
 
-// Folder
 export interface Folder {
   id: number
   name: string
@@ -46,7 +61,6 @@ export interface Folder {
   updated_at: string
 }
 
-// Note
 export interface Note {
   id: number
   title: string
@@ -76,7 +90,25 @@ export interface NotesResponse {
   pageSize: number
 }
 
-// Chat
+export interface NoteFuzzySearchMatch {
+  index: number
+  note_id: number
+  note_title: string
+  start: number
+  end: number
+  keyword_start: number
+  keyword_end: number
+  content: string
+}
+
+export interface NoteFuzzySearchResult {
+  query: string
+  selectedIndex: number
+  totalMatches: number
+  match: NoteFuzzySearchMatch | null
+  matches: Array<Pick<NoteFuzzySearchMatch, 'index' | 'note_id' | 'note_title' | 'start' | 'end'>>
+}
+
 export interface Conversation {
   id: number
   title: string
@@ -117,13 +149,11 @@ export interface Message {
   created_at: string
 }
 
-// Runtime stream state for SSE updates.
 export interface StreamState {
   thinking: string
   toolCalls: Array<{ id: string; name: string; arguments: Record<string, any>; status: 'running' | 'completed'; result?: string }>
 }
 
-// Settings
 export interface AIProviderConfig {
   apiKey?: string
   baseURL?: string
@@ -143,7 +173,6 @@ export interface Settings {
   available_providers: AIProviderInfo[]
 }
 
-// Constants
 export const TODO_PRIORITY_LABELS: Record<TodoPriority, string> = {
   low: '低',
   medium: '中',
@@ -167,6 +196,11 @@ export const TODO_TYPE_LABELS: Record<TodoType, string> = {
   family: '家庭'
 }
 
+export const TODO_TASK_KIND_LABELS: Record<TodoTaskKind, string> = {
+  one_time: '一次性',
+  long_term: '长期'
+}
+
 export const TODO_PRIORITY_COLORS: Record<TodoPriority, string> = {
   low: 'info',
   medium: 'default',
@@ -180,5 +214,5 @@ export const TODO_TYPE_ICONS: Record<TodoType, string> = {
   personal: '👤',
   health: '❤️',
   finance: '💰',
-  family: '🏡'
+  family: '🏠'
 }

@@ -12,8 +12,8 @@ const todoStore = useTodoStore()
       <div v-if="!todoStore.loading && todoStore.items.length === 0">
         <EmptyState
           title="暂无待办事项"
-          description="点击右上角「新建待办」开始"
-          icon="📋"
+          description="点击右上角“新建待办”开始记录。"
+          icon="📝"
         />
       </div>
       <div v-else class="todo-list">
@@ -25,10 +25,8 @@ const todoStore = useTodoStore()
         />
       </div>
     </n-spin>
-    <div
-      v-if="todoStore.total > todoStore.pagination.pageSize"
-      class="todo-pagination"
-    >
+
+    <div v-if="todoStore.total > todoStore.pagination.pageSize" class="todo-pagination">
       <n-pagination
         v-model:page="todoStore.pagination.page"
         :item-count="todoStore.total"

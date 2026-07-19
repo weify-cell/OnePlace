@@ -24,6 +24,7 @@ export interface ILinkConfig {
   provider: string
   model: string
   system_prompt: string
+  note_tools_prompt: string
   max_tool_rounds: number
   proactive_user_message: string
   proactive_system_prompt: string

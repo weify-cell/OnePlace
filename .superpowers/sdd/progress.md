@@ -1,0 +1,7 @@
+Task 1: complete (ce40e11)
+Task 2: complete (a0c101a)
+Task 3: complete (a0c101a)
+Task 4: complete (d11bac9)
+Task 5: complete (1506af3)
+Task 6: complete (8cb5727)
+Task 7: complete (6422af3)

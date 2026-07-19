@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { todosApi } from '@/api/todos.api'
-import type { Todo, TodoFilters, TodoStatus } from '@/types'
+import type { Todo, TodoFilters, TodoProgressLog, TodoStatus } from '@/types'
 
 export type TodoTabName = 'all' | 'todo' | 'in_progress' | 'done' | 'cancelled'
 
@@ -12,12 +12,23 @@ export interface TodoCounts {
   cancelled: number
 }
 
+function createDefaultFilters(): TodoFilters {
+  return {
+    status: null,
+    priority: null,
+    task_kind: null,
+    type: null,
+    tag: null,
+    search: ''
+  }
+}
+
 export const useTodoStore = defineStore('todos', () => {
   const items = ref<Todo[]>([])
   const total = ref(0)
   const loading = ref(false)
   const allTags = ref<string[]>([])
-  const filters = ref<TodoFilters>({ status: null, priority: null, type: null, tag: null, search: '' })
+  const filters = ref<TodoFilters>(createDefaultFilters())
   const pagination = ref({ page: 1, pageSize: 20 })
   const counts = ref<TodoCounts>({ all: 0, todo: 0, in_progress: 0, done: 0, cancelled: 0 })
   const activeTab = ref<TodoTabName>('todo')
@@ -28,6 +39,7 @@ export const useTodoStore = defineStore('todos', () => {
       const params: Record<string, unknown> = { ...pagination.value }
       if (filters.value.status) params.status = filters.value.status
       if (filters.value.priority) params.priority = filters.value.priority
+      if (filters.value.task_kind) params.task_kind = filters.value.task_kind
       if (filters.value.type) params.type = filters.value.type
       if (filters.value.tag) params.tag = filters.value.tag
       if (filters.value.search) params.search = filters.value.search
@@ -49,6 +61,18 @@ export const useTodoStore = defineStore('todos', () => {
     const res = await todosApi.update(id, data)
     const idx = items.value.findIndex(t => t.id === id)
     if (idx !== -1) items.value[idx] = res.data
+    return res.data
+  }
+
+  async function updateTodoProgress(id: number, data: { progress_percent?: number | null; note?: string | null }) {
+    const res = await todosApi.updateProgress(id, data)
+    const idx = items.value.findIndex(t => t.id === id)
+    if (idx !== -1) items.value[idx] = res.data
+    return res.data
+  }
+
+  async function getTodoProgressLogs(id: number, limit = 10): Promise<TodoProgressLog[]> {
+    const res = await todosApi.getProgressLogs(id, { limit })
     return res.data
   }
 
@@ -91,6 +115,16 @@ export const useTodoStore = defineStore('todos', () => {
     fetchTodos()
   }
 
+  function resetFilters() {
+    const currentStatus = filters.value.status
+    filters.value = {
+      ...createDefaultFilters(),
+      status: currentStatus
+    }
+    pagination.value.page = 1
+    fetchTodos()
+  }
+
   function setActiveTab(tab: TodoTabName) {
     activeTab.value = tab
     if (tab === 'all') {
@@ -103,5 +137,5 @@ export const useTodoStore = defineStore('todos', () => {
     fetchTodoCounts()
   }
 
-  return { items, total, loading, allTags, filters, pagination, counts, activeTab, fetchTodos, createTodo, updateTodo, deleteTodo, toggleStatus, fetchAllTags, fetchTodoCounts, fetchPendingCount, fetchUrgentCount, setFilter, setActiveTab }
+  return { items, total, loading, allTags, filters, pagination, counts, activeTab, fetchTodos, createTodo, updateTodo, updateTodoProgress, getTodoProgressLogs, deleteTodo, toggleStatus, fetchAllTags, fetchTodoCounts, fetchPendingCount, fetchUrgentCount, setFilter, resetFilters, setActiveTab }
 })

@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
-import { useNoteStore } from '@/stores/note.store'
 import { useDebounceFn } from '@vueuse/core'
 import AppLayout from '@/components/common/AppLayout.vue'
 import TiptapEditor from '@/components/notes/TiptapEditor.vue'
@@ -10,19 +9,21 @@ import CodeMirrorMarkdownEditor from '@/components/notes/CodeMirrorMarkdownEdito
 import MarkdownPreview from '@/components/notes/MarkdownPreview.vue'
 import TagInput from '@/components/common/TagInput.vue'
 import { tiptapToMarkdown } from '@/components/editor/TiptapToMarkdown'
+import { useNoteStore } from '@/stores/note.store'
+import { useKnowledgeBaseStore } from '@/stores/knowledge_base.store'
 
 const route = useRoute()
 const router = useRouter()
 const noteStore = useNoteStore()
+const kbStore = useKnowledgeBaseStore()
 const message = useMessage()
 const dialog = useDialog()
 
 const noteId = computed(() => Number(route.params.id))
 const note = computed(() => noteStore.currentNote)
-const showMigrationDialog = ref(false)
 const isMigrating = ref(false)
+let noteEmbeddingPollTimer: ReturnType<typeof setInterval> | null = null
 
-// Preview/Edit mode state
 const isEditing = ref(false)
 const hasUnsavedChanges = ref(false)
 const pendingTitle = ref('')
@@ -33,23 +34,63 @@ const folderOptions = computed(() => [
   ...noteStore.folders.map(f => ({ label: f.name, value: f.id }))
 ])
 
-const isMarkdownNote = computed(() => {
-  return note.value?.content_format === 'markdown'
-})
+const isMarkdownNote = computed(() => note.value?.content_format === 'markdown')
+const isLegacyNote = computed(() => note.value?.content_format === 'tiptap' || !note.value?.content_format)
 
-const isLegacyNote = computed(() => {
-  return note.value?.content_format === 'tiptap' || !note.value?.content_format
+const noteEmbeddingStatus = computed(() => kbStore.getNoteEmbeddingStatus(noteId.value))
+const showNoteEmbeddingStatus = computed(() => {
+  const status = noteEmbeddingStatus.value
+  return !!note.value?.is_knowledge_base || status.phase !== 'idle' || !!status.startedAt
+})
+const noteEmbeddingProgress = computed(() => {
+  const status = noteEmbeddingStatus.value
+  if (status.phase === 'completed') return 100
+  if (status.totalChunks <= 0) return 0
+  return Math.max(0, Math.min(100, Math.round((status.currentChunk / status.totalChunks) * 100)))
+})
+const noteEmbeddingProgressStatus = computed(() => {
+  if (noteEmbeddingStatus.value.phase === 'failed') return 'error'
+  if (noteEmbeddingStatus.value.phase === 'completed') return 'success'
+  return undefined
+})
+const noteEmbeddingPhaseText = computed(() => {
+  const labels = {
+    idle: '未建立索引',
+    preparing: '准备建立索引',
+    embedding: '建立索引中',
+    completed: '索引已更新',
+    failed: '索引失败'
+  } as const
+  return labels[noteEmbeddingStatus.value.phase]
+})
+const noteEmbeddingChunkText = computed(() => {
+  const status = noteEmbeddingStatus.value
+  return status.totalChunks > 0 ? `${status.currentChunk}/${status.totalChunks}` : '-'
 })
 
 onMounted(async () => {
   await noteStore.fetchNote(noteId.value)
+  await kbStore.loadConfig()
+  await kbStore.fetchNoteEmbeddingStatus(noteId.value)
   if (noteStore.folders.length === 0) {
     await noteStore.fetchFolders()
+  }
+  if (kbStore.getNoteEmbeddingStatus(noteId.value).running) {
+    startNoteEmbeddingPolling()
   }
 })
 
 onBeforeUnmount(() => {
   noteStore.currentNote = null
+  stopNoteEmbeddingPolling()
+})
+
+watch(() => noteEmbeddingStatus.value.running, (running) => {
+  if (running) {
+    startNoteEmbeddingPolling()
+  } else {
+    stopNoteEmbeddingPolling()
+  }
 })
 
 const debouncedSave = useDebounceFn(async (data: { title?: string; content?: string; content_format?: string; tags?: string[] }) => {
@@ -77,7 +118,6 @@ function onContentChange(content: string) {
   }
 }
 
-// ---- Preview/Edit mode ----
 function enterEditMode() {
   if (!note.value) return
   pendingTitle.value = note.value.title
@@ -98,9 +138,10 @@ function handleCancelEdit() {
         hasUnsavedChanges.value = false
       }
     })
-  } else {
-    isEditing.value = false
+    return
   }
+
+  isEditing.value = false
 }
 
 async function handleDoneEdit() {
@@ -120,9 +161,22 @@ function onTagsChange(tags: string[]) {
   debouncedSave({ tags })
 }
 
-function onFolderChange(folder_id: number | null) {
+function onFolderChange(folderId: number | null) {
   if (!note.value) return
-  noteStore.updateNote(note.value.id, { folder_id })
+  noteStore.updateNote(note.value.id, { folder_id: folderId })
+}
+
+function startNoteEmbeddingPolling() {
+  if (noteEmbeddingPollTimer) return
+  noteEmbeddingPollTimer = setInterval(() => {
+    kbStore.fetchNoteEmbeddingStatus(noteId.value).catch(console.error)
+  }, 1200)
+}
+
+function stopNoteEmbeddingPolling() {
+  if (!noteEmbeddingPollTimer) return
+  clearInterval(noteEmbeddingPollTimer)
+  noteEmbeddingPollTimer = null
 }
 
 function handleEditLegacyNote() {
@@ -130,7 +184,7 @@ function handleEditLegacyNote() {
 
   dialog.warning({
     title: '迁移笔记格式',
-    content: '此笔记为旧格式（Tiptap），首次编辑将自动转换为 Markdown 格式。是否继续？',
+    content: '这篇笔记还是旧的 Tiptap 格式，首次编辑会自动转换为 Markdown，是否继续？',
     positiveText: '确定',
     negativeText: '取消',
     onPositiveClick: async () => {
@@ -156,11 +210,10 @@ function handleEditLegacyNote() {
 <template>
   <AppLayout>
     <div v-if="note" class="note-detail">
-      <!-- Toolbar -->
       <div class="note-toolbar">
         <button class="note-toolbar__back" @click="router.push('/notes')">
           <svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="15 18 9 12 15 6"/>
+            <polyline points="15 18 9 12 15 6" />
           </svg>
           返回笔记
         </button>
@@ -168,12 +221,39 @@ function handleEditLegacyNote() {
           <template v-if="!isEditing">
             <span :class="['note-save-status', noteStore.saving && 'note-save-status--saving']">
               <svg v-if="noteStore.saving" class="w-3.5 h-3.5 animate-spin" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+                <path d="M21 12a9 9 0 1 1-6.219-8.56" />
               </svg>
               <svg v-else class="w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="20 6 9 17 4 12"/>
+                <polyline points="20 6 9 17 4 12" />
               </svg>
               {{ noteStore.saving ? '保存中...' : '已自动保存' }}
+            </span>
+            <span
+              v-if="showNoteEmbeddingStatus"
+              :class="[
+                'note-index-status',
+                noteEmbeddingStatus.running && 'note-index-status--running',
+                noteEmbeddingStatus.phase === 'failed' && 'note-index-status--error'
+              ]"
+            >
+              <svg v-if="noteEmbeddingStatus.running" class="w-3.5 h-3.5 animate-spin" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+              </svg>
+              <svg v-else-if="noteEmbeddingStatus.phase === 'completed'" class="w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              <svg v-else-if="noteEmbeddingStatus.phase === 'failed'" class="w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="15" y1="9" x2="9" y2="15" />
+                <line x1="9" y1="9" x2="15" y2="15" />
+              </svg>
+              <svg v-else class="w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <path d="M12 8v4" />
+                <path d="M12 16h.01" />
+              </svg>
+              {{ noteEmbeddingPhaseText }}
+              <span v-if="noteEmbeddingStatus.running || noteEmbeddingStatus.phase === 'completed'">{{ noteEmbeddingProgress }}%</span>
             </span>
             <n-button size="small" type="primary" class="note-toolbar__btn" @click="enterEditMode">
               编辑
@@ -187,8 +267,8 @@ function handleEditLegacyNote() {
             >
               <template #icon>
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5">
-                  <line x1="12" y1="17" x2="12" y2="22"/>
-                  <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24z"/>
+                  <line x1="12" y1="17" x2="12" y2="22" />
+                  <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24z" />
                 </svg>
               </template>
               {{ note.is_pinned ? '取消置顶' : '置顶' }}
@@ -209,10 +289,30 @@ function handleEditLegacyNote() {
         </div>
       </div>
 
-      <!-- Editor area -->
       <div class="note-editor-area">
         <div class="note-editor-inner">
-          <!-- Title -->
+          <div v-if="showNoteEmbeddingStatus" class="note-index-progress">
+            <div class="note-index-progress__header">
+              <div class="note-index-progress__title">
+                <span>{{ noteEmbeddingPhaseText }}</span>
+                <span v-if="noteEmbeddingStatus.noteTitle">{{ noteEmbeddingStatus.noteTitle }}</span>
+              </div>
+              <div class="note-index-progress__meta">
+                <span>Chunk {{ noteEmbeddingChunkText }}</span>
+                <span>{{ noteEmbeddingProgress }}%</span>
+              </div>
+            </div>
+            <n-progress
+              type="line"
+              :percentage="noteEmbeddingProgress"
+              :status="noteEmbeddingProgressStatus"
+              :show-indicator="false"
+            />
+            <div v-if="noteEmbeddingStatus.lastError" class="note-index-progress__error">
+              {{ noteEmbeddingStatus.lastError }}
+            </div>
+          </div>
+
           <input
             :value="isEditing ? pendingTitle : note.title"
             class="note-title-input"
@@ -223,12 +323,11 @@ function handleEditLegacyNote() {
             @click="!isEditing && !isLegacyNote && enterEditMode()"
           />
 
-          <!-- Meta: folder + tags -->
           <div class="note-meta">
             <div class="note-meta__row">
               <span class="note-meta__label">
                 <svg class="w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
                 </svg>
                 文件夹
               </span>
@@ -245,8 +344,8 @@ function handleEditLegacyNote() {
             <div class="note-meta__row">
               <span class="note-meta__label">
                 <svg class="w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
-                  <line x1="7" y1="7" x2="7.01" y2="7"/>
+                  <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+                  <line x1="7" y1="7" x2="7.01" y2="7" />
                 </svg>
                 标签
               </span>
@@ -254,20 +353,18 @@ function handleEditLegacyNote() {
             </div>
           </div>
 
-          <!-- Divider -->
           <div class="note-editor-divider" />
 
-          <!-- Legacy Tiptap Note (read-only with migration) -->
           <div v-if="isLegacyNote && !isMarkdownNote" class="legacy-note-notice">
             <div class="legacy-note-notice__content">
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="10"/>
-                <line x1="12" y1="16" x2="12" y2="12"/>
-                <line x1="12" y1="8" x2="12.01" y2="8"/>
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="16" x2="12" y2="12" />
+                <line x1="12" y1="8" x2="12.01" y2="8" />
               </svg>
               <div>
-                <p class="legacy-note-notice__title">此笔记为旧格式</p>
-                <p class="legacy-note-notice__desc">点击「编辑笔记」后将自动转换为 Markdown 格式</p>
+                <p class="legacy-note-notice__title">这篇笔记还是旧格式</p>
+                <p class="legacy-note-notice__desc">点击“编辑笔记”后会自动转换为 Markdown 格式</p>
               </div>
             </div>
             <n-button type="primary" :loading="isMigrating" class="legacy-note-notice__btn" @click="handleEditLegacyNote">
@@ -275,20 +372,14 @@ function handleEditLegacyNote() {
             </n-button>
           </div>
 
-          <!-- Tiptap Editor for legacy notes (read-only display) -->
           <div v-else-if="isLegacyNote" class="note-editor-legacy">
-            <TiptapEditor
-              :content="note.content"
-              @update:content="() => {}"
-            />
+            <TiptapEditor :content="note.content" @update:content="() => {}" />
           </div>
 
-          <!-- Markdown Note: Preview Mode (read-only) -->
           <div v-else-if="!isEditing" class="note-editor-preview">
             <MarkdownPreview :content="note.content" />
           </div>
 
-          <!-- Markdown Note: Edit Mode (CodeMirror + Preview split) -->
           <div v-else class="note-editor-markdown">
             <CodeMirrorMarkdownEditor
               :content="isEditing ? pendingContent : note.content"
@@ -306,7 +397,6 @@ function handleEditLegacyNote() {
 </template>
 
 <style scoped>
-/* ---- Layout ---- */
 .note-detail {
   height: 100%;
   display: flex;
@@ -314,7 +404,6 @@ function handleEditLegacyNote() {
   background: var(--bg-primary);
 }
 
-/* ---- Toolbar ---- */
 .note-toolbar {
   display: flex;
   align-items: center;
@@ -349,6 +438,8 @@ function handleEditLegacyNote() {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .note-toolbar__btn {
@@ -373,21 +464,35 @@ function handleEditLegacyNote() {
   color: var(--text-secondary);
 }
 
-/* Save status indicator */
-.note-save-status {
+.note-save-status,
+.note-index-status {
   display: flex;
   align-items: center;
   gap: 5px;
   font-size: 0.75rem;
-  color: var(--success);
   transition: color 0.2s ease;
+}
+
+.note-save-status {
+  color: var(--success);
 }
 
 .note-save-status--saving {
   color: var(--text-muted);
 }
 
-/* ---- Editor area ---- */
+.note-index-status {
+  color: var(--text-secondary);
+}
+
+.note-index-status--running {
+  color: var(--accent-primary);
+}
+
+.note-index-status--error {
+  color: #dc2626;
+}
+
 .note-editor-area {
   flex: 1;
   overflow-y: auto;
@@ -397,10 +502,51 @@ function handleEditLegacyNote() {
 .note-editor-inner {
   max-width: 100%;
   margin: 0 auto;
-  padding: 36px 40px 60px;
+  padding: 24px 40px 60px;
   height: 100%;
   display: flex;
   flex-direction: column;
+}
+
+.note-index-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 20px;
+  padding: 14px 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+}
+
+.note-index-progress__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.note-index-progress__title {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+}
+
+.note-index-progress__meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.note-index-progress__error {
+  font-size: 0.75rem;
+  color: #dc2626;
 }
 
 .note-editor-markdown {
@@ -423,7 +569,6 @@ function handleEditLegacyNote() {
   min-height: 400px;
 }
 
-/* Legacy notice */
 .legacy-note-notice {
   display: flex;
   align-items: center;
@@ -468,7 +613,6 @@ function handleEditLegacyNote() {
   flex-shrink: 0;
 }
 
-/* ---- Title input ---- */
 .note-title-input {
   width: 100%;
   font-size: 2rem;
@@ -495,7 +639,6 @@ function handleEditLegacyNote() {
   color: var(--accent-primary);
 }
 
-/* ---- Meta section ---- */
 .note-meta {
   display: flex;
   flex-direction: column;
@@ -520,14 +663,12 @@ function handleEditLegacyNote() {
   flex-shrink: 0;
 }
 
-/* ---- Divider ---- */
 .note-editor-divider {
   height: 1px;
   background: var(--border-subtle);
   margin-bottom: 24px;
 }
 
-/* Spinner animation */
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
@@ -535,5 +676,27 @@ function handleEditLegacyNote() {
 
 .animate-spin {
   animation: spin 1s linear infinite;
+}
+
+@media (max-width: 900px) {
+  .note-toolbar {
+    padding: 10px 16px;
+  }
+
+  .note-editor-inner {
+    padding: 20px 16px 40px;
+  }
+
+  .note-index-progress__header,
+  .legacy-note-notice,
+  .note-meta__row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .note-index-progress__meta,
+  .note-toolbar__right {
+    justify-content: flex-start;
+  }
 }
 </style>

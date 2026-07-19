@@ -69,11 +69,21 @@ export function updateConfig(req: Request, res: Response): void {
 }
 
 export function rebuildIndex(req: Request, res: Response): void {
-  // Async operation, don't block
-  res.json({ message: 'Rebuild started' })
-  kbService.rebuildAllIndex().catch((e) => {
-    console.error('[kb] rebuildAllIndex failed:', e)
+  const status = kbService.getRebuildStatus()
+  if (!status.running) {
+    kbService.rebuildAllIndex().catch((e) => {
+      console.error('[kb] rebuildAllIndex failed:', e)
+    })
+  }
+
+  res.json({
+    message: status.running ? 'Rebuild already running' : 'Rebuild started',
+    status: kbService.getRebuildStatus()
   })
+}
+
+export function getRebuildStatus(req: Request, res: Response): void {
+  res.json(kbService.getRebuildStatus())
 }
 
 export function triggerEmbedding(req: Request, res: Response): void {
@@ -83,8 +93,17 @@ export function triggerEmbedding(req: Request, res: Response): void {
     res.status(400).json({ error: 'source_type and source_id are required' })
     return
   }
-  kbService.triggerEmbedding(noteId)
-  res.json({ message: 'Embedding triggered', note_id: noteId })
+  kbService.triggerEmbedding(noteId).catch(console.error)
+  res.json({ message: 'Embedding triggered', note_id: noteId, status: kbService.getNoteEmbeddingStatus(noteId) })
+}
+
+export function getNoteEmbeddingStatus(req: Request, res: Response): void {
+  const noteId = Number(req.params.noteId)
+  if (isNaN(noteId)) {
+    res.status(400).json({ error: 'Valid noteId is required' })
+    return
+  }
+  res.json(kbService.getNoteEmbeddingStatus(noteId))
 }
 
 export async function deleteDocument(req: Request, res: Response): Promise<void> {

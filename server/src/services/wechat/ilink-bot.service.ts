@@ -5,6 +5,7 @@ import { getSettingValue, setSetting } from '../settings.service.js'
 import { connectDatabase } from '../../database/index.js'
 import { setReminderBot, startReminderService, stopReminderService, saveWeChatUser, sendPendingReminders, hasPendingReminders } from './todo-reminder.service.js'
 import { setProactiveBot, startProactiveChatService, stopProactiveChatService } from './proactive-chat.service.js'
+import { AgentEvent } from '@earendil-works/pi-agent-core'
 
 /**
  * 格式化当前时间为北京时间字符串
@@ -62,6 +63,247 @@ function initAgentPool(provider: string, modelId: string): void {
     (p) => extractApiKey(p),
     ''
   )
+}
+
+// agent event 监控
+function readAgentStart() {
+  console.log(`【Agent Start】接收到Agent Start事件`)
+}
+
+function readTurnStart() {
+  console.log(`【Turn Start】接收到Turn Start事件`)
+}
+
+function readMessageStart(event: AgentEvent) {
+  if (event.type === 'message_start') {
+    const message = event.message
+
+    // 按角色区分消息
+    let text = ''
+
+    if (message.role === 'user') {
+      text = typeof message.content === 'string' ? message.content : message.content.filter(c => c.type === 'text').map(c => c.text).join("")
+
+      text = 'UserMessage \n \t\t\t\t ' + text
+    } else if (message.role === 'assistant') {
+
+      for (const index in message.content) {
+        const item = message.content[index]
+        if (item.type === 'text') {
+          text = text + item.text
+
+          text = 'AssistantMessage \n \t\t\t\t ' + text
+        } else if (item.type === 'toolCall') {
+          text = text + ' \n 调用工具ID' + item.id +
+            ' \n 调用工具名' + item.name +
+            ' \n 调用工具参数' + JSON.stringify(item.arguments)
+
+          text = ' AssistantMessage ToolCall \n \t\t\t\t ' + text
+        }
+      }
+    } else if (message.role === 'toolResult') {
+      for (const index in message.content) {
+        const item = message.content[index]
+        if (item.type === 'text') {
+
+
+
+          text = text + ' \n toolCallId' + message.toolCallId +
+            ' \n 调用工具名' + message.toolName +
+            ' \n 调用工具结果' + JSON.stringify(item.text.slice(0, 20) + '......')
+
+
+          text = 'toolResultMessage \n \t\t\t\t ' + text
+
+        }
+      }
+    }
+
+    console.log(`【Message Start】收到Message Start事件`)
+    //console.log(`消息类型：${typeof event.message}`)
+    console.log(`【Message Start】消息内容：${text}`)
+  }
+}
+
+
+function readToolExecutionStart(event: AgentEvent) {
+  if (event.type === 'tool_execution_start') {
+    console.log(`【Tool Execution Start】接收到tool_execution_start事件，toolCallId : ${event.toolCallId} toolName : ${event.toolName}  args: ${JSON.stringify(event.args)}`)
+  }
+}
+
+function readToolExecutionEnd(event: AgentEvent) {
+
+  let toolResult = ''
+
+  if (event.type === 'tool_execution_end') {
+
+    let resultStr = JSON.stringify(event.result)
+
+    if (resultStr.length > 400) {
+      toolResult = resultStr.slice(0, 200) + ' .... ' + resultStr.slice(-200)
+    } else {
+      toolResult = resultStr
+    }
+
+    console.log(`【Tool Execution End】接收到tool_execution_end事件 ,toolCallId : ${event.toolCallId} toolName : ${event.toolName}  result: ${toolResult} `)
+  }
+}
+
+
+function readTrunEnd(event: AgentEvent) {
+  if (event.type === 'turn_end') {
+    console.log(`【Turn End】接收到turn_end事件`)
+
+    const message = event.message
+    // 按角色区分消息
+    let text = ''
+    if (message.role === 'user') {
+      text = typeof message.content === 'string' ? message.content : message.content.filter(c => c.type === 'text').map(c => c.text).join("")
+
+      text = ' UserMessage \n \t\t\t\t ' + text
+    } else if (message.role === 'assistant') {
+
+      for (const index in message.content) {
+        const item = message.content[index]
+        if (item.type === 'text') {
+          text = text + item.text
+          text = 'AssistantMessage \n \t\t\t\t ' + text
+        } else if (item.type === 'toolCall') {
+          text = text + ' \n    调用工具ID:' + item.id +
+            ' \n    调用工具名:' + item.name +
+            ' \n    调用工具参数:' + JSON.stringify(item.arguments)
+
+          text = 'AssistantMessage ToolCall \n \t\t\t\t ' + text
+        }
+      }
+    } else if (message.role === 'toolResult') {
+      for (const index in message.content) {
+        const item = message.content[index]
+        if (item.type === 'text') {
+          text = text + ' \n    toolCallId:' + message.toolCallId +
+            ' \n    调用工具名:' + message.toolName +
+            ' \n    调用工具结果:' + JSON.stringify(item.text.slice(0, 20) + '......')
+
+          text = 'toolResultMessage \n \t\t\t\t ' + text
+        }
+      }
+    }
+    console.log(`【Turn End】当前消息内容:${text}`)
+
+    const toolResultMessage = event.toolResults
+
+    for (let index in toolResultMessage) {
+      let item = toolResultMessage[index]
+
+      for (let iindex in item.content) {
+        const subItem = item.content[iindex]
+        if (subItem.type === 'text') {
+          let curResult = ''
+          if (subItem.text.length > 400) {
+            curResult = subItem.text.slice(0, 200) + '....' + subItem.text.slice(-200)
+          } else {
+            curResult = subItem.text
+          }
+          curResult = ' toolResultMessage  \n \t\t\t\t ' + curResult + ' \n '
+          console.log(`【Turn End】本轮第${index}次工具调用内容 ， toolCallId : ${item.toolCallId} toolName : ${item.toolName} + 工具执行结果：${curResult}`)
+        }
+      }
+    }
+  }
+}
+
+
+
+function readAgentEnd(event: AgentEvent) {
+  if (event.type === 'agent_end') {
+    for (const index in event.messages) {
+      const message = event.messages[index]
+
+      // 按角色区分消息
+      let text = ''
+
+      if (message.role === 'user') {
+        text = typeof message.content === 'string' ? message.content : message.content.filter(c => c.type === 'text').map(c => c.text).join("")
+
+        text = 'UserMessage \n \t\t\t\t ' + text
+      } else if (message.role === 'assistant') {
+
+        for (const index in message.content) {
+          const item = message.content[index]
+          if (item.type === 'text') {
+            text = text + item.text
+            text = 'AssistantMessage \n \t\t\t\t ' + text
+          } else if (item.type === 'toolCall') {
+            text = text + ' \n    调用工具ID:' + item.id +
+              ' \n    调用工具名:' + item.name +
+              ' \n    调用工具参数:' + JSON.stringify(item.arguments)
+
+            text = 'AssistantMessage toolCall \n \t\t\t\t ' + text
+          }
+        }
+      } else if (message.role === 'toolResult') {
+        for (const index in message.content) {
+          const item = message.content[index]
+          if (item.type === 'text') {
+            text = text + ' \n    toolCallId:' + message.toolCallId +
+              ' \n    调用工具名:' + message.toolName +
+              ' \n    调用工具结果:' + JSON.stringify(item.text.slice(0, 20) + '......')
+
+            text = 'toolResultMessage \n \t\t\t\t ' + text
+          }
+        }
+      }
+
+      console.log('【Agent End】当前消息：' + text)
+
+
+
+    }
+  }
+}
+
+
+function readMessageEnd(event: AgentEvent) {
+
+  if (event.type === 'message_end') {
+    const message = event.message
+
+    // 按角色区分消息
+    let text = ''
+
+    if (message.role === 'user') {
+      text = typeof message.content === 'string' ? message.content : message.content.filter(c => c.type === 'text').map(c => c.text).join("")
+      text = 'UserMessage' + text
+    } else if (message.role === 'assistant') {
+
+      for (const index in message.content) {
+        const item = message.content[index]
+        if (item.type === 'text') {
+          text = text + item.text
+          text = 'Assistant Message \n \t\t\t\t' + text
+        } else if (item.type === 'toolCall') {
+          text = text + ' \n    调用工具ID:' + item.id +
+            ' \n    调用工具名:' + item.name +
+            ' \n    调用工具参数:' + JSON.stringify(item.arguments)
+
+          text = 'Assistant Message ToolCall \n \t\t\t\t' + text
+        }
+      }
+    } else if (message.role === 'toolResult') {
+      for (const index in message.content) {
+        const item = message.content[index]
+        if (item.type === 'text') {
+          text = text + 'toolResultMessage  \n    调用工具ID:' + message.toolCallId +
+            ' \n    调用工具名:' + message.toolName +
+            ' \n    调用工具结果:' + JSON.stringify(item.text.slice(0, 200))
+        }
+      }
+    }
+    console.log(`【Message End】接收到Message End事件`)
+    //console.log(`消息类型：${typeof event.message}`)
+    console.log(`【Message End】消息内容：${text}`)
+  }
 }
 
 /**
@@ -235,6 +477,34 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
 
         let replyContent = ''
         const unsub = agent.subscribe((event, _signal) => {
+
+          switch (event.type) {
+            case 'tool_execution_start':
+              readToolExecutionStart(event)
+              break;
+            case 'tool_execution_end':
+              readToolExecutionEnd(event)
+              break;
+            case 'message_start':
+              readMessageStart(event)
+              break;
+            case 'message_end':
+              readMessageEnd(event)
+              break;
+            case 'agent_start':
+              readAgentStart();
+              break;
+            case 'agent_end':
+              readAgentEnd(event);
+              break;
+            case 'turn_start':
+              readTurnStart();
+              break;
+            case 'turn_end':
+              readTrunEnd();
+              break;
+          }
+
           if (event.type !== 'turn_end') return
           const msg = event.message
           if (msg.role === 'assistant' && Array.isArray(msg.content)) {
@@ -242,10 +512,11 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
               .filter(c => (c as { type: string }).type === 'text')
               .map(c => (c as { text: string }).text).join('')
           }
-        })
 
+        })
         await agent.prompt(convertMessages([systemMsg, userMsg]))
         await agent.waitForIdle()
+
         unsub()
 
         await bot!.reply(msg, replyContent || '抱歉，没有生成回复。')
@@ -271,59 +542,59 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
     console.log('[ilink] 正在启动 Bot...')
     loginStatus = 'waiting'
 
-    // 异步执行登录和启动
-    ;(async () => {
-      try {
-        // 登录（会显示二维码）
-        console.log('[ilink] 正在获取二维码...')
-        await bot!.login({
-          callbacks: {
-            onQrUrl: (url: string) => {
-              console.log('[ilink] ================================')
-              console.log('[ilink] 请扫描二维码登录:')
-              console.log('[ilink]', url)
-              console.log('[ilink] ================================')
-              loginQRCode = url
-              loginStatus = 'waiting'
-            },
-            onScanned: () => {
-              console.log('[ilink] 已扫码，请在手机上确认登录')
-              loginStatus = 'scanned'
-            },
-            onExpired: () => {
-              console.log('[ilink] 二维码已过期')
-              loginStatus = 'expired'
-              loginQRCode = null
+      // 异步执行登录和启动
+      ; (async () => {
+        try {
+          // 登录（会显示二维码）
+          console.log('[ilink] 正在获取二维码...')
+          await bot!.login({
+            callbacks: {
+              onQrUrl: (url: string) => {
+                console.log('[ilink] ================================')
+                console.log('[ilink] 请扫描二维码登录:')
+                console.log('[ilink]', url)
+                console.log('[ilink] ================================')
+                loginQRCode = url
+                loginStatus = 'waiting'
+              },
+              onScanned: () => {
+                console.log('[ilink] 已扫码，请在手机上确认登录')
+                loginStatus = 'scanned'
+              },
+              onExpired: () => {
+                console.log('[ilink] 二维码已过期')
+                loginStatus = 'expired'
+                loginQRCode = null
+              }
             }
-          }
-        })
+          })
 
-        // 登录成功后启动消息循环
-        console.log('[ilink] 登录成功，正在启动消息循环...')
+          // 登录成功后启动消息循环
+          console.log('[ilink] 登录成功，正在启动消息循环...')
 
-        // 延迟启动提醒服务和主动聊天服务（等待 contextStore 加载完成）
-        setTimeout(() => {
-          setReminderBot(bot!)
-          const reminderInterval = getSettingValue<number>('ilink_reminder_interval', 60)
-          startReminderService(reminderInterval)
-          console.log(`[ilink] reminder service started (interval: ${reminderInterval}min)`)
+          // 延迟启动提醒服务和主动聊天服务（等待 contextStore 加载完成）
+          setTimeout(() => {
+            setReminderBot(bot!)
+            const reminderInterval = getSettingValue<number>('ilink_reminder_interval', 60)
+            startReminderService(reminderInterval)
+            console.log(`[ilink] reminder service started (interval: ${reminderInterval}min)`)
 
-          // 启动主动聊天服务
-          setProactiveBot(bot!)
-          startProactiveChatService()
-          console.log('[ilink] proactive chat service started')
-        }, 2000) // 延迟 2 秒，确保 contextStore 加载完成
+            // 启动主动聊天服务
+            setProactiveBot(bot!)
+            startProactiveChatService()
+            console.log('[ilink] proactive chat service started')
+          }, 2000) // 延迟 2 秒，确保 contextStore 加载完成
 
-        await bot!.start()
-        console.log('[ilink] Bot 已启动并运行')
-      } catch (err) {
-        console.error('[ilink] Bot 启动失败:', err)
-        lastError = (err as Error).message
-        loginStatus = 'idle'
-        botRunning = false
-        bot = null
-      }
-    })()
+          await bot!.start()
+          console.log('[ilink] Bot 已启动并运行')
+        } catch (err) {
+          console.error('[ilink] Bot 启动失败:', err)
+          lastError = (err as Error).message
+          loginStatus = 'idle'
+          botRunning = false
+          bot = null
+        }
+      })()
 
     // 等待一小段时间，让二维码 URL 显示
     await new Promise(resolve => setTimeout(resolve, 1000))

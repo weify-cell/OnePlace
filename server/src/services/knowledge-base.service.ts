@@ -3,6 +3,105 @@ import { rerankTextWithFallback } from './ai/rerank-client.js'
 import { upsertChunks, searchChunks } from './vector/vector.service.js'
 import { getSettingValue } from './settings.service.js'
 import type { Note } from './notes.service.js'
+import { extractFullPlainText } from './note-text.service.js'
+
+export interface KnowledgeBaseRebuildStatus {
+  running: boolean
+  phase: 'idle' | 'preparing' | 'embedding' | 'completed' | 'failed'
+  totalNotes: number
+  completedNotes: number
+  failedNotes: number
+  currentNoteId: number | null
+  currentNoteTitle: string | null
+  currentChunk: number
+  currentChunkTotal: number
+  startedAt: string | null
+  finishedAt: string | null
+  lastError: string | null
+  noteStatuses: KnowledgeBaseRebuildNoteStatus[]
+}
+
+export interface KnowledgeBaseRebuildNoteStatus {
+  noteId: number
+  noteTitle: string
+  phase: 'pending' | 'running' | 'completed' | 'failed'
+  currentChunk: number
+  totalChunks: number
+  error: string | null
+}
+
+export interface NoteEmbeddingStatus {
+  noteId: number
+  noteTitle: string | null
+  running: boolean
+  phase: 'idle' | 'preparing' | 'embedding' | 'completed' | 'failed'
+  currentChunk: number
+  totalChunks: number
+  startedAt: string | null
+  finishedAt: string | null
+  lastError: string | null
+}
+
+let rebuildStatus: KnowledgeBaseRebuildStatus = {
+  running: false,
+  phase: 'idle',
+  totalNotes: 0,
+  completedNotes: 0,
+  failedNotes: 0,
+  currentNoteId: null,
+  currentNoteTitle: null,
+  currentChunk: 0,
+  currentChunkTotal: 0,
+  startedAt: null,
+  finishedAt: null,
+  lastError: null,
+  noteStatuses: []
+}
+
+let rebuildPromise: Promise<{ total: number; succeeded: number; failed: number }> | null = null
+const noteEmbeddingStatuses = new Map<number, NoteEmbeddingStatus>()
+const noteEmbeddingPromises = new Map<number, Promise<void>>()
+
+function updateRebuildStatus(patch: Partial<KnowledgeBaseRebuildStatus>): void {
+  rebuildStatus = { ...rebuildStatus, ...patch }
+}
+
+function resetRebuildStatus(): void {
+  rebuildStatus = {
+    running: true,
+    phase: 'preparing',
+    totalNotes: 0,
+    completedNotes: 0,
+    failedNotes: 0,
+    currentNoteId: null,
+    currentNoteTitle: null,
+    currentChunk: 0,
+    currentChunkTotal: 0,
+    startedAt: new Date().toISOString(),
+    finishedAt: null,
+    lastError: null,
+    noteStatuses: []
+  }
+}
+
+function createDefaultNoteEmbeddingStatus(noteId: number): NoteEmbeddingStatus {
+  return {
+    noteId,
+    noteTitle: null,
+    running: false,
+    phase: 'idle',
+    currentChunk: 0,
+    totalChunks: 0,
+    startedAt: null,
+    finishedAt: null,
+    lastError: null
+  }
+}
+
+function updateNoteEmbeddingStatus(noteId: number, patch: Partial<NoteEmbeddingStatus>): void {
+  const current = noteEmbeddingStatuses.get(noteId) || createDefaultNoteEmbeddingStatus(noteId)
+  noteEmbeddingStatuses.set(noteId, { ...current, ...patch })
+}
 
 function splitIntoChunks(text: string, chunkSize: number, overlap: number): string[] {
   if (text.length === 0) return []
@@ -35,44 +134,154 @@ function splitIntoChunks(text: string, chunkSize: number, overlap: number): stri
   return chunks.filter(c => c.length > 0)
 }
 
-async function triggerEmbedding(noteId: number): Promise<void> {
-  // Lazy import to avoid circular dependency
-  const { getNoteById } = await import('./notes.service.js')
-  const note = getNoteById(noteId)
-  if (!note) return
+async function embedChunksSerially(
+  chunks: string[],
+  provider: string,
+  model: string,
+  onProgress?: (completed: number, total: number) => void
+): Promise<number[][]> {
+  const vectors: number[][] = []
 
-  const kbEnabled = getSettingValue<boolean>('kb_enabled', false)
-  if (!kbEnabled) return
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i]
+    const vector = await embedText(chunk, provider, model)
+    vectors.push(vector)
+    onProgress?.(i + 1, chunks.length)
 
-  const config = getKnowledgeBaseConfig()
-  if (!config.qdrant_url || !config.qdrant_collection) return
-
-  if (!note.is_knowledge_base) {
-    // Delete from Qdrant
-    const { deleteChunksByNoteId } = await import('./vector/vector.service.js')
-    await deleteChunksByNoteId(noteId)
-    return
+    if ((i + 1) % 10 === 0 || i === chunks.length - 1) {
+      console.log(`[knowledge-base] embedded ${i + 1}/${chunks.length} chunks`)
+    }
   }
 
-  // Build full text: title + content_text
-  const fullText = `${note.title}\n${note.content_text || ''}`.trim()
-  if (!fullText) return
+  return vectors
+}
 
-  const chunks = splitIntoChunks(fullText, config.kb_chunk_size, config.kb_chunk_overlap)
-  if (chunks.length === 0) return
+async function triggerEmbedding(
+  noteId: number,
+  options?: { onProgress?: (completed: number, total: number) => void }
+): Promise<void> {
+  const existingPromise = noteEmbeddingPromises.get(noteId)
+  if (existingPromise) return existingPromise
 
-  // Embed all chunks
-  const { embedText } = await import('./ai/embedding-client.js')
-  const vectors = await Promise.all(chunks.map(chunk => embedText(chunk, config.embedding_provider, config.embedding_model)))
+  updateNoteEmbeddingStatus(noteId, {
+    running: true,
+    phase: 'preparing',
+    currentChunk: 0,
+    totalChunks: 0,
+    startedAt: new Date().toISOString(),
+    finishedAt: null,
+    lastError: null
+  })
 
-  const { upsertChunks } = await import('./vector/vector.service.js')
-  // Use numeric ID: noteId * 10000 + i to match existing data pattern
-  await upsertChunks(chunks.map((content, i) => ({
-    id: String(noteId * 10000 + i),
-    vector: vectors[i],
-    content,
-    metadata: { note_id: noteId, chunk_index: i, title: note.title }
-  })))
+  const job = (async () => {
+  // Lazy import to avoid circular dependency
+    const { getNoteById } = await import('./notes.service.js')
+    const note = getNoteById(noteId)
+    if (!note) {
+      throw new Error(`Note ${noteId} not found`)
+    }
+
+    updateNoteEmbeddingStatus(noteId, { noteTitle: note.title })
+
+    const config = getKnowledgeBaseConfig()
+    if (!config.qdrant_url || !config.qdrant_collection) {
+      throw new Error('Knowledge base is not configured')
+    }
+
+    if (!note.is_knowledge_base) {
+      const { deleteChunksByNoteId } = await import('./vector/vector.service.js')
+      await deleteChunksByNoteId(noteId)
+      updateNoteEmbeddingStatus(noteId, {
+        noteTitle: note.title,
+        running: false,
+        phase: 'completed',
+        finishedAt: new Date().toISOString(),
+        currentChunk: 0,
+        totalChunks: 0
+      })
+      return
+    }
+
+    const fullText = `${note.title}\n${extractFullPlainText(note.content, note.content_format)}`.trim()
+    if (!fullText) {
+      updateNoteEmbeddingStatus(noteId, {
+        noteTitle: note.title,
+        running: false,
+        phase: 'completed',
+        finishedAt: new Date().toISOString(),
+        currentChunk: 0,
+        totalChunks: 0
+      })
+      return
+    }
+
+    const chunks = splitIntoChunks(fullText, config.kb_chunk_size, config.kb_chunk_overlap)
+    if (chunks.length === 0) {
+      updateNoteEmbeddingStatus(noteId, {
+        noteTitle: note.title,
+        running: false,
+        phase: 'completed',
+        finishedAt: new Date().toISOString(),
+        currentChunk: 0,
+        totalChunks: 0
+      })
+      return
+    }
+
+    updateNoteEmbeddingStatus(noteId, {
+      noteTitle: note.title,
+      phase: 'embedding',
+      totalChunks: chunks.length
+    })
+
+    const vectors = await embedChunksSerially(
+      chunks,
+      config.embedding_provider,
+      config.embedding_model,
+      (completed, total) => {
+        updateNoteEmbeddingStatus(noteId, {
+          phase: 'embedding',
+          currentChunk: completed,
+          totalChunks: total
+        })
+        options?.onProgress?.(completed, total)
+      }
+    )
+
+    const { upsertChunks } = await import('./vector/vector.service.js')
+    const result = await upsertChunks(chunks.map((content, i) => ({
+      id: String(noteId * 10000 + i),
+      vector: vectors[i],
+      content,
+      metadata: { note_id: noteId, chunk_index: i, title: note.title }
+    })))
+
+    if (!result.success) {
+      throw new Error(result.error || `Failed to upsert ${chunks.length} chunks`)
+    }
+
+    updateNoteEmbeddingStatus(noteId, {
+      noteTitle: note.title,
+      running: false,
+      phase: 'completed',
+      currentChunk: chunks.length,
+      totalChunks: chunks.length,
+      finishedAt: new Date().toISOString()
+    })
+  })().catch((error) => {
+    updateNoteEmbeddingStatus(noteId, {
+      running: false,
+      phase: 'failed',
+      finishedAt: new Date().toISOString(),
+      lastError: (error as Error).message
+    })
+    throw error
+  }).finally(() => {
+    noteEmbeddingPromises.delete(noteId)
+  })
+
+  noteEmbeddingPromises.set(noteId, job)
+  return job
 }
 
 function getKnowledgeBaseConfig(): {
@@ -152,35 +361,135 @@ async function searchKnowledgeBase(
 }
 
 async function rebuildAllIndex(): Promise<{ total: number; succeeded: number; failed: number }> {
-  // Lazy import to avoid circular dependency
-  const { getNotes } = await import('./notes.service.js')
-  let page = 1
-  const pageSize = 50
-  let total = 0
-  let succeeded = 0
-  let failed = 0
+  if (rebuildPromise) return rebuildPromise
 
-  while (true) {
-    const { items } = getNotes({ is_archived: false, page, pageSize })
-    if (items.length === 0) break
+  resetRebuildStatus()
 
-    const kbNotes = items.filter((n: Note) => n.is_knowledge_base)
-    total += kbNotes.length
+  rebuildPromise = (async () => {
+    // Lazy import to avoid circular dependency
+    const { getNotes } = await import('./notes.service.js')
+
+    let page = 1
+    const pageSize = 50
+    const kbNotes: Note[] = []
+
+    while (true) {
+      const { items } = getNotes({ is_archived: false, page, pageSize })
+      if (items.length === 0) break
+      kbNotes.push(...items.filter((n: Note) => n.is_knowledge_base))
+      page++
+    }
+
+    updateRebuildStatus({
+      phase: 'embedding',
+      totalNotes: kbNotes.length,
+      noteStatuses: kbNotes.map((note) => ({
+        noteId: note.id,
+        noteTitle: note.title,
+        phase: 'pending',
+        currentChunk: 0,
+        totalChunks: 0,
+        error: null
+      }))
+    })
+
+    let succeeded = 0
+    let failed = 0
 
     for (const note of kbNotes) {
+      updateRebuildStatus({
+        currentNoteId: note.id,
+        currentNoteTitle: note.title,
+        currentChunk: 0,
+        currentChunkTotal: 0,
+        noteStatuses: rebuildStatus.noteStatuses.map((item) =>
+          item.noteId === note.id
+            ? { ...item, phase: 'running', currentChunk: 0, totalChunks: 0, error: null }
+            : item
+        )
+      })
+
       try {
-        await triggerEmbedding(note.id)
+        await triggerEmbedding(note.id, {
+          onProgress: (completed, total) => {
+            updateRebuildStatus({
+              currentChunk: completed,
+              currentChunkTotal: total,
+              noteStatuses: rebuildStatus.noteStatuses.map((item) =>
+                item.noteId === note.id
+                  ? { ...item, phase: 'running', currentChunk: completed, totalChunks: total }
+                  : item
+              )
+            })
+          }
+        })
         succeeded++
+        updateRebuildStatus({
+          completedNotes: succeeded,
+          noteStatuses: rebuildStatus.noteStatuses.map((item) =>
+            item.noteId === note.id
+              ? {
+                  ...item,
+                  phase: 'completed',
+                  currentChunk: item.totalChunks > 0 ? item.totalChunks : item.currentChunk,
+                  totalChunks: item.totalChunks
+                }
+              : item
+          )
+        })
       } catch (e) {
-        console.error(`[kb] Failed to index note ${note.id}:`, e)
         failed++
+        console.error(`[kb] Failed to index note ${note.id}:`, e)
+        updateRebuildStatus({
+          failedNotes: failed,
+          lastError: (e as Error).message,
+          noteStatuses: rebuildStatus.noteStatuses.map((item) =>
+            item.noteId === note.id
+              ? { ...item, phase: 'failed', error: (e as Error).message }
+              : item
+          )
+        })
       }
     }
 
-    page++
-  }
+    updateRebuildStatus({
+      running: false,
+      phase: failed > 0 ? 'failed' : 'completed',
+      completedNotes: succeeded,
+      failedNotes: failed,
+      currentNoteId: null,
+      currentNoteTitle: null,
+      currentChunk: 0,
+      currentChunkTotal: 0,
+      finishedAt: new Date().toISOString()
+    })
 
-  return { total, succeeded, failed }
+    return { total: kbNotes.length, succeeded, failed }
+  })().catch((error) => {
+    updateRebuildStatus({
+      running: false,
+      phase: 'failed',
+      finishedAt: new Date().toISOString(),
+      lastError: (error as Error).message
+    })
+    throw error
+  }).finally(() => {
+    rebuildPromise = null
+  })
+
+  return rebuildPromise
 }
 
-export { triggerEmbedding, searchKnowledgeBase, getKnowledgeBaseConfig, rebuildAllIndex }
+function getRebuildStatus(): KnowledgeBaseRebuildStatus {
+  return {
+    ...rebuildStatus,
+    noteStatuses: rebuildStatus.noteStatuses.map((item) => ({ ...item }))
+  }
+}
+
+function getNoteEmbeddingStatus(noteId: number): NoteEmbeddingStatus {
+  const status = noteEmbeddingStatuses.get(noteId) || createDefaultNoteEmbeddingStatus(noteId)
+  return { ...status }
+}
+
+export { triggerEmbedding, searchKnowledgeBase, getKnowledgeBaseConfig, rebuildAllIndex, getRebuildStatus, getNoteEmbeddingStatus }

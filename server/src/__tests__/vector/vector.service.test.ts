@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { ensureCollection, upsertChunks, searchChunks, deleteChunks } from '../../services/vector/vector.service.js'
+import { ensureCollection, upsertChunks, searchChunks, deleteChunks, deleteChunksByNoteId } from '../../services/vector/vector.service.js'
 
 // Mock fetch
 const mockFetch = vi.fn()
@@ -121,7 +121,43 @@ describe('vector.service', () => {
       const call = mockFetch.mock.calls[0]
       expect(call[0]).toBe('http://localhost:6333/collections/notes_knowledge_base/points/delete')
       const body = JSON.parse(call[1].body as string)
-      expect(body.points).toEqual({ ids: ['chunk-1', 'chunk-2'] })
+      expect(body.points).toEqual(['chunk-1', 'chunk-2'])
+    })
+  })
+
+  describe('deleteChunksByNoteId', () => {
+    it('should ignore missing collection when deleting note vectors', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        text: () => Promise.resolve('Collection not found'),
+      })
+
+      await expect(deleteChunksByNoteId(42)).resolves.toBeUndefined()
+      expect(mockFetch).toHaveBeenCalledTimes(1)
+      expect(mockFetch.mock.calls[0][0]).toBe('http://localhost:6333/collections/notes_knowledge_base/points/scroll')
+    })
+
+    it('should support scroll responses nested under result', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          result: {
+            points: [{ id: 101 }, { id: 102 }]
+          }
+        }),
+      })
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ result: true }),
+      })
+
+      await deleteChunksByNoteId(42)
+
+      expect(mockFetch).toHaveBeenCalledTimes(2)
+      expect(mockFetch.mock.calls[1][0]).toBe('http://localhost:6333/collections/notes_knowledge_base/points/delete')
+      const body = JSON.parse(mockFetch.mock.calls[1][1].body as string)
+      expect(body.points).toEqual([101, 102])
     })
   })
 })

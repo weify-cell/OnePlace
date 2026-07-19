@@ -3,7 +3,7 @@ import type { Model, Message } from '@earendil-works/pi-ai'
 import { listTools } from '../tool-config.service.js'
 import { getEnabledSkills } from '../skill-config.service.js'
 import { getBuiltinToolMap } from './builtin-tools.js'
-const { Agent } = await import('@earendil-works/pi-agent-core') as typeof import('@earendil-works/pi-agent-core')
+import { Agent } from '@earendil-works/pi-agent-core'
 
 /**
  * AgentPool 管理 Agent 实例生命周期。
@@ -18,7 +18,7 @@ export class AgentPool {
     private readonly model: Model<'openai-completions'>,
     private readonly getApiKey: (provider: string) => string | undefined,
     private readonly defaultSystemPrompt: string,
-  ) {}
+  ) { }
 
   /**
    * 获取或创建 Agent。
@@ -89,11 +89,8 @@ export function loadToolsFromDb(): AgentTool[] {
 /** 加载启用的 skills 和纯文本工具，格式化为 prompt 追加文本 */
 export async function loadSkillPrompt(): Promise<string> {
   const skills = await getEnabledSkills()
-  const dbTools = listTools().filter(t => t.enabled)
-  const builtinMap = getBuiltinToolMap()
-  const textOnlyTools = dbTools.filter(t => !builtinMap.has(t.name))
 
-  console.log(`[agent-pool] loadSkillPrompt: ${skills.length} skills, ${textOnlyTools.length} text-only tools`)
+  console.log(`[agent-pool] loadSkillPrompt: ${skills.length} skills`)
   for (const skill of skills) {
     console.log(`[agent-pool]   skill: ${skill.name} content=${skill.content.slice(0, 50)}`)
   }
@@ -101,10 +98,6 @@ export async function loadSkillPrompt(): Promise<string> {
   const parts: string[] = []
   for (const skill of skills) {
     parts.push(`\n## Skill: ${skill.name}\n${skill.content}`)
-  }
-  for (const tool of textOnlyTools) {
-    const text = tool.instruction || tool.description
-    if (text) parts.push(`\n## Tool: ${tool.name}\n${text}`)
   }
   const result = parts.join('\n')
   console.log(`[agent-pool] loadSkillPrompt result: ${result.length} chars`)

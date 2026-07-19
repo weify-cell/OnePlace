@@ -30,6 +30,30 @@ export function getNote(req: Request, res: Response): void {
   res.json(note)
 }
 
+export function fuzzySearchNotes(req: Request, res: Response): void {
+  const { query, note_id, index } = req.query
+  const normalizedQuery = String(query || '')
+
+  const parsedNoteId = note_id !== undefined && note_id !== '' ? Number(note_id) : undefined
+  const parsedIndex = index !== undefined && index !== '' ? Number(index) : 0
+
+  if (parsedNoteId !== undefined && Number.isNaN(parsedNoteId)) {
+    res.status(400).json({ error: 'note_id must be a valid number' })
+    return
+  }
+
+  if (Number.isNaN(parsedIndex)) {
+    res.status(400).json({ error: 'index must be a valid number' })
+    return
+  }
+
+  try {
+    res.json(notesService.fuzzySearchNotes(normalizedQuery, parsedNoteId, parsedIndex))
+  } catch (error) {
+    res.status(400).json({ error: (error as Error).message })
+  }
+}
+
 export function createNote(req: Request, res: Response): void {
   const { folder_id } = req.body
   const note = notesService.createNote({ folder_id: folder_id ?? null })

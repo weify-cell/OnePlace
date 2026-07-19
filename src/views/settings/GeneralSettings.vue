@@ -25,6 +25,10 @@ onMounted(async () => {
       baseURL: settingsStore.aiProviders[p.name]?.baseURL || ''
     }
   }
+  const initialModels = settingsStore.availableProviders.find(p => p.name === defaultProvider.value)?.models || []
+  if (!initialModels.some(model => model.id === defaultModel.value)) {
+    defaultModel.value = initialModels[0]?.id || ''
+  }
 })
 
 const themeOptions = [
@@ -37,6 +41,14 @@ const currentProviderModels = computed(() => {
   const p = settingsStore.availableProviders.find(p => p.name === defaultProvider.value)
   return p?.models.map(m => ({ label: m.name, value: m.id })) || []
 })
+
+function handleDefaultProviderChange(value: string) {
+  defaultProvider.value = value
+  const nextModels = settingsStore.availableProviders.find(p => p.name === value)?.models || []
+  defaultModel.value = nextModels.some(model => model.id === defaultModel.value)
+    ? defaultModel.value
+    : (nextModels[0]?.id || '')
+}
 
 async function saveAll() {
   saving.value = true
@@ -109,7 +121,7 @@ async function saveAll() {
                 v-model:value="defaultProvider"
                 :options="settingsStore.availableProviders.map(p => ({ label: p.displayName, value: p.name }))"
                 placeholder="选择提供商"
-                @update:value="defaultModel = ''"
+                @update:value="handleDefaultProviderChange"
               />
             </div>
             <div class="settings-field">

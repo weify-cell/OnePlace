@@ -53,6 +53,11 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   return res.json() as Promise<T>
 }
 
+function isMissingCollectionError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  return error.message.includes('failed: 404')
+}
+
 export async function ensureCollection(): Promise<void> {
   const collection = getCollectionName()
   const collections = await request<{ collections: { name: string }[] }>('GET', '/collections')
@@ -128,7 +133,7 @@ export async function deleteChunks(ids: string[]): Promise<void> {
   if (ids.length === 0) return
   const collection = getCollectionName()
   const normalized = ids.map(id => /^\d+$/.test(id) ? Number(id) : id)
-  await request('POST', `/collections/${collection}/points/delete`, { points: { ids: normalized } })
+  await request('POST', `/collections/${collection}/points/delete`, { points: normalized })
 }
 
 export async function deleteChunksByNoteId(noteId: number): Promise<void> {
@@ -136,16 +141,32 @@ export async function deleteChunksByNoteId(noteId: number): Promise<void> {
   // Scroll to find all points with matching note_id in payload
   let offset: string | undefined
   const idsToDelete: string[] = []
-  while (true) {
-    const res = await request<{ points: Array<{ id: number }>; next_page_offset?: string }>('POST', `/collections/${collection}/points/scroll`, {
-      filter: { must: [{ key: 'note_id', match: { value: noteId } }] },
-      limit: 100,
-      offset,
-      with_payload: false,
-    })
-    idsToDelete.push(...res.points.map(p => String(p.id)))
-    if (!res.next_page_offset) break
-    offset = res.next_page_offset
+  try {
+    while (true) {
+      const res = await request<{
+        points?: Array<{ id: number | string }>
+        next_page_offset?: string
+        result?: {
+          points?: Array<{ id: number | string }>
+          next_page_offset?: string
+        }
+      }>('POST', `/collections/${collection}/points/scroll`, {
+        filter: { must: [{ key: 'note_id', match: { value: noteId } }] },
+        limit: 100,
+        offset,
+        with_payload: false,
+      })
+      const points = res.points || res.result?.points || []
+      const nextPageOffset = res.next_page_offset || res.result?.next_page_offset
+      idsToDelete.push(...points.map(p => String(p.id)))
+      if (!nextPageOffset) break
+      offset = nextPageOffset
+    }
+  } catch (error) {
+    if (isMissingCollectionError(error)) {
+      return
+    }
+    throw error
   }
   if (idsToDelete.length > 0) {
     await deleteChunks(idsToDelete)

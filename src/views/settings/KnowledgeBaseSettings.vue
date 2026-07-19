@@ -1,14 +1,17 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useSettingsStore } from '@/stores/settings.store'
 import { useKnowledgeBaseStore } from '@/stores/knowledge_base.store'
+import type { KnowledgeBaseRebuildStatus, KnowledgeBaseRebuildNoteStatus } from '@/stores/knowledge_base.store'
 import SettingsLayout from './SettingsLayout.vue'
 
 const settingsStore = useSettingsStore()
 const kbStore = useKnowledgeBaseStore()
 const message = useMessage()
 const saving = ref(false)
-const rebuilding = ref(false)
+const startingRebuild = ref(false)
+let rebuildPollTimer: ReturnType<typeof setInterval> | null = null
+let notifyRebuildCompletion = false
 
 const kbConfig = ref({
   qdrant_url: 'http://localhost:6333',
@@ -31,6 +34,7 @@ const kbConfig = ref({
 onMounted(async () => {
   await settingsStore.loadSettings()
   await kbStore.loadConfig()
+  await kbStore.fetchRebuildStatus()
   kbConfig.value = {
     qdrant_url: kbStore.config.qdrant_url || 'http://localhost:6333',
     qdrant_collection: kbStore.config.qdrant_collection || 'notes_knowledge_base',
@@ -47,6 +51,9 @@ onMounted(async () => {
     kb_top_k: kbStore.config.kb_top_k || 20,
     kb_rerank_recall_size: kbStore.config.kb_rerank_recall_size || 5,
     kb_score_threshold: kbStore.config.kb_score_threshold ?? 0
+  }
+  if (kbStore.rebuildStatus.running) {
+    startRebuildStatusPolling()
   }
 })
 
@@ -85,6 +92,89 @@ const rerankModelOptions = computed(() => {
   }
   return models[kbConfig.value.rerank_provider] || models.qwen
 })
+
+const rebuildStatus = computed(() => kbStore.rebuildStatus)
+const isRebuildRunning = computed(() => startingRebuild.value || kbStore.isRebuilding || rebuildStatus.value.running)
+const showRebuildStatus = computed(() => rebuildStatus.value.phase !== 'idle' || !!rebuildStatus.value.startedAt)
+const rebuildPhaseText = computed(() => {
+  const labels: Record<KnowledgeBaseRebuildStatus['phase'], string> = {
+    idle: '未开始',
+    preparing: '准备中',
+    embedding: '索引中',
+    completed: '已完成',
+    failed: '失败'
+  }
+  return labels[rebuildStatus.value.phase]
+})
+const rebuildProgressStatus = computed(() => {
+  if (rebuildStatus.value.phase === 'failed') return 'error'
+  if (rebuildStatus.value.phase === 'completed') return 'success'
+  return undefined
+})
+const rebuildProgress = computed(() => {
+  const status = rebuildStatus.value
+  if (status.phase === 'completed') return 100
+  if (status.totalNotes <= 0) return 0
+
+  const activeNoteProgress = status.running && status.currentNoteId !== null && status.currentChunkTotal > 0
+    ? Math.min(status.currentChunk / status.currentChunkTotal, 0.99)
+    : 0
+  const processedNotes = Math.min(status.completedNotes + activeNoteProgress, status.totalNotes)
+  return Math.round((processedNotes / status.totalNotes) * 100)
+})
+const rebuildChunkText = computed(() => {
+  const status = rebuildStatus.value
+  return status.currentChunkTotal > 0 ? `${status.currentChunk}/${status.currentChunkTotal}` : '-'
+})
+const rebuildDetailText = computed(() => {
+  const status = rebuildStatus.value
+
+  if (status.running && status.phase === 'preparing') return '正在扫描已加入知识库的笔记'
+  if (status.running && status.currentNoteTitle) return `正在索引：${status.currentNoteTitle}`
+  if (status.running) return '正在索引知识库笔记'
+  if (status.phase === 'completed' && status.totalNotes === 0) return '没有找到已加入知识库的笔记'
+  if (status.phase === 'completed') return `已完成 ${status.completedNotes} 条笔记`
+  if (status.phase === 'failed') return `索引结束，成功 ${status.completedNotes} 条，失败 ${status.failedNotes} 条`
+  return ''
+})
+const rebuildTimingText = computed(() => {
+  const status = rebuildStatus.value
+  if (status.running && status.startedAt) return `开始于 ${formatDateTime(status.startedAt)}`
+  if (status.finishedAt) return `结束于 ${formatDateTime(status.finishedAt)}`
+  return ''
+})
+
+const rebuildNotes = computed(() => rebuildStatus.value.noteStatuses)
+
+function getNoteProgress(note: KnowledgeBaseRebuildNoteStatus): number {
+  if (note.phase === 'completed') return 100
+  if (note.totalChunks <= 0) return 0
+  return Math.max(0, Math.min(100, Math.round((note.currentChunk / note.totalChunks) * 100)))
+}
+
+function getNoteProgressStatus(note: KnowledgeBaseRebuildNoteStatus): 'success' | 'error' | undefined {
+  if (note.phase === 'completed') return 'success'
+  if (note.phase === 'failed') return 'error'
+  return undefined
+}
+
+function getNotePhaseText(note: KnowledgeBaseRebuildNoteStatus): string {
+  const labels: Record<KnowledgeBaseRebuildNoteStatus['phase'], string> = {
+    pending: '等待中',
+    running: '建立索引中',
+    completed: '已完成',
+    failed: '失败'
+  }
+  return labels[note.phase]
+}
+
+function getNoteChunkText(note: KnowledgeBaseRebuildNoteStatus): string {
+  return note.totalChunks > 0 ? `${note.currentChunk}/${note.totalChunks}` : '-'
+}
+
+function formatDateTime(value: string): string {
+  return new Date(value).toLocaleString('zh-CN', { hour12: false })
+}
 
 async function saveAll() {
   saving.value = true
@@ -126,14 +216,61 @@ async function saveAll() {
 }
 
 async function rebuildIndex() {
-  rebuilding.value = true
+  startingRebuild.value = true
   try {
-    await kbStore.rebuildIndex()
-    message.success('索引重建已启动')
+    const result = await kbStore.rebuildIndex()
+    notifyRebuildCompletion = true
+    if (kbStore.rebuildStatus.running) {
+      startRebuildStatusPolling()
+      message.success(result?.message === 'Rebuild already running' ? '索引重建正在运行' : '索引重建已启动')
+    } else {
+      handleTerminalRebuildStatus(kbStore.rebuildStatus)
+    }
+  } catch (err: any) {
+    message.error('索引重建启动失败: ' + (err.message || '未知错误'))
   } finally {
-    rebuilding.value = false
+    startingRebuild.value = false
   }
 }
+
+function startRebuildStatusPolling() {
+  if (rebuildPollTimer) return
+  rebuildPollTimer = setInterval(async () => {
+    try {
+      const status = await kbStore.fetchRebuildStatus()
+      if (!status.running) {
+        stopRebuildStatusPolling()
+        handleTerminalRebuildStatus(status)
+      }
+    } catch (err: any) {
+      stopRebuildStatusPolling()
+      if (notifyRebuildCompletion) {
+        message.error('获取索引进度失败: ' + (err.message || '未知错误'))
+        notifyRebuildCompletion = false
+      }
+    }
+  }, 1500)
+}
+
+function stopRebuildStatusPolling() {
+  if (!rebuildPollTimer) return
+  clearInterval(rebuildPollTimer)
+  rebuildPollTimer = null
+}
+
+function handleTerminalRebuildStatus(status: KnowledgeBaseRebuildStatus) {
+  if (!notifyRebuildCompletion) return
+  if (status.phase === 'completed') {
+    message.success('索引重建已完成')
+  } else if (status.phase === 'failed') {
+    message.error(status.lastError ? `索引重建失败: ${status.lastError}` : '索引重建失败')
+  }
+  notifyRebuildCompletion = false
+}
+
+onUnmounted(() => {
+  stopRebuildStatusPolling()
+})
 
 // 引用 settings 中的 providers（通用配置中的 AI providers）
 const providers = ref<Record<string, { apiKey: string; baseURL: string }>>({})
@@ -224,9 +361,85 @@ const providers = ref<Record<string, { apiKey: string; baseURL: string }>>({})
           </div>
 
           <div class="settings-field">
-            <n-button @click="rebuildIndex" :loading="rebuilding">
-              重建索引
-            </n-button>
+            <div class="kb-rebuild-actions">
+              <n-button @click="rebuildIndex" :loading="isRebuildRunning">
+                重建索引
+              </n-button>
+              <span v-if="showRebuildStatus" class="kb-rebuild-actions__status">{{ rebuildPhaseText }}</span>
+            </div>
+          </div>
+
+          <div v-if="showRebuildStatus" class="kb-rebuild-status">
+            <div class="kb-rebuild-status__header">
+              <div class="kb-rebuild-status__title">
+                <span :class="['status-dot', rebuildStatus.running ? 'status-dot--waiting' : rebuildStatus.phase === 'failed' ? 'status-dot--error' : 'status-dot--success']" />
+                <span>{{ rebuildPhaseText }}</span>
+              </div>
+              <span class="kb-rebuild-status__percent">{{ rebuildProgress }}%</span>
+            </div>
+            <n-progress
+              type="line"
+              :percentage="rebuildProgress"
+              :status="rebuildProgressStatus"
+              :show-indicator="false"
+            />
+            <div class="kb-rebuild-status__meta">
+              <div class="kb-rebuild-status__meta-item">
+                <span>笔记</span>
+                <strong>{{ rebuildStatus.completedNotes }}/{{ rebuildStatus.totalNotes }}</strong>
+              </div>
+              <div class="kb-rebuild-status__meta-item">
+                <span>失败</span>
+                <strong>{{ rebuildStatus.failedNotes }}</strong>
+              </div>
+              <div class="kb-rebuild-status__meta-item">
+                <span>Chunk</span>
+                <strong>{{ rebuildChunkText }}</strong>
+              </div>
+            </div>
+            <div v-if="rebuildDetailText" class="kb-rebuild-status__detail">{{ rebuildDetailText }}</div>
+            <div v-if="rebuildStatus.lastError" class="status-error">{{ rebuildStatus.lastError }}</div>
+            <div v-if="rebuildTimingText" class="settings-field__hint">{{ rebuildTimingText }}</div>
+            <div v-if="rebuildNotes.length > 0" class="kb-note-progress-list">
+              <div
+                v-for="note in rebuildNotes"
+                :key="note.noteId"
+                class="kb-note-progress-item"
+              >
+                <div class="kb-note-progress-item__header">
+                  <div class="kb-note-progress-item__title">
+                    <span
+                      :class="[
+                        'status-dot',
+                        note.phase === 'running'
+                          ? 'status-dot--waiting'
+                          : note.phase === 'failed'
+                            ? 'status-dot--error'
+                            : note.phase === 'completed'
+                              ? 'status-dot--success'
+                              : 'status-dot--stopped'
+                      ]"
+                    />
+                    <span class="kb-note-progress-item__name">{{ note.noteTitle }}</span>
+                  </div>
+                  <div class="kb-note-progress-item__summary">
+                    <span>{{ getNotePhaseText(note) }}</span>
+                    <span>{{ getNoteProgress(note) }}%</span>
+                  </div>
+                </div>
+                <n-progress
+                  type="line"
+                  :percentage="getNoteProgress(note)"
+                  :status="getNoteProgressStatus(note)"
+                  :show-indicator="false"
+                />
+                <div class="kb-note-progress-item__meta">
+                  <span>Chunk {{ getNoteChunkText(note) }}</span>
+                  <span>ID {{ note.noteId }}</span>
+                </div>
+                <div v-if="note.error" class="status-error">{{ note.error }}</div>
+              </div>
+            </div>
           </div>
         </div>
       </div>

@@ -1,9 +1,11 @@
 import { defineStore } from 'pinia'
 import { notesApi } from '@/api/notes.api'
 import { foldersApi } from '@/api/folders.api'
+import { useKnowledgeBaseStore } from '@/stores/knowledge_base.store'
 import type { Note, Folder } from '@/types'
 
 export const useNoteStore = defineStore('notes', () => {
+  const kbStore = useKnowledgeBaseStore()
   const items = ref<Note[]>([])
   const total = ref(0)
   const currentNote = ref<Note | null>(null)
@@ -56,6 +58,17 @@ export const useNoteStore = defineStore('notes', () => {
       if (currentNote.value?.id === id) currentNote.value = res.data
       const idx = items.value.findIndex(n => n.id === id)
       if (idx !== -1) items.value[idx] = { ...items.value[idx], ...res.data }
+
+      const shouldRefreshEmbedding =
+        'title' in data ||
+        'content' in data ||
+        'content_format' in data ||
+        'is_knowledge_base' in data
+
+      if (shouldRefreshEmbedding && (res.data.is_knowledge_base || 'is_knowledge_base' in data)) {
+        await kbStore.enqueueNoteEmbedding(id)
+      }
+
       return res.data
     } finally {
       saving.value = false

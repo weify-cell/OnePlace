@@ -4,12 +4,12 @@ import type { TodoTabName } from '@/stores/todo.store'
 
 const todoStore = useTodoStore()
 
-const tabs: { name: TodoTabName; label: string; icon: string }[] = [
-  { name: 'todo', label: '待办', icon: '📋' },
-  { name: 'in_progress', label: '进行中', icon: '🔄' },
+const tabs: Array<{ name: TodoTabName; label: string; icon: string }> = [
+  { name: 'todo', label: '待办', icon: '📝' },
+  { name: 'in_progress', label: '进行中', icon: '⏳' },
   { name: 'done', label: '已完成', icon: '✅' },
   { name: 'cancelled', label: '已取消', icon: '🚫' },
-  { name: 'all', label: '全部', icon: '📑' }
+  { name: 'all', label: '全部', icon: '📚' }
 ]
 </script>
 

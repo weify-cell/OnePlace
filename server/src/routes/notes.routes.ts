@@ -4,6 +4,7 @@ import * as notesController from '../controllers/notes.controller.js'
 export const notesRouter = Router()
 
 notesRouter.get('/tags', notesController.getNoteTags)
+notesRouter.get('/fuzzy-search', notesController.fuzzySearchNotes)
 notesRouter.get('/', notesController.getNotes)
 notesRouter.post('/', notesController.createNote)
 notesRouter.get('/:id', notesController.getNote)

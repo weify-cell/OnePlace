@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { useTodoStore } from '@/stores/todo.store'
 import type { Todo } from '@/types'
-import { TODO_PRIORITY_LABELS, TODO_PRIORITY_COLORS, TODO_TYPE_LABELS, TODO_TYPE_ICONS, TODO_STATUS_LABELS } from '@/types'
+import {
+  TODO_PRIORITY_LABELS,
+  TODO_STATUS_LABELS,
+  TODO_TASK_KIND_LABELS,
+  TODO_TYPE_ICONS,
+  TODO_TYPE_LABELS
+} from '@/types'
 import TodoEditModal from './TodoEditModal.vue'
 
 const props = defineProps<{ todo: Todo }>()
@@ -13,10 +19,13 @@ const showEditModal = ref(false)
 
 const dueDateStatus = computed(() => {
   if (!props.todo.due_date) return null
+
   const now = new Date()
   now.setHours(0, 0, 0, 0)
+
   const due = new Date(props.todo.due_date)
   due.setHours(0, 0, 0, 0)
+
   const diffDays = (due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
 
   if (diffDays < 0) return { label: '已逾期', colorClass: 'due-date--overdue' }
@@ -24,6 +33,8 @@ const dueDateStatus = computed(() => {
   if (diffDays < 4) return { label: '即将到期', colorClass: 'due-date--warning' }
   return null
 })
+
+const progressPercent = computed(() => props.todo.progress_percent ?? 0)
 
 async function toggleStatus() {
   await todoStore.toggleStatus(props.todo.id)
@@ -35,9 +46,10 @@ function openEdit() {
 
 function confirmDelete() {
   dialog.warning({
-    title: '删除待办',
-    content: `确定删除「${props.todo.title}」？`,
+    title: '删除待办事项',
+    content: `确认删除“${props.todo.title}”？`,
     positiveText: '删除',
+    negativeText: '取消',
     onPositiveClick: async () => {
       await todoStore.deleteTodo(props.todo.id)
       message.success('已删除')
@@ -53,28 +65,37 @@ function confirmDelete() {
       todo.status === 'done' ? 'todo-item--done' : ''
     ]"
   >
-    <!-- Checkbox -->
     <div class="todo-item__check" @click="toggleStatus">
       <div :class="['todo-item__checkbox', todo.status === 'done' && 'todo-item__checkbox--checked']">
-        <svg v-if="todo.status === 'done'" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="todo-item__check-icon">
-          <polyline points="20 6 9 17 4 12"/>
+        <svg
+          v-if="todo.status === 'done'"
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="3"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          class="todo-item__check-icon"
+        >
+          <polyline points="20 6 9 17 4 12" />
         </svg>
       </div>
     </div>
 
-    <!-- Content -->
     <div class="todo-item__content">
       <div class="todo-item__header">
         <span :class="['todo-item__title', todo.status === 'done' && 'todo-item__title--done']">
           {{ todo.title }}
         </span>
         <div class="todo-item__tags">
-          <span v-if="todo.type" class="todo-item__type-tag">
-            {{ TODO_TYPE_ICONS[todo.type as keyof typeof TODO_TYPE_ICONS] }} {{ TODO_TYPE_LABELS[todo.type as keyof typeof TODO_TYPE_LABELS] }}
+          <span class="todo-item__kind-tag">
+            {{ TODO_TASK_KIND_LABELS[todo.task_kind] }}
           </span>
-          <span
-            :class="['todo-item__priority-tag', `todo-item__priority-tag--${todo.priority}`]"
-          >
+          <span v-if="todo.type" class="todo-item__type-tag">
+            {{ TODO_TYPE_ICONS[todo.type] }} {{ TODO_TYPE_LABELS[todo.type] }}
+          </span>
+          <span :class="['todo-item__priority-tag', `todo-item__priority-tag--${todo.priority}`]">
             {{ TODO_PRIORITY_LABELS[todo.priority] }}
           </span>
         </div>
@@ -82,22 +103,31 @@ function confirmDelete() {
 
       <p v-if="todo.description" class="todo-item__desc">{{ todo.description }}</p>
 
+      <div v-if="todo.task_kind === 'long_term'" class="todo-item__progress">
+        <div class="todo-item__progress-head">
+          <span class="todo-item__progress-label">进度</span>
+          <span class="todo-item__progress-value">{{ progressPercent }}%</span>
+        </div>
+        <n-progress type="line" :percentage="progressPercent" :show-indicator="false" :height="8" />
+        <p
+          :class="[
+            'todo-item__progress-note',
+            !todo.last_progress_note && 'todo-item__progress-note--muted'
+          ]"
+        >
+          {{ todo.last_progress_note || '暂无进展记录' }}
+        </p>
+      </div>
+
       <div class="todo-item__footer">
         <div class="todo-item__meta">
-          <span
-            v-if="dueDateStatus"
-            :class="['todo-item__due', dueDateStatus.colorClass]"
-          >
+          <span v-if="dueDateStatus" :class="['todo-item__due', dueDateStatus.colorClass]">
             📅 {{ dueDateStatus.label }}
           </span>
           <span v-else-if="todo.due_date" class="todo-item__due todo-item__due--normal">
             📅 {{ todo.due_date }}
           </span>
-          <span
-            v-for="tag in todo.tags"
-            :key="tag"
-            class="todo-item__tag"
-          >
+          <span v-for="tag in todo.tags" :key="tag" class="todo-item__tag">
             {{ tag }}
           </span>
         </div>
@@ -105,28 +135,23 @@ function confirmDelete() {
       </div>
     </div>
 
-    <!-- Actions -->
     <div class="todo-item__actions">
       <button class="todo-item__action" title="编辑" @click="openEdit">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="todo-item__action-icon">
-          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
         </svg>
       </button>
       <button class="todo-item__action todo-item__action--danger" title="删除" @click="confirmDelete">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="todo-item__action-icon">
-          <polyline points="3 6 5 6 21 6"/>
-          <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
-          <path d="M10 11v6M14 11v6"/>
+          <polyline points="3 6 5 6 21 6" />
+          <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+          <path d="M10 11v6M14 11v6" />
         </svg>
       </button>
     </div>
 
-    <!-- Edit Modal -->
-    <TodoEditModal
-      v-model:show="showEditModal"
-      :todo="todo"
-    />
+    <TodoEditModal v-model:show="showEditModal" :todo="todo" />
   </div>
 </template>
 
@@ -153,8 +178,14 @@ function confirmDelete() {
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .animate-fadeIn {
@@ -162,7 +193,6 @@ function confirmDelete() {
   opacity: 0;
 }
 
-/* Checkbox */
 .todo-item__check {
   flex-shrink: 0;
   padding-top: 2px;
@@ -197,13 +227,12 @@ function confirmDelete() {
   color: white;
 }
 
-/* Content */
 .todo-item__content {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .todo-item__header {
@@ -231,15 +260,30 @@ function confirmDelete() {
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
+  flex-wrap: wrap;
 }
 
+.todo-item__kind-tag,
 .todo-item__type-tag {
   font-size: 0.6875rem;
   padding: 2px 8px;
   border-radius: var(--radius-full);
+  font-weight: 500;
+}
+
+.todo-item__kind-tag {
+  background: rgba(16, 185, 129, 0.12);
+  color: #047857;
+}
+
+.dark .todo-item__kind-tag {
+  background: rgba(16, 185, 129, 0.18);
+  color: #6ee7b7;
+}
+
+.todo-item__type-tag {
   background: var(--bg-secondary);
   color: var(--text-secondary);
-  font-weight: 500;
 }
 
 .todo-item__priority-tag {
@@ -295,8 +339,45 @@ function confirmDelete() {
   line-height: 1.5;
   overflow: hidden;
   display: -webkit-box;
-  -webkit-line-clamp: 1;
+  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
+}
+
+.todo-item__progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+}
+
+.todo-item__progress-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.todo-item__progress-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.todo-item__progress-value {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.todo-item__progress-note {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.todo-item__progress-note--muted {
+  color: var(--text-muted);
 }
 
 .todo-item__footer {
@@ -325,11 +406,7 @@ function confirmDelete() {
   color: var(--text-muted);
 }
 
-.due-date--overdue {
-  background: rgba(220, 38, 38, 0.1);
-  color: #dc2626;
-}
-
+.due-date--overdue,
 .due-date--urgent {
   background: rgba(220, 38, 38, 0.1);
   color: #dc2626;
@@ -340,11 +417,7 @@ function confirmDelete() {
   color: var(--warning);
 }
 
-.dark .due-date--overdue {
-  background: rgba(248, 113, 113, 0.15);
-  color: #f87171;
-}
-
+.dark .due-date--overdue,
 .dark .due-date--urgent {
   background: rgba(248, 113, 113, 0.15);
   color: #f87171;
@@ -374,7 +447,6 @@ function confirmDelete() {
   flex-shrink: 0;
 }
 
-/* Actions */
 .todo-item__actions {
   display: flex;
   align-items: center;

@@ -1,5 +1,5 @@
 import { api } from './index'
-import type { Note, NotesResponse, NoteImage } from '@/types'
+import type { Note, NotesResponse, NoteImage, NoteFuzzySearchResult } from '@/types'
 
 export const notesApi = {
   getAll: (params?: Record<string, unknown>) => api.get<NotesResponse>('/notes', { params }),
@@ -10,5 +10,6 @@ export const notesApi = {
   pin: (id: number, is_pinned: boolean) => api.patch<Note>(`/notes/${id}/pin`, { is_pinned }),
   archive: (id: number, is_archived: boolean) => api.patch<Note>(`/notes/${id}/archive`, { is_archived }),
   getTags: () => api.get<string[]>('/notes/tags'),
-  getNoteImages: (id: number) => api.get<{ images: NoteImage[] }>(`/notes/${id}/images`)
+  getNoteImages: (id: number) => api.get<{ images: NoteImage[] }>(`/notes/${id}/images`),
+  fuzzySearch: (params: { query: string; note_id?: number; index?: number }) => api.get<NoteFuzzySearchResult>('/notes/fuzzy-search', { params })
 }
