@@ -501,7 +501,7 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
               readTurnStart();
               break;
             case 'turn_end':
-              readTrunEnd();
+              readTrunEnd(event);
               break;
           }
 
