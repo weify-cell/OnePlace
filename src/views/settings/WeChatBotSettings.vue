@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useSettingsStore } from '@/stores/settings.store'
 import { useILinkStore } from '@/stores/ilink.store'
@@ -49,14 +49,14 @@ onMounted(async () => {
 
   if (ilinkStore.config) {
     ilinkConfig.value = {
-      provider: ilinkStore.config.provider || 'qwen',
-      model: ilinkStore.config.model || 'qwen-turbo',
-      system_prompt: ilinkStore.config.system_prompt || DEFAULT_ILINK_SYSTEM_PROMPT,
-      note_tools_prompt: ilinkStore.config.note_tools_prompt || DEFAULT_NOTE_TOOLS_PROMPT,
-      max_tool_rounds: ilinkStore.config.max_tool_rounds || 5,
-      proactive_user_message: ilinkStore.config.proactive_user_message || DEFAULT_PROACTIVE_USER_MESSAGE,
-      proactive_system_prompt: ilinkStore.config.proactive_system_prompt || DEFAULT_PROACTIVE_SYSTEM_PROMPT,
-      learning_prompt: ilinkStore.config.learning_prompt || DEFAULT_ILINK_LEARNING_PROMPT
+      provider: ilinkStore.config.provider ?? 'qwen',
+      model: ilinkStore.config.model ?? 'qwen-turbo',
+      system_prompt: ilinkStore.config.system_prompt ?? DEFAULT_ILINK_SYSTEM_PROMPT,
+      note_tools_prompt: ilinkStore.config.note_tools_prompt ?? DEFAULT_NOTE_TOOLS_PROMPT,
+      max_tool_rounds: ilinkStore.config.max_tool_rounds ?? 5,
+      proactive_user_message: ilinkStore.config.proactive_user_message ?? DEFAULT_PROACTIVE_USER_MESSAGE,
+      proactive_system_prompt: ilinkStore.config.proactive_system_prompt ?? DEFAULT_PROACTIVE_SYSTEM_PROMPT,
+      learning_prompt: ilinkStore.config.learning_prompt ?? DEFAULT_ILINK_LEARNING_PROMPT
     }
   }
   const initialModels = settingsStore.availableProviders.find(item => item.name === ilinkConfig.value.provider)?.models || []
