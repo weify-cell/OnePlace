@@ -26,6 +26,11 @@ export interface ILinkConfig {
   system_prompt: string
   note_tools_prompt: string
   max_tool_rounds: number
+  proactive_enabled: boolean
+  proactive_min_interval: number
+  proactive_quiet_hours_start: number
+  proactive_quiet_hours_end: number
+  proactive_check_interval: number
   proactive_user_message: string
   proactive_system_prompt: string
   learning_prompt: string

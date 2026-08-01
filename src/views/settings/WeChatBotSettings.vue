@@ -22,6 +22,11 @@ const ilinkConfig = ref({
   system_prompt: DEFAULT_ILINK_SYSTEM_PROMPT,
   note_tools_prompt: DEFAULT_NOTE_TOOLS_PROMPT,
   max_tool_rounds: 5,
+  proactive_enabled: true,
+  proactive_min_interval: 45,
+  proactive_quiet_hours_start: 0,
+  proactive_quiet_hours_end: 8,
+  proactive_check_interval: 5,
   proactive_user_message: DEFAULT_PROACTIVE_USER_MESSAGE,
   proactive_system_prompt: DEFAULT_PROACTIVE_SYSTEM_PROMPT,
   learning_prompt: DEFAULT_ILINK_LEARNING_PROMPT
@@ -54,6 +59,11 @@ onMounted(async () => {
       system_prompt: ilinkStore.config.system_prompt ?? DEFAULT_ILINK_SYSTEM_PROMPT,
       note_tools_prompt: ilinkStore.config.note_tools_prompt ?? DEFAULT_NOTE_TOOLS_PROMPT,
       max_tool_rounds: ilinkStore.config.max_tool_rounds ?? 5,
+      proactive_enabled: ilinkStore.config.proactive_enabled ?? true,
+      proactive_min_interval: ilinkStore.config.proactive_min_interval ?? 45,
+      proactive_quiet_hours_start: ilinkStore.config.proactive_quiet_hours_start ?? 0,
+      proactive_quiet_hours_end: ilinkStore.config.proactive_quiet_hours_end ?? 8,
+      proactive_check_interval: ilinkStore.config.proactive_check_interval ?? 5,
       proactive_user_message: ilinkStore.config.proactive_user_message ?? DEFAULT_PROACTIVE_USER_MESSAGE,
       proactive_system_prompt: ilinkStore.config.proactive_system_prompt ?? DEFAULT_PROACTIVE_SYSTEM_PROMPT,
       learning_prompt: ilinkStore.config.learning_prompt ?? DEFAULT_ILINK_LEARNING_PROMPT
@@ -277,6 +287,39 @@ function formatUptime(ms: number): string {
 
           <n-tab-pane name="proactive" tab="主动聊天">
             <div class="settings-card__body">
+              <div class="settings-field">
+                <label class="settings-field__label">启用主动聊天</label>
+                <n-switch v-model:value="ilinkConfig.proactive_enabled" />
+                <div class="settings-field__hint">关闭后定时器不再触发主动问候。</div>
+              </div>
+
+              <div class="settings-row">
+                <div class="settings-field">
+                  <label class="settings-field__label">最小发送间隔（分钟）</label>
+                  <n-input-number v-model:value="ilinkConfig.proactive_min_interval" :min="1" :max="1440" />
+                  <div class="settings-field__hint">距上次主动发送至少间隔该时长</div>
+                </div>
+                <div class="settings-field">
+                  <label class="settings-field__label">检查周期（分钟）</label>
+                  <n-input-number v-model:value="ilinkConfig.proactive_check_interval" :min="1" :max="1440" />
+                  <div class="settings-field__hint">定时器多久检查一次触发条件，保存后即时生效</div>
+                </div>
+              </div>
+
+              <div class="settings-row">
+                <div class="settings-field">
+                  <label class="settings-field__label">安静时段开始（小时）</label>
+                  <n-input-number v-model:value="ilinkConfig.proactive_quiet_hours_start" :min="0" :max="23" />
+                </div>
+                <div class="settings-field">
+                  <label class="settings-field__label">安静时段结束（小时）</label>
+                  <n-input-number v-model:value="ilinkConfig.proactive_quiet_hours_end" :min="0" :max="23" />
+                </div>
+              </div>
+              <div class="settings-field">
+                <div class="settings-field__hint">安静时段内不主动聊天，支持跨午夜（如 22-6，表示该时段外发送）。</div>
+              </div>
+
               <div class="settings-field">
                 <label class="settings-field__label">主动聊天系统提示词</label>
                 <n-input

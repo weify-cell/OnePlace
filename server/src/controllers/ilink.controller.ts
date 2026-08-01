@@ -58,6 +58,11 @@ export function getConfig(req: Request, res: Response): void {
     system_prompt: config.system_prompt,
     note_tools_prompt: noteToolsPrompt,
     max_tool_rounds: config.max_tool_rounds,
+    proactive_enabled: settingsService.getSettingValue<boolean>('ilink_proactive_chat_enabled', true),
+    proactive_min_interval: settingsService.getSettingValue<number>('ilink_proactive_chat_min_interval', 45),
+    proactive_quiet_hours_start: settingsService.getSettingValue<number>('ilink_proactive_chat_quiet_hours_start', 0),
+    proactive_quiet_hours_end: settingsService.getSettingValue<number>('ilink_proactive_chat_quiet_hours_end', 8),
+    proactive_check_interval: settingsService.getSettingValue<number>('ilink_proactive_chat_check_interval', 5),
     proactive_system_prompt: settingsService.getSettingValue<string>(
       'ilink_proactive_chat_system_prompt',
       DEFAULT_PROACTIVE_SYSTEM_PROMPT
@@ -83,6 +88,11 @@ export function updateConfig(req: Request, res: Response): void {
     tool_usage_prompt,
     max_tool_rounds,
     reminder_interval,
+    proactive_enabled,
+    proactive_min_interval,
+    proactive_quiet_hours_start,
+    proactive_quiet_hours_end,
+    proactive_check_interval,
     proactive_user_message,
     proactive_system_prompt,
     learning_prompt
@@ -111,6 +121,21 @@ export function updateConfig(req: Request, res: Response): void {
   if (reminder_interval !== undefined) {
     settingsService.setSetting('ilink_reminder_interval', reminder_interval)
   }
+  if (proactive_enabled !== undefined) {
+    settingsService.setSetting('ilink_proactive_chat_enabled', proactive_enabled)
+  }
+  if (proactive_min_interval !== undefined) {
+    settingsService.setSetting('ilink_proactive_chat_min_interval', proactive_min_interval)
+  }
+  if (proactive_quiet_hours_start !== undefined) {
+    settingsService.setSetting('ilink_proactive_chat_quiet_hours_start', proactive_quiet_hours_start)
+  }
+  if (proactive_quiet_hours_end !== undefined) {
+    settingsService.setSetting('ilink_proactive_chat_quiet_hours_end', proactive_quiet_hours_end)
+  }
+  if (proactive_check_interval !== undefined) {
+    settingsService.setSetting('ilink_proactive_chat_check_interval', proactive_check_interval)
+  }
   if (proactive_user_message !== undefined) {
     settingsService.setSetting('ilink_proactive_chat_user_message', proactive_user_message)
   }
@@ -120,6 +145,15 @@ export function updateConfig(req: Request, res: Response): void {
   if (learning_prompt !== undefined) {
     settingsService.setSetting('ilink_learning_prompt', learning_prompt)
   }
+
+  // check_interval 变更时重建主动聊天定时器
+  proactiveChat.updateProactiveChatConfig({
+    enabled: proactive_enabled,
+    minInterval: proactive_min_interval,
+    quietHoursStart: proactive_quiet_hours_start,
+    quietHoursEnd: proactive_quiet_hours_end,
+    checkInterval: proactive_check_interval,
+  })
 
   res.json({ success: true })
 }
