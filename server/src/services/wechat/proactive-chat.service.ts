@@ -1,8 +1,9 @@
 import { WeChatBot } from '@wechatbot/wechatbot'
-import { createStreamFn, createModel, convertMessages, type ChatMessage } from '../ai/pi-ai.adapter.js'
 import { getSettingValue } from '../settings.service.js'
 import { connectDatabase } from '../../database/index.js'
 import { addMessageToHistory, isUserInLearningMode } from './ilink-bot.service.js'
+import { loadSkillPrompt } from '../ai/agent-pool.js'
+import { DEFAULT_PROACTIVE_SYSTEM_PROMPT, DEFAULT_PROACTIVE_USER_MESSAGE } from '../prompt-defaults.js'
 
 let proactiveTimer: ReturnType<typeof setInterval> | null = null
 let proactiveInitTimer: ReturnType<typeof setTimeout> | null = null
@@ -102,37 +103,30 @@ function hasMinIntervalPassed(userId: string, minIntervalMinutes: number): boole
 }
 
 async function generateProactiveMessage(userId: string): Promise<string> {
-  const provider = getSettingValue<string>('ilink_provider', 'qwen')
-  const model = getSettingValue<string>('ilink_model', 'qwen-turbo')
+  // 主动聊天人设
+  const systemPrompt = getSettingValue<string>('ilink_proactive_chat_system_prompt', DEFAULT_PROACTIVE_SYSTEM_PROMPT)
 
-  // 主动聊天专用 systemPrompt
-  const systemPrompt = getSettingValue<string>('ilink_proactive_chat_system_prompt', '你是一个友好的微信助手，请主动找用户聊天。语气亲切随意，控制在1-2句话，可以使用表情符号。')
+  // 工具使用指引 + skills（与 bot 普通对话的 system 组装方式保持一致）
+  const noteToolsPrompt = getSettingValue<string>('note_tools_prompt', '')
+  const skillPrompt = await loadSkillPrompt()
+  const effectivePrompt = [systemPrompt, noteToolsPrompt].filter(Boolean).join('\n\n') + (skillPrompt ? '\n\n' + skillPrompt : '')
 
-  // 获取可配置的用户消息，作为主动聊天的触发指令
-  const userMessage = getSettingValue<string>('ilink_proactive_chat_user_message', '请生成一条主动问候消息')
-  // 共用 messageHistory，加上触发指令（附加时间戳）
-  const { getMessageHistory, formatBeijingTime } = await import('./ilink-bot.service.js')
-  const timestamp = formatBeijingTime()
-  const history = getMessageHistory(userId) || []
-  history.push({ role: 'user', content: `${timestamp} ${userMessage}` })
+  // 触发指令，附加北京时间戳
+  const userMessage = getSettingValue<string>('ilink_proactive_chat_user_message', DEFAULT_PROACTIVE_USER_MESSAGE)
 
   try {
-    const modelObj = createModel(provider, model)
-    const streamFn = createStreamFn()
-    const messages = convertMessages(history as ChatMessage[])
-    const context = { systemPrompt, messages, tools: undefined }
-
-    let eventStream = streamFn(modelObj, context, {})
-    if (eventStream instanceof Promise) {
-      eventStream = await eventStream
-    }
-    let content = ''
-    for await (const event of eventStream) {
-      if ('content' in event && typeof event.content === 'string') {
-        content += event.content
-      }
-    }
-    return content.trim() || pickDefaultMessage()
+    const { formatBeijingTime, runAgentTurn } = await import('./ilink-bot.service.js')
+    const timestamp = formatBeijingTime()
+    // 走完整 agent loop（与 bot 同构：共享 pool、动态工具加载、多轮工具调用）
+    // 独立 agent id 避免污染 bot 的对话上下文；removeAfterRun 保证每次从 DB 历史重建
+    const content = await runAgentTurn({
+      userId,
+      agentId: `proactive:${userId}`,
+      systemPrompt: effectivePrompt,
+      userContent: `${timestamp} ${userMessage}`,
+      removeAfterRun: true,
+    })
+    return content || pickDefaultMessage()
   } catch (error) {
     console.error('[proactive] failed to generate message:', error)
     return pickDefaultMessage()
@@ -164,7 +158,7 @@ async function sendProactiveMessage(userId: string): Promise<boolean> {
     // 共用 messageHistory：也写入触发指令，保证交替格式
     const { formatBeijingTime } = await import('./ilink-bot.service.js')
     const timestamp = formatBeijingTime()
-    const userMessage = getSettingValue<string>('ilink_proactive_chat_user_message', '请生成一条主动问候消息')
+    const userMessage = getSettingValue<string>('ilink_proactive_chat_user_message', DEFAULT_PROACTIVE_USER_MESSAGE)
     addMessageToHistory(userId, 'user', `${timestamp} ${userMessage}`)
     addMessageToHistory(userId, 'assistant', message)
     setDbLastSentTime(userId, Date.now())
@@ -237,30 +231,6 @@ export function stopProactiveChatService(): void {
   }
   bot = null
   console.log('[proactive] service stopped')
-}
-
-export async function triggerProactiveCheck(): Promise<{ success: boolean; sent: number }> {
-  const config = getProactiveChatConfig()
-  if (!config.enabled) return { success: true, sent: 0 }
-  if (isQuietHours(config)) {
-    console.log('[proactive] in quiet hours, skipping')
-    return { success: true, sent: 0 }
-  }
-
-  const users = getWeChatUsers()
-  let sentCount = 0
-
-  for (const userId of users) {
-    if (!hasMinIntervalPassed(userId, config.minInterval)) continue
-    const lastInteraction = getUserLastInteractionTime(userId)
-    const weight = calculateTriggerWeight(lastInteraction)
-    if (weight > 0) {
-      const sent = await sendProactiveMessage(userId)
-      if (sent) sentCount++
-    }
-  }
-
-  return { success: true, sent: sentCount }
 }
 
 export function getProactiveChatStatus(): {

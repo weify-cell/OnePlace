@@ -180,7 +180,6 @@ export async function streamChat(
       ? getSettingValue<string>('note_tools_prompt', DEFAULT_NOTE_TOOLS_PROMPT)
       : DEFAULT_CHAT_SYSTEM_PROMPT) + (skillPrompt ? '\n\n' + skillPrompt : '')
 
-    const systemMsg: ChatMessage = { role: 'system', content: systemPrompt }
     const userMsg: ChatMessage = { role: 'user', content: userContent }
     let assistantContent = ''
     const agent = pool.getOrCreate(convKey, () =>
@@ -188,6 +187,8 @@ export async function streamChat(
     )
 
     agent.state.tools = loadToolsFromDb()
+    // system prompt 写入 state.systemPrompt（pi-agent 真正生效的 system 位置；传入 message 会被过滤）
+    agent.state.systemPrompt = systemPrompt
     const unsub = agent.subscribe((event, _signal) => {
       if (event.type !== 'turn_end') return
       const msg = event.message
@@ -198,7 +199,7 @@ export async function streamChat(
       }
     })
 
-    await agent.prompt(convertMessages([systemMsg, userMsg]))
+    await agent.prompt(convertMessages([userMsg]))
     await agent.waitForIdle()
     unsub()
 
