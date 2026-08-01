@@ -60,8 +60,8 @@ function isMissingCollectionError(error: unknown): boolean {
 
 export async function ensureCollection(): Promise<void> {
   const collection = getCollectionName()
-  const collections = await request<{ collections: { name: string }[] }>('GET', '/collections')
-  const exists = collections.collections.some((c) => c.name === collection)
+  const res = await request<{ result: { collections: { name: string }[] } }>('GET', '/collections')
+  const exists = res.result.collections.some((c) => c.name === collection)
   if (exists) return
 
   await request('PUT', `/collections/${collection}`, {
@@ -73,6 +73,7 @@ export async function ensureCollection(): Promise<void> {
 }
 
 export async function upsertChunks(chunks: Array<{ id: string; vector: number[]; content: string; metadata?: Record<string, unknown> }>): Promise<UpsertResult> {
+  await ensureCollection()
   if (chunks.length === 0) return { success: true, count: 0 }
 
   const collection = getCollectionName()
