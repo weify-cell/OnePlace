@@ -660,6 +660,10 @@ vi.mock('../services/vector/vector.service.js', () => ({
 
 - [ ] **Step 2: 追加失败测试（整理 + 向量检索）**
 
+> **实现期修正**（Task 4 实现时发现的两处测试代码缺陷，已在代码中修正）：
+> 1. 首个用例插入消息用 `new Date().toISOString()`，若与 `consolidateDayMemory` 内部 `now` 同毫秒，会被 `queryChatRecords` 的 `created_at < end` 严格排除 → 偶发 flake。改为插入**当天窗口中点时间**（用 `getReportWindow('daily', new Date())` 取 start/end 中点），保证严格落在窗口内。
+> 2. vitest v4 不会在用例间自动清 mock 调用历史，第二个用例的 `expect(runAgentTurn).not.toHaveBeenCalled()` 会因首个用例的调用残留而必败。在调用 `consolidateDayMemory` 前加 `runAgentTurn.mockClear()`。
+
 `server/src/__tests__/memory.service.test.ts` 追加：
 
 ```ts
