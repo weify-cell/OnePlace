@@ -5,6 +5,7 @@ import { getSettingValue, setSetting } from '../settings.service.js'
 import { connectDatabase } from '../../database/index.js'
 import { setReminderBot, startReminderService, stopReminderService, saveWeChatUser, sendPendingReminders, hasPendingReminders } from './todo-reminder.service.js'
 import { setProactiveBot, startProactiveChatService, stopProactiveChatService } from './proactive-chat.service.js'
+import { setReportBot, startReportService, stopReportService, handleReportCommand } from './report.service.js'
 import { AgentEvent, type AgentMessage } from '@earendil-works/pi-agent-core'
 
 /**
@@ -348,6 +349,24 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
         return
       }
 
+      // 命令解析：日报/周报/月报
+      const reportMatch = msg.text?.trim().match(/^\/(日报|周报|月报)$/)
+      if (reportMatch) {
+        const typeMap: Record<string, 'daily' | 'weekly' | 'monthly'> = {
+          '日报': 'daily', '周报': 'weekly', '月报': 'monthly'
+        }
+        const type = typeMap[reportMatch[1]]
+        await bot!.reply(msg, `${reportMatch[1]}生成中，请稍候...`)
+        try {
+          const content = await handleReportCommand(bot!, msg.userId, type)
+          await bot!.reply(msg, content)
+        } catch (err) {
+          console.error('[ilink] 生成报告失败:', err)
+          await bot!.reply(msg, `${reportMatch[1]}生成失败，请稍后再试。`)
+        }
+        return
+      }
+
       // 检查是否有待发送的提醒（context_token 过期后积压的）
       if (hasPendingReminders(msg.userId)) {
         console.log(`[ilink] 发现待发送提醒，正在补发给 ${msg.userId}`)
@@ -490,6 +509,11 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
             setProactiveBot(bot!)
             startProactiveChatService()
             console.log('[ilink] proactive chat service started')
+
+            // 启动报告服务
+            setReportBot(bot!)
+            startReportService()
+            console.log('[ilink] report service started')
           }, 2000) // 延迟 2 秒，确保 contextStore 加载完成
 
           await bot!.start()
@@ -530,6 +554,9 @@ export function stopILinkBot(): { success: boolean; error?: string } {
 
     // 停止主动聊天服务
     stopProactiveChatService()
+
+    // 停止报告服务
+    stopReportService()
 
     // WeChatBot 没有 stop 方法，直接清理状态
     agentPool?.shutdown()
