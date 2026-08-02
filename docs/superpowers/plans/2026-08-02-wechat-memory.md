@@ -474,6 +474,8 @@ describe('parseMemoryItems', () => {
 
 describe('buildMemoryPrompt', () => {
   it('近30天附记包含记忆与用户ID；无记忆返回空串', () => {
+    const db = connectDatabase()
+    db.prepare('DELETE FROM wechat_memories').run() // 共享内存库，先清库避免前面 describe 的 u2 行污染
     saveMemory('u1', '用户喝美式', getMemoryDate(new Date()))
     const p = buildMemoryPrompt('u1')
     expect(p).toContain('## 记忆（近30天）')
@@ -493,7 +495,7 @@ Expected: FAIL（`memory.service.ts` 不存在）。
 
 ```ts
 import { connectDatabase } from '../../database/index.js'
-import { getSettingValue } from '../../settings.service.js'
+import { getSettingValue } from '../settings.service.js'
 
 const BEIJING_OFFSET_MS = 8 * 60 * 60 * 1000
 
@@ -511,10 +513,10 @@ export function getMemoryDate(now: Date): string {
   return `${y}-${m}-${d}`
 }
 
-/** 每晚 00:30（北京时间）到点判定；分钟放宽到 <=1 容忍调度漂移（与报告一致）。 */
+/** 每晚 00:30（北京时间）到点判定；分钟放宽到 [00:30, 00:31] 容忍调度漂移（与报告一致）。 */
 export function isMemoryDue(now: Date): boolean {
   const b = toBeijing(now)
-  return b.getUTCHours() === 0 && b.getUTCMinutes() <= 1
+  return b.getUTCHours() === 0 && b.getUTCMinutes() >= 30 && b.getUTCMinutes() <= 31
 }
 
 export interface MemoryRow {
@@ -525,13 +527,15 @@ export interface MemoryRow {
   created_at: string
 }
 
-/** 落一条记忆；UNIQUE(user_id, content) 去重。返回新插入的 id，重复返回 0。 */
+/** 落一条记忆；UNIQUE(user_id, content) 去重。返回新插入的 id，重复返回 0。
+ * 注意：better-sqlite3 的 INSERT OR IGNORE 冲突时 changes=0 而 lastInsertRowid 停留在上次值，
+ * 必须用 changes===0 判重，不能用 lastInsertRowid||0。 */
 export function saveMemory(userId: string, content: string, memoryDate: string): number {
   const db = connectDatabase()
   const result = db.prepare(
     `INSERT OR IGNORE INTO wechat_memories (user_id, content, memory_date) VALUES (?, ?, ?)`
   ).run(userId, content, memoryDate)
-  return Number(result.lastInsertRowid) || 0
+  return result.changes === 0 ? 0 : Number(result.lastInsertRowid)
 }
 
 /** 查询某用户记忆。days=近 N 天（含当天），按 memory_date DESC, id DESC。 */
