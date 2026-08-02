@@ -13,6 +13,7 @@ const navItems = [
   { path: '/todos', label: '待办事项', icon: '✅' },
   { path: '/notes', label: '笔记', icon: '📝' },
   { path: '/chat', label: 'AI 对话', icon: '🤖' },
+  { path: '/reports', label: '报告', icon: '📊' },
   { path: '/toolbox', label: '百宝箱', icon: '🧰' },
   { path: '/settings/general', label: '通用设置', icon: '⚙️' },
   { path: '/settings/kb', label: '知识库', icon: '📚' },

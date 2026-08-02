@@ -30,7 +30,8 @@ const router = createRouter({
     { path: '/tools-manager', component: () => import('@/views/ToolsManagerView.vue'), meta: { requiresAuth: true } },
     { path: '/tools-manager/:categoryId', component: () => import('@/views/ToolsManagerView.vue'), meta: { requiresAuth: true } },
     { path: '/skills-manager', component: () => import('@/views/SkillsManagerView.vue'), meta: { requiresAuth: true } },
-    { path: '/skills-manager/:categoryId', component: () => import('@/views/SkillsManagerView.vue'), meta: { requiresAuth: true } }
+    { path: '/skills-manager/:categoryId', component: () => import('@/views/SkillsManagerView.vue'), meta: { requiresAuth: true } },
+    { path: '/reports', component: () => import('@/views/ReportsView.vue'), meta: { requiresAuth: true } }
   ]
 })
 
