@@ -6,6 +6,33 @@ import {
   type ReportType
 } from '../services/wechat/report.service.js'
 
+vi.mock('../database/index.js', async () => {
+  const { default: Database } = await import('better-sqlite3')
+  const db = new Database(':memory:')
+  db.exec(`
+    CREATE TABLE wechat_reports (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      report_type TEXT NOT NULL CHECK(report_type IN ('daily','weekly','monthly')),
+      period_start TEXT NOT NULL,
+      period_end TEXT NOT NULL,
+      content TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      UNIQUE(user_id, report_type, period_start)
+    );
+    CREATE TABLE wechat_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      role TEXT NOT NULL CHECK(role IN ('user','assistant')),
+      content TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+  `)
+  return { connectDatabase: () => db }
+})
+
+import { queryChatRecords, saveReport, listReports, getReportById } from '../services/wechat/report.service.js'
+
 // 北京 = UTC+8。以下 now 均为 UTC 时刻，注释标明对应北京时间。
 const DAILY_DUE = new Date('2026-08-02T14:00:00.000Z')   // 北京 2026-08-02 22:00
 const DAILY_OFF = new Date('2026-08-02T14:05:00.000Z')   // 北京 2026-08-02 22:05
@@ -59,5 +86,42 @@ describe('getReportTypeLabel', () => {
     expect(getReportTypeLabel('daily')).toBe('日报')
     expect(getReportTypeLabel('weekly')).toBe('周报')
     expect(getReportTypeLabel('monthly')).toBe('月报')
+  })
+})
+
+import { connectDatabase } from '../database/index.js'
+
+describe('queryChatRecords', () => {
+  it('按窗口过滤并返回角色/内容', () => {
+    const db = connectDatabase()
+    const ins = db.prepare('INSERT INTO wechat_messages (user_id, role, content, created_at) VALUES (?,?,?,?)')
+    ins.run('u1', 'user', '今天聊了项目A', '2026-08-02T02:00:00.000Z')
+    ins.run('u1', 'assistant', '好的，项目A进度如何', '2026-08-02T02:01:00.000Z')
+    ins.run('u1', 'user', '这是窗口外消息', '2026-08-01T12:00:00.000Z')
+
+    const rows = queryChatRecords('u1', { start: '2026-08-01T16:00:00.000Z', end: '2026-08-02T14:00:00.000Z' })
+    expect(rows).toHaveLength(2)
+    expect(rows[0].content).toBe('今天聊了项目A')
+    expect(rows[1].role).toBe('assistant')
+  })
+})
+
+describe('saveReport / listReports / getReportById', () => {
+  it('落表后可按类型列表、详情查询，同周期重复插入幂等', () => {
+    const db = connectDatabase()
+    const w = { start: '2026-08-01T16:00:00.000Z', end: '2026-08-02T14:00:00.000Z' }
+    saveReport('u1', 'daily', w, '日报内容A')
+    saveReport('u1', 'daily', w, '日报内容B') // 同周期，应被 UNIQUE 忽略
+
+    const all = listReports({ type: 'daily' })
+    expect(all).toHaveLength(1)
+    expect(all[0].content).toBe('日报内容A')
+
+    const byRange = listReports({ type: 'weekly', start: '2026-07-26T16:00:00.000Z', end: '2026-08-02T00:00:00.000Z' })
+    expect(byRange).toHaveLength(0)
+
+    const detail = getReportById(all[0].id)
+    expect(detail?.report_type).toBe('daily')
+    expect(getReportById(9999)).toBeNull()
   })
 })
