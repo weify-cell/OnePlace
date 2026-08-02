@@ -23,7 +23,7 @@ describe('vector.service', () => {
     it('should not create collection if it already exists', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: () => Promise.resolve({ collections: [{ name: 'notes_knowledge_base' }] }),
+        json: () => Promise.resolve({ result: { collections: [{ name: 'notes_knowledge_base' }] } }),
       })
 
       await ensureCollection()
@@ -35,7 +35,7 @@ describe('vector.service', () => {
     it('should create collection if it does not exist', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: () => Promise.resolve({ collections: [] }),
+        json: () => Promise.resolve({ result: { collections: [] } }),
       })
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -53,16 +53,27 @@ describe('vector.service', () => {
 
   describe('upsertChunks', () => {
     it('should return success with count 0 for empty chunks', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ result: { collections: [{ name: 'notes_knowledge_base' }] } }),
+      })
+
       const result = await upsertChunks([])
       expect(result).toEqual({ success: true, count: 0 })
-      expect(mockFetch).not.toHaveBeenCalled()
+      expect(mockFetch).toHaveBeenCalledTimes(1)
+      expect(mockFetch.mock.calls[0][0]).toBe('http://localhost:6333/collections')
     })
 
     it('should upsert chunks to Qdrant', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ result: true }),
-      })
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ result: { collections: [{ name: 'notes_knowledge_base' }] } }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ result: { operation_id: 1 } }),
+        })
 
       const chunks = [
         { id: 'chunk-1', vector: [0.1, 0.2], content: 'hello world' },
@@ -72,8 +83,8 @@ describe('vector.service', () => {
       const result = await upsertChunks(chunks)
 
       expect(result).toEqual({ success: true, count: 2 })
-      expect(mockFetch).toHaveBeenCalledTimes(1)
-      const call = mockFetch.mock.calls[0]
+      expect(mockFetch).toHaveBeenCalledTimes(2)
+      const call = mockFetch.mock.calls[1]
       expect(call[0]).toBe('http://localhost:6333/collections/notes_knowledge_base/points')
       const body = JSON.parse(call[1].body as string)
       expect(body.points).toHaveLength(2)
