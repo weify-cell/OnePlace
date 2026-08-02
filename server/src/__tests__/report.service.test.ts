@@ -138,9 +138,37 @@ import { generateReport, sendAndPersist, handleReportCommand } from '../services
 
 describe('generateReport', () => {
   it('把转录文本与条数拼入 userContent 并返回总结与窗口', async () => {
+    // 清空消息，保证「本次共 0 条」确定（避免依赖运行时刻的窗口）
+    const db = connectDatabase()
+    db.prepare('DELETE FROM wechat_messages').run()
+
     const result = await generateReport('u1', 'daily')
     expect(result.content).toContain('【日报】')
     expect(result.window.start).toMatch(/Z$/)
+
+    // doMock 不提升，须在用例内动态 import 才拿到 mock 实例
+    const { runAgentTurn } = await import('../services/wechat/ilink-bot.service.js')
+    expect(runAgentTurn).toHaveBeenCalledWith(expect.objectContaining({
+      userId: 'u1',
+      agentId: 'report:daily:u1',
+      loadHistory: false,
+      removeAfterRun: true,
+      systemPrompt: expect.stringContaining('日报'),
+      userContent: expect.stringContaining('本次共 0 条')
+    }))
+  })
+})
+
+describe('handleReportCommand', () => {
+  it('生成并落表，但不发送（发送由命令处理器负责）', async () => {
+    const db = connectDatabase()
+    db.prepare('DELETE FROM wechat_reports').run()
+    const bot = { send: vi.fn().mockResolvedValue(undefined) }
+
+    const content = await handleReportCommand(bot as any, 'u1', 'daily')
+    expect(content).toContain('【日报】')
+    expect(bot.send).not.toHaveBeenCalled()
+    expect(db.prepare('SELECT COUNT(*) c FROM wechat_reports').get()).toMatchObject({ c: 1 })
   })
 })
 

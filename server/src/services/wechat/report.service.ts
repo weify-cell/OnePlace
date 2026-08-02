@@ -1,6 +1,5 @@
 import { connectDatabase } from '../../database/index.js'
 import { WeChatBot } from '@wechatbot/wechatbot'
-import { getSettingValue } from '../settings.service.js'
 import { DEFAULT_REPORT_SYSTEM_PROMPT } from '../prompt-defaults.js'
 
 export type ReportType = 'daily' | 'weekly' | 'monthly'
@@ -221,15 +220,13 @@ export function stopReportService(): void {
   console.log('[report] service stopped')
 }
 
-/** 命令入口：即时生成，回复并落表。 */
+/** 命令入口：即时生成并落表，返回 content 不发送（发送由命令处理器 reply）。 */
 export async function handleReportCommand(
   bot: WeChatBot,
   userId: string,
   type: ReportType
 ): Promise<string> {
-  const { content } = await generateReport(userId, type)
-  const window = getReportWindow(type, new Date())
+  const { content, window } = await generateReport(userId, type)
   saveReport(userId, type, window, content)
-  await bot.send(userId, content)
   return content
 }
