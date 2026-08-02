@@ -153,7 +153,7 @@ export async function searchMemoryVectors(
 /** 内存级 in-flight 锁：同一用户同时只允许一个整理在跑。 */
 const inflightMemories = new Set<string>()
 
-/** 整理某用户当天对话：抽取记忆条目→落库→新增条目写入向量库。静默执行，不发送微信消息。 */
+/** 整理某用户昨天对话：抽取记忆条目→落库→新增条目写入向量库。静默执行，不发送微信消息。 */
 export async function consolidateDayMemory(userId: string): Promise<{ extracted: number; saved: number }> {
   const now = new Date()
   // 00:30 整理的是刚结束的「昨天」全天：[昨天北京 00:00, 今天北京 00:00)，memory_date 标为昨天。
@@ -165,7 +165,7 @@ export async function consolidateDayMemory(userId: string): Promise<{ extracted:
   const memoryDate = getMemoryDate(new Date(now.getTime() - 86400000)) // 昨天
   const records = queryChatRecords(userId, window)
   if (records.length === 0) {
-    console.log(`[memory] no messages today for ${userId}, skip`)
+    console.log(`[memory] no messages yesterday for ${userId}, skip`)
     return { extracted: 0, saved: 0 }
   }
 
@@ -173,8 +173,8 @@ export async function consolidateDayMemory(userId: string): Promise<{ extracted:
   const { runAgentTurn, formatBeijingTime } = await import('./ilink-bot.service.js')
   const userContent = [
     formatBeijingTime(),
-    `请整理今日（${memoryDate}）的对话记忆。`,
-    `今日共 ${records.length} 条聊天记录：`,
+    `请整理昨日（${memoryDate}）的对话记忆。`,
+    `昨日共 ${records.length} 条聊天记录：`,
     buildTranscript(records),
     recentMemories.length > 0
       ? `\n以下为已有记忆，请勿重复抽取：\n${recentMemories.map(m => `- ${m.content}`).join('\n')}`
