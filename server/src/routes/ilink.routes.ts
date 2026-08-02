@@ -31,3 +31,7 @@ ilinkRouter.delete('/history/:userId', ilinkController.clearMessageHistory)
 // 主动聊天配置
 ilinkRouter.get('/proactive-chat/config', ilinkController.getProactiveChatConfig)
 ilinkRouter.put('/proactive-chat/config', ilinkController.updateProactiveChatConfig)
+
+// 报告查询
+ilinkRouter.get('/reports', ilinkController.getReports)
+ilinkRouter.get('/reports/:id', ilinkController.getReport)

@@ -2,6 +2,7 @@
 import * as ilinkBot from '../services/wechat/ilink-bot.service.js'
 import * as reminderService from '../services/wechat/todo-reminder.service.js'
 import * as proactiveChat from '../services/wechat/proactive-chat.service.js'
+import * as reportService from '../services/wechat/report.service.js'
 import * as settingsService from '../services/settings.service.js'
 import {
   DEFAULT_ILINK_LEARNING_PROMPT,
@@ -10,8 +11,9 @@ import {
   DEFAULT_PROACTIVE_USER_MESSAGE
 } from '../services/prompt-defaults.js'
 
-function getSingleParam(value: string | string[] | undefined): string | undefined {
+function getSingleParam(value: string | string[] | object | undefined): string | undefined {
   if (Array.isArray(value)) return value[0]
+  if (typeof value === 'object' && value !== null) return undefined
   return value
 }
 
@@ -266,4 +268,25 @@ export function updateProactiveChatConfig(req: Request, res: Response): void {
   })
 
   res.json({ success: true })
+}
+
+export function getReports(req: Request, res: Response): void {
+  const type = getSingleParam(req.query.type) as reportService.ReportType | undefined
+  const start = getSingleParam(req.query.start)
+  const end = getSingleParam(req.query.end)
+  res.json(reportService.listReports({ type, start, end }))
+}
+
+export function getReport(req: Request, res: Response): void {
+  const id = Number(req.params.id)
+  if (!Number.isInteger(id)) {
+    res.status(400).json({ error: 'BadRequest', message: 'id must be an integer' })
+    return
+  }
+  const report = reportService.getReportById(id)
+  if (!report) {
+    res.status(404).json({ error: 'NotFound', message: 'report not found' })
+    return
+  }
+  res.json(report)
 }
