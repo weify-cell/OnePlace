@@ -48,6 +48,7 @@ import {
   isMemoryDue, getMemoryDate, saveMemory, queryMemories,
   searchMemories, parseMemoryItems, buildMemoryPrompt
 } from '../services/wechat/memory.service.js'
+import { getReportWindow } from '../services/wechat/report.service.js'
 
 describe('isMemoryDue', () => {
   const DUE_830 = new Date('2026-08-01T16:30:00.000Z')   // 北京 8-02 00:30
@@ -113,8 +114,8 @@ describe('searchMemories', () => {
 })
 
 describe('parseMemoryItems', () => {
-  it('兼容 - / * / 数字 / 普通行，过滤空行/过短/标题/无', () => {
-    const out = parseMemoryItems('- 用户喝美式\n* 项目A在开发\n1. 用户周日常跑步\n普通行也算\n\n   \n无\n## 标题\n# 另一个标题')
+  it('兼容 - / * / 数字 / 普通行，过滤空行/过短/标题/无（含无。无！）', () => {
+    const out = parseMemoryItems('- 用户喝美式\n* 项目A在开发\n1. 用户周日常跑步\n普通行也算\n\n   \n无\n无。\n无！\n## 标题\n# 另一个标题')
     expect(out).toEqual(['用户喝美式', '项目A在开发', '用户周日常跑步', '普通行也算'])
   })
 })
@@ -139,13 +140,12 @@ describe('consolidateDayMemory', () => {
     const db = connectDatabase()
     db.prepare('DELETE FROM wechat_messages').run()
     db.prepare('DELETE FROM wechat_memories').run()
-    // 用当日窗口中点落时间戳：queryChatRecords 用严格的 created_at < end，
-    // 若直接 new Date().toISOString() 与整理侧 now 同毫秒会被窗口排除（间歇性 flake）
-    const { getReportWindow } = await import('../services/wechat/report.service.js')
-    const win = getReportWindow('daily', new Date())
-    const midTs = new Date((new Date(win.start).getTime() + new Date(win.end).getTime()) / 2).toISOString()
+    // 插入「昨天」窗口内的时间戳（昨天北京 12:00）：整理窗口为 [昨天北京00:00, 今天北京00:00)，
+    // 用窗口内中点可避免同毫秒 / 跨天边界被 queryChatRecords 的严格 created_at < end 排除（间歇性 flake）
+    const todayStart = getReportWindow('daily', new Date()).start
+    const yesterdayMidTs = new Date(new Date(todayStart).getTime() - 12 * 3600 * 1000).toISOString()
     db.prepare("INSERT INTO wechat_messages (user_id, role, content, created_at) VALUES ('u1','user','今天聊了项目A',?)")
-      .run(midTs)
+      .run(yesterdayMidTs)
 
     const { upsertChunks } = await import('../services/vector/vector.service.js')
     const first = await consolidateDayMemory('u1')
@@ -153,7 +153,10 @@ describe('consolidateDayMemory', () => {
     expect(db.prepare('SELECT COUNT(*) c FROM wechat_memories').get()).toMatchObject({ c: 2 })
     expect(upsertChunks).toHaveBeenCalledTimes(2)
     expect(upsertChunks).toHaveBeenCalledWith(
-      expect.arrayContaining([expect.objectContaining({ id: expect.stringMatching(/^mem\d+$/) })]),
+      expect.arrayContaining([expect.objectContaining({
+        id: expect.stringMatching(/^mem\d+$/),
+        metadata: expect.objectContaining({ memory_id: expect.any(Number), user_id: 'u1', memory_date: expect.any(String) })
+      })]),
       'oneplace_memory'
     )
 
@@ -165,8 +168,9 @@ describe('consolidateDayMemory', () => {
   it('当天无记录时跳过，不调用 LLM', async () => {
     const db = connectDatabase()
     db.prepare('DELETE FROM wechat_messages').run()
-    db.prepare("INSERT INTO wechat_messages (user_id, role, content, created_at) VALUES ('u1','user','昨天的事',?)")
-      .run(new Date(Date.now() - 26 * 3600 * 1000).toISOString()) // 窗口外
+    // 此刻在今天北京 00:00（整理窗口 end）之后 → 落在「昨天」窗口外，不触发整理
+    db.prepare("INSERT INTO wechat_messages (user_id, role, content, created_at) VALUES ('u1','user','今天的事',?)")
+      .run(new Date().toISOString())
 
     const { runAgentTurn } = await import('../services/wechat/ilink-bot.service.js')
     runAgentTurn.mockClear() // 清掉上个用例的调用记录，仅验证本次没有调用 LLM
