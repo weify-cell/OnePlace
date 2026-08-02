@@ -6,6 +6,7 @@ import { connectDatabase } from '../../database/index.js'
 import { setReminderBot, startReminderService, stopReminderService, saveWeChatUser, sendPendingReminders, hasPendingReminders } from './todo-reminder.service.js'
 import { setProactiveBot, startProactiveChatService, stopProactiveChatService } from './proactive-chat.service.js'
 import { setReportBot, startReportService, stopReportService, handleReportCommand } from './report.service.js'
+import { startMemoryService, stopMemoryService, buildMemoryPrompt } from './memory.service.js'
 import { AgentEvent, type AgentMessage } from '@earendil-works/pi-agent-core'
 
 /**
@@ -391,7 +392,8 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
         const basePrompt = userMode?.mode === 'learning'
           ? getLearningPrompt(userMode.learningTopic)
           : [config.system_prompt, noteToolsPrompt].filter(Boolean).join('\n\n')
-        const effectivePrompt = basePrompt + (skillPrompt ? '\n\n' + skillPrompt : '')
+        const memoryPrompt = buildMemoryPrompt(msg.userId)
+        const effectivePrompt = basePrompt + (skillPrompt ? '\n\n' + skillPrompt : '') + (memoryPrompt ? '\n\n' + memoryPrompt : '')
 
         const agent = pool.getOrCreate(msg.userId, () => {
           const dbHistory = getMessageHistory(msg.userId)
@@ -514,6 +516,10 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
             setReportBot(bot!)
             startReportService()
             console.log('[ilink] report service started')
+
+            // 启动记忆服务（每晚整理当天对话）
+            startMemoryService()
+            console.log('[ilink] memory service started')
           }, 2000) // 延迟 2 秒，确保 contextStore 加载完成
 
           await bot!.start()
@@ -557,6 +563,9 @@ export function stopILinkBot(): { success: boolean; error?: string } {
 
     // 停止报告服务
     stopReportService()
+
+    // 停止记忆服务
+    stopMemoryService()
 
     // WeChatBot 没有 stop 方法，直接清理状态
     agentPool?.shutdown()
