@@ -302,18 +302,7 @@ vi.mock('../database/index.js', () => {
 import { queryChatRecords, saveReport, listReports, getReportById } from '../services/wechat/report.service.js'
 ```
 
-追加 describe:
-
-```ts
-describe('queryChatRecords', () => {
-  it('按窗口过滤并返回角色/内容/时间', () => {
-    const db = (vi.mocked as any)?. // 直接通过 connectDatabase 访问注入数据
-    void db
-  })
-})
-```
-
-> 说明：为便于注入聊天数据，上面测试使用 `:memory:` 库。数据注入需先 `import { connectDatabase } from '../database/index.js'` 拿实例，再 `INSERT INTO wechat_messages ...`。以下为完整追加块：
+追加 describe（完整块，数据经 `connectDatabase()` 注入）：
 
 ```ts
 import { connectDatabase } from '../database/index.js'
@@ -704,20 +693,7 @@ import { setReportBot, startReportService, stopReportService, handleReportComman
       }
 ```
 
-> 注：`handleReportCommand` 内部已 `bot.send(userId, content)`。为避免与 `bot.reply` 重复，把 `handleReportCommand` 的发送改为返回 content、由本处 reply——但 Task 4 已实现为内部 send。**实现时二选一**：要么命令处只用 `bot.send`（不发 reply content），要么把 `handleReportCommand` 改为只返回 content 不发送。推荐：保持 `handleReportCommand` 内部不发送、仅返回 content，由调用方统一 reply。据此调整 Task 4 的 `handleReportCommand` 为：
-
-```ts
-export async function handleReportCommand(
-  bot: WeChatBot,
-  userId: string,
-  type: ReportType
-): Promise<string> {
-  void bot // bot 参数保留给后续可能的需要，当前仅用于对齐签名
-  const { content, window } = await generateReport(userId, type)
-  saveReport(userId, type, window, content)
-  return content
-}
-```
+> 注：`handleReportCommand` 只返回 content、内部不发送（见 Task 4 定义），发送统一由本处 `bot.reply` 完成，避免重复。
 
 - [ ] **Step 3: 启动/停止接线**
 
