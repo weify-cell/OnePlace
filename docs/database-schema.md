@@ -257,6 +257,7 @@ CREATE TABLE settings (
 | `ilink_tool_usage_prompt` | 旧版工具使用提示词（已迁移到 note_tools_prompt） | 迁移 014 |
 | `note_tools_prompt` | 笔记工具使用提示词（Bot / 聊天 / 主动模式共享） | 迁移 015 |
 | `ilink_learning_prompt` | 学习模式 system prompt（`{topic}` 占位符） | 代码写入 |
+| `ilink_memory_system_prompt` / `ilink_memory_user_template` | 记忆整理 system prompt / 用户消息模板（`{beijingTime}` `{userId}` `{memoryDate}` `{recordCount}` `{transcript}` `{recentMemories}` 占位符） | 迁移 028 |
 | `ilink_user_{userId}` | **运行时**：记录该微信用户存在；`updated_at` = 用户最后发消息时间 | 代码写入（saveWeChatUser） |
 | `ilink_proactive_last_sent_{userId}` | **运行时**：该用户上次主动消息发送时间戳（ms） | 代码写入（setDbLastSentTime） |
 

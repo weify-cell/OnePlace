@@ -58,3 +58,11 @@ export const DEFAULT_MEMORY_SYSTEM_PROMPT =
   '- 只基于对话内容抽取，不得编造或推断。\n' +
   '- 如果对话中没有值得长期记住的内容，不调用 add_memory。\n' +
   '- 不要以文本形式输出记忆列表，所有记忆一律通过 add_memory 工具写入。'
+
+export const DEFAULT_MEMORY_USER_TEMPLATE =
+  '{beijingTime}\n' +
+  '当前用户微信ID：{userId}。本次整理日期（昨天）：{memoryDate}。\n' +
+  '请整理昨日（{memoryDate}）的对话记忆，逐条调用 add_memory 工具写入（content、user_id、memory_date 三个参数都要传）。\n' +
+  '昨日共 {recordCount} 条聊天记录：\n' +
+  '{transcript}\n' +
+  '{recentMemories}'

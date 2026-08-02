@@ -6,6 +6,8 @@ import * as reportService from '../services/wechat/report.service.js'
 import * as settingsService from '../services/settings.service.js'
 import {
   DEFAULT_ILINK_LEARNING_PROMPT,
+  DEFAULT_MEMORY_SYSTEM_PROMPT,
+  DEFAULT_MEMORY_USER_TEMPLATE,
   DEFAULT_NOTE_TOOLS_PROMPT,
   DEFAULT_PROACTIVE_SYSTEM_PROMPT,
   DEFAULT_PROACTIVE_USER_MESSAGE
@@ -76,6 +78,14 @@ export function getConfig(req: Request, res: Response): void {
     learning_prompt: settingsService.getSettingValue<string>(
       'ilink_learning_prompt',
       DEFAULT_ILINK_LEARNING_PROMPT
+    ),
+    memory_system_prompt: settingsService.getSettingValue<string>(
+      'ilink_memory_system_prompt',
+      DEFAULT_MEMORY_SYSTEM_PROMPT
+    ),
+    memory_user_template: settingsService.getSettingValue<string>(
+      'ilink_memory_user_template',
+      DEFAULT_MEMORY_USER_TEMPLATE
     )
   })
 }
@@ -97,7 +107,9 @@ export function updateConfig(req: Request, res: Response): void {
     proactive_check_interval,
     proactive_user_message,
     proactive_system_prompt,
-    learning_prompt
+    learning_prompt,
+    memory_system_prompt,
+    memory_user_template
   } = req.body
 
   if (enabled !== undefined) {
@@ -146,6 +158,12 @@ export function updateConfig(req: Request, res: Response): void {
   }
   if (learning_prompt !== undefined) {
     settingsService.setSetting('ilink_learning_prompt', learning_prompt)
+  }
+  if (memory_system_prompt !== undefined) {
+    settingsService.setSetting('ilink_memory_system_prompt', memory_system_prompt)
+  }
+  if (memory_user_template !== undefined) {
+    settingsService.setSetting('ilink_memory_user_template', memory_user_template)
   }
 
   // check_interval 变更时重建主动聊天定时器

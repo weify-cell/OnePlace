@@ -34,6 +34,8 @@ export interface ILinkConfig {
   proactive_user_message: string
   proactive_system_prompt: string
   learning_prompt: string
+  memory_system_prompt: string
+  memory_user_template: string
 }
 
 export const useILinkStore = defineStore('ilink', () => {

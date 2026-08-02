@@ -6,6 +6,8 @@ import SettingsLayout from './SettingsLayout.vue'
 import {
   DEFAULT_ILINK_LEARNING_PROMPT,
   DEFAULT_ILINK_SYSTEM_PROMPT,
+  DEFAULT_MEMORY_SYSTEM_PROMPT,
+  DEFAULT_MEMORY_USER_TEMPLATE,
   DEFAULT_NOTE_TOOLS_PROMPT,
   DEFAULT_PROACTIVE_SYSTEM_PROMPT,
   DEFAULT_PROACTIVE_USER_MESSAGE
@@ -29,7 +31,9 @@ const ilinkConfig = ref({
   proactive_check_interval: 5,
   proactive_user_message: DEFAULT_PROACTIVE_USER_MESSAGE,
   proactive_system_prompt: DEFAULT_PROACTIVE_SYSTEM_PROMPT,
-  learning_prompt: DEFAULT_ILINK_LEARNING_PROMPT
+  learning_prompt: DEFAULT_ILINK_LEARNING_PROMPT,
+  memory_system_prompt: DEFAULT_MEMORY_SYSTEM_PROMPT,
+  memory_user_template: DEFAULT_MEMORY_USER_TEMPLATE
 })
 
 const ilinkProviderModels = computed(() => {
@@ -66,7 +70,9 @@ onMounted(async () => {
       proactive_check_interval: ilinkStore.config.proactive_check_interval ?? 5,
       proactive_user_message: ilinkStore.config.proactive_user_message ?? DEFAULT_PROACTIVE_USER_MESSAGE,
       proactive_system_prompt: ilinkStore.config.proactive_system_prompt ?? DEFAULT_PROACTIVE_SYSTEM_PROMPT,
-      learning_prompt: ilinkStore.config.learning_prompt ?? DEFAULT_ILINK_LEARNING_PROMPT
+      learning_prompt: ilinkStore.config.learning_prompt ?? DEFAULT_ILINK_LEARNING_PROMPT,
+      memory_system_prompt: ilinkStore.config.memory_system_prompt ?? DEFAULT_MEMORY_SYSTEM_PROMPT,
+      memory_user_template: ilinkStore.config.memory_user_template ?? DEFAULT_MEMORY_USER_TEMPLATE
     }
   }
   const initialModels = settingsStore.availableProviders.find(item => item.name === ilinkConfig.value.provider)?.models || []
@@ -366,6 +372,40 @@ function formatUptime(ms: number): string {
               <div class="settings-field">
                 <n-button type="primary" :loading="ilinkStore.isLoading" @click="saveILinkConfig">
                   保存学习模式配置
+                </n-button>
+              </div>
+            </div>
+          </n-tab-pane>
+
+          <n-tab-pane name="memory" tab="记忆整理">
+            <div class="settings-card__body">
+              <div class="settings-field">
+                <label class="settings-field__label">记忆整理系统提示词</label>
+                <n-input
+                  v-model:value="ilinkConfig.memory_system_prompt"
+                  type="textarea"
+                  :rows="8"
+                  placeholder="记忆整理 agent 的系统提示词，控制抽取规则与 add_memory 调用方式。"
+                />
+                <div class="settings-field__hint">每晚 00:30 整理对话时使用，修改后即时生效。</div>
+              </div>
+
+              <div class="settings-field">
+                <label class="settings-field__label">记忆整理用户消息模板</label>
+                <n-input
+                  v-model:value="ilinkConfig.memory_user_template"
+                  type="textarea"
+                  :rows="6"
+                  placeholder="用户消息模板，占位符：{beijingTime} {userId} {memoryDate} {recordCount} {transcript} {recentMemories}"
+                />
+                <div class="settings-field__hint">
+                  占位符：{beijingTime} 当前北京时间、{userId} 微信用户 ID、{memoryDate} 整理日期（昨天）、{recordCount} 聊天条数、{transcript} 对话转录、{recentMemories} 已有记忆防重上下文。
+                </div>
+              </div>
+
+              <div class="settings-field">
+                <n-button type="primary" :loading="ilinkStore.isLoading" @click="saveILinkConfig">
+                  保存记忆整理配置
                 </n-button>
               </div>
             </div>
