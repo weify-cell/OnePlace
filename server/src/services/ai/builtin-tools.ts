@@ -4,6 +4,7 @@ import { getNotes, searchNoteLines, getNoteLines } from '../notes.service.js'
 import { getTodos, getTodoById, createTodo, updateTodo, updateTodoProgress, getTodoProgressLogs, deleteTodo } from '../todos.service.js'
 import { getFolders } from '../folders.service.js'
 import { searchKnowledgeBase } from '../knowledge-base.service.js'
+import { searchMemories, searchMemoryVectors } from '../wechat/memory.service.js'
 
 function textResult(text: string): AgentToolResult<undefined> {
   return { content: [{ type: 'text' as const, text }], details: undefined }
@@ -308,6 +309,40 @@ export function getBuiltinToolMap(): Map<string, AgentTool> {
         const beijingTime = now.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })
         const iso = now.toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }).replace(' ', 'T')
         return textResult(`当前北京时间: ${beijingTime} (${iso})`)
+      }
+    },
+
+    // ── 14. 搜索记忆（数据库）──
+    {
+      name: 'search_memory',
+      label: '搜索记忆',
+      description: '在微信 Bot 的长期记忆库中按关键词检索，返回相关的记忆条目。用于回忆过往对话中提到的事实、偏好或事件。',
+      parameters: Type.Object({
+        query: Type.String({ description: '搜索关键词' }),
+        limit: Type.Optional(Type.Number({ description: '返回数量，默认 10', default: 10 })),
+        user_id: Type.Optional(Type.String({ description: '微信用户 ID（Bot 对话中通常提供）' }))
+      }),
+      execute: async (_toolCallId: string, params: { query: string; limit?: number; user_id?: string }) => {
+        const rows = searchMemories(params.query, { userId: params.user_id, limit: params.limit })
+        if (rows.length === 0) return textResult('未找到相关记忆')
+        return textResult(rows.map(r => `- ${r.memory_date.slice(5)}: ${r.content}`).join('\n'))
+      }
+    },
+
+    // ── 15. 语义搜索记忆（向量）──
+    {
+      name: 'search_memory_vectors',
+      label: '语义搜索记忆',
+      description: '在微信 Bot 的长期记忆向量库中按语义相似度检索，返回相关的记忆条目。用于模糊回忆、语义相关的历史信息。',
+      parameters: Type.Object({
+        query: Type.String({ description: '搜索关键词或描述' }),
+        limit: Type.Optional(Type.Number({ description: '返回数量，默认 5', default: 5 })),
+        user_id: Type.Optional(Type.String({ description: '微信用户 ID（Bot 对话中通常提供）' }))
+      }),
+      execute: async (_toolCallId: string, params: { query: string; limit?: number; user_id?: string }) => {
+        const results = await searchMemoryVectors(params.query, { userId: params.user_id, limit: params.limit })
+        if (results.length === 0) return textResult('未找到相关记忆')
+        return textResult(results.map((r, i) => `[${i + 1}] (相关度: ${(r.score * 100).toFixed(0)}%)\n- ${r.memory_date.slice(5)}: ${r.content}`).join('\n\n---\n\n'))
       }
     }
   ] as unknown as AgentTool[]
