@@ -4,7 +4,7 @@ import { getNotes, searchNoteLines, getNoteLines } from '../notes.service.js'
 import { getTodos, getTodoById, createTodo, updateTodo, updateTodoProgress, getTodoProgressLogs, deleteTodo } from '../todos.service.js'
 import { getFolders } from '../folders.service.js'
 import { searchKnowledgeBase } from '../knowledge-base.service.js'
-import { searchMemories, searchMemoryVectors } from '../wechat/memory.service.js'
+import { searchMemories, searchMemoryVectors, addMemory, resolvePrimaryMemoryUser, getMemoryDate } from '../wechat/memory.service.js'
 
 function textResult(text: string): AgentToolResult<undefined> {
   return { content: [{ type: 'text' as const, text }], details: undefined }
@@ -343,6 +343,28 @@ export function getBuiltinToolMap(): Map<string, AgentTool> {
         const results = await searchMemoryVectors(params.query, { userId: params.user_id, limit: params.limit })
         if (results.length === 0) return textResult('未找到相关记忆')
         return textResult(results.map((r, i) => `[${i + 1}] (相关度: ${(r.score * 100).toFixed(0)}%)\n- ${r.memory_date.slice(5)}: ${r.content}`).join('\n\n---\n\n'))
+      }
+    },
+
+    // ── 16. 记住记忆（写入）──
+    {
+      name: 'add_memory',
+      label: '记住记忆',
+      description: '记住一条长期记忆：把一句事实、偏好或承诺写入记忆库（含语义向量），重复内容自动忽略。用于需要长期记住的信息。',
+      parameters: Type.Object({
+        content: Type.String({ description: '要记住的内容，一句完整、独立、可检索的话' }),
+        user_id: Type.Optional(Type.String({ description: '微信用户 ID，不传则使用唯一用户' })),
+        memory_date: Type.Optional(Type.String({ description: '记忆归属的北京日期 YYYY-MM-DD，不传则默认今天' }))
+      }),
+      execute: async (_toolCallId: string, params: { content: string; user_id?: string; memory_date?: string }) => {
+        const content = (params.content || '').trim()
+        if (content.length < 2) return textResult('记忆内容过短或为空，请提供一句完整的话。')
+        const userId = params.user_id || resolvePrimaryMemoryUser()
+        if (!userId) return textResult('无法确定用户 ID，请传入 user_id。')
+        const memoryDate = params.memory_date || getMemoryDate(new Date())
+        const res = await addMemory(userId, content, memoryDate)
+        if (res.status === 'duplicate') return textResult(`已存在同内容记忆，未重复添加：${content}`)
+        return textResult(res.vectorOk ? `已记住：${content}` : `已记住：${content}（向量库写入失败，仅存入数据库）`)
       }
     }
   ] as unknown as AgentTool[]

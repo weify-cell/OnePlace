@@ -30,8 +30,14 @@ vi.mock('../database/index.js', async () => {
 })
 
 // Task 4：mock ilink-bot 的动态 import（consolidateDayMemory 内部运行时 await import()）
+// 模拟真实 agent 行为：整理时对每条抽取结果调用一次 add_memory 工具写入
 vi.doMock('../services/wechat/ilink-bot.service.js', () => ({
-  runAgentTurn: vi.fn(async () => '- 用户喜欢喝美式\n- 项目A正在开发'),
+  runAgentTurn: vi.fn(async (opts: any) => {
+    const md = getMemoryDate(new Date(Date.now() - 86400000)) // 昨天
+    await addMemory(opts.userId, '用户喜欢喝美式', md)
+    await addMemory(opts.userId, '项目A正在开发', md)
+    return ''
+  }),
   formatBeijingTime: vi.fn(() => '[2026-08-02 00:30:00 星期日 北京时间]')
 }))
 
@@ -46,7 +52,7 @@ vi.mock('../services/vector/vector.service.js', () => ({
 import { connectDatabase } from '../database/index.js'
 import {
   isMemoryDue, getMemoryDate, saveMemory, queryMemories,
-  searchMemories, parseMemoryItems, buildMemoryPrompt
+  searchMemories, addMemory, buildMemoryPrompt
 } from '../services/wechat/memory.service.js'
 import { getReportWindow } from '../services/wechat/report.service.js'
 
@@ -113,10 +119,48 @@ describe('searchMemories', () => {
   })
 })
 
-describe('parseMemoryItems', () => {
-  it('兼容 - / * / 数字 / 普通行，过滤空行/过短/标题/无（含无。无！）', () => {
-    const out = parseMemoryItems('- 用户喝美式\n* 项目A在开发\n1. 用户周日常跑步\n普通行也算\n\n   \n无\n无。\n无！\n## 标题\n# 另一个标题')
-    expect(out).toEqual(['用户喝美式', '项目A在开发', '用户周日常跑步', '普通行也算'])
+describe('addMemory', () => {
+  it('新增：落库并写向量，返回 new + vectorOk=true', async () => {
+    const db = connectDatabase()
+    db.prepare('DELETE FROM wechat_memories').run()
+    const { upsertChunks } = await import('../services/vector/vector.service.js')
+    upsertChunks.mockClear()
+    const res = await addMemory('u1', '用户喝美式', '2026-08-01')
+    expect(res.status).toBe('new')
+    expect(res.vectorOk).toBe(true)
+    expect(res.memoryId).toBeGreaterThan(0)
+    expect(upsertChunks).toHaveBeenCalledWith(
+      expect.arrayContaining([expect.objectContaining({
+        id: `mem${res.memoryId}`,
+        metadata: expect.objectContaining({ memory_id: res.memoryId, user_id: 'u1', memory_date: '2026-08-01' })
+      })]),
+      'oneplace_memory'
+    )
+  })
+
+  it('重复：返回 duplicate 且不写向量', async () => {
+    const db = connectDatabase()
+    db.prepare('DELETE FROM wechat_memories').run()
+    const { upsertChunks } = await import('../services/vector/vector.service.js')
+    upsertChunks.mockClear()
+    await addMemory('u1', '用户喝美式', '2026-08-01')
+    upsertChunks.mockClear()
+    const res = await addMemory('u1', '用户喝美式', '2026-08-02') // 同内容不同日期 → 去重
+    expect(res.status).toBe('duplicate')
+    expect(upsertChunks).not.toHaveBeenCalled()
+    expect(db.prepare('SELECT COUNT(*) c FROM wechat_memories').get()).toMatchObject({ c: 1 })
+  })
+
+  it('向量写入失败：仍落库，返回 new + vectorOk=false', async () => {
+    const db = connectDatabase()
+    db.prepare('DELETE FROM wechat_memories').run()
+    const { upsertChunks } = await import('../services/vector/vector.service.js')
+    upsertChunks.mockClear()
+    upsertChunks.mockRejectedValueOnce(new Error('qdrant down'))
+    const res = await addMemory('u1', '项目A在开发', '2026-08-01')
+    expect(res.status).toBe('new')
+    expect(res.vectorOk).toBe(false)
+    expect(db.prepare('SELECT COUNT(*) c FROM wechat_memories').get()).toMatchObject({ c: 1 })
   })
 })
 
@@ -148,8 +192,9 @@ describe('consolidateDayMemory', () => {
       .run(yesterdayMidTs)
 
     const { upsertChunks } = await import('../services/vector/vector.service.js')
+    upsertChunks.mockClear() // 共享 mock，先清掉 addMemory 用例的历史调用
     const first = await consolidateDayMemory('u1')
-    expect(first.saved).toBe(2) // mock 输出两条
+    expect(first.saved).toBe(2) // mock agent 在 loop 内调 add_memory 写了 2 条
     expect(db.prepare('SELECT COUNT(*) c FROM wechat_memories').get()).toMatchObject({ c: 2 })
     expect(upsertChunks).toHaveBeenCalledTimes(2)
     expect(upsertChunks).toHaveBeenCalledWith(

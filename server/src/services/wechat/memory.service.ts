@@ -79,11 +79,19 @@ export function searchMemories(
   ).all(...values) as MemoryRow[]
 }
 
-/** 解析 LLM 抽取输出为条目：兼容 - / * / 数字 / 普通行，过滤空行、过短行、标题行与"无"。 */
-export function parseMemoryItems(text: string): string[] {
-  return text.split('\n')
-    .map(line => line.trim().replace(/^[-*•]\s+/, '').replace(/^\d+[.、]\s*/, ''))
-    .filter(line => line.length >= 2 && !/^#{1,6}\s/.test(line) && !/^无[。！!.]*$/.test(line) && !['none', 'None'].includes(line))
+/** 单用户部署时回退主用户；多用户/无用户返回 null（调用方需显式传 user_id）。 */
+export function resolvePrimaryMemoryUser(): string | null {
+  const users = getWeChatUsers()
+  return users.length === 1 ? users[0] : null
+}
+
+/** 统计某用户某日已落库条数（用于整理后 saved 差值）。 */
+function countMemories(userId: string, memoryDate: string): number {
+  const db = connectDatabase()
+  const row = db.prepare(
+    'SELECT COUNT(*) c FROM wechat_memories WHERE user_id = ? AND memory_date = ?'
+  ).get(userId, memoryDate) as { c: number }
+  return row.c
 }
 
 /** 近30天记忆附记段（system prompt 用）；无记忆返回 ''。 */
@@ -122,6 +130,24 @@ async function upsertMemoryVector(userId: string, memoryId: number, content: str
   if (!result.success) throw new Error(result.error || 'memory vector upsert failed')
 }
 
+/** 单条记忆写入口（add_memory 工具调用）：落库→新增才写向量。重复内容返回 duplicate 不写向量。 */
+export async function addMemory(
+  userId: string,
+  content: string,
+  memoryDate: string
+): Promise<{ status: 'new' | 'duplicate'; vectorOk: boolean; memoryId: number }> {
+  const id = saveMemory(userId, content, memoryDate)
+  if (id === 0) return { status: 'duplicate', vectorOk: false, memoryId: 0 }
+  let vectorOk = true
+  try {
+    await upsertMemoryVector(userId, id, content, memoryDate)
+  } catch (err) {
+    vectorOk = false
+    console.error(`[memory] vector upsert failed for memory #${id}:`, err)
+  }
+  return { status: 'new', vectorOk, memoryId: id }
+}
+
 /** 语义检索记忆向量库；失败返回空数组（不阻断对话）。 */
 export async function searchMemoryVectors(
   query: string,
@@ -153,8 +179,8 @@ export async function searchMemoryVectors(
 /** 内存级 in-flight 锁：同一用户同时只允许一个整理在跑。 */
 const inflightMemories = new Set<string>()
 
-/** 整理某用户昨天对话：抽取记忆条目→落库→新增条目写入向量库。静默执行，不发送微信消息。 */
-export async function consolidateDayMemory(userId: string): Promise<{ extracted: number; saved: number }> {
+/** 整理某用户昨天对话：抽取记忆→由 agent 逐条调用 add_memory 工具写入。静默执行，不发送微信消息。 */
+export async function consolidateDayMemory(userId: string): Promise<{ saved: number }> {
   const now = new Date()
   // 00:30 整理的是刚结束的「昨天」全天：[昨天北京 00:00, 今天北京 00:00)，memory_date 标为昨天。
   const todayStart = getReportWindow('daily', now).start // 今天北京 00:00（UTC）
@@ -166,14 +192,15 @@ export async function consolidateDayMemory(userId: string): Promise<{ extracted:
   const records = queryChatRecords(userId, window)
   if (records.length === 0) {
     console.log(`[memory] no messages yesterday for ${userId}, skip`)
-    return { extracted: 0, saved: 0 }
+    return { saved: 0 }
   }
 
   const recentMemories = queryMemories(userId, { days: 30, limit: 500 })
   const { runAgentTurn, formatBeijingTime } = await import('./ilink-bot.service.js')
   const userContent = [
     formatBeijingTime(),
-    `请整理昨日（${memoryDate}）的对话记忆。`,
+    `当前用户微信ID：${userId}。本次整理日期（昨天）：${memoryDate}。`,
+    `请整理昨日（${memoryDate}）的对话记忆，逐条调用 add_memory 工具写入（content、user_id、memory_date 三个参数都要传）。`,
     `昨日共 ${records.length} 条聊天记录：`,
     buildTranscript(records),
     recentMemories.length > 0
@@ -181,7 +208,9 @@ export async function consolidateDayMemory(userId: string): Promise<{ extracted:
       : ''
   ].join('\n')
 
-  const output = await runAgentTurn({
+  // 写库由 agent 在 loop 内调用 add_memory 工具完成；saved 用 (user, memory_date) 行数差值统计
+  const before = countMemories(userId, memoryDate)
+  await runAgentTurn({
     userId,
     agentId: `memory:consolidate:${userId}`,
     systemPrompt: DEFAULT_MEMORY_SYSTEM_PROMPT,
@@ -189,21 +218,9 @@ export async function consolidateDayMemory(userId: string): Promise<{ extracted:
     removeAfterRun: true,
     loadHistory: false
   })
-
-  const items = parseMemoryItems(output)
-  let saved = 0
-  for (const content of items) {
-    const id = saveMemory(userId, content, memoryDate)
-    if (id === 0) continue
-    saved++
-    try {
-      await upsertMemoryVector(userId, id, content, memoryDate)
-    } catch (err) {
-      console.error(`[memory] vector upsert failed for memory #${id}:`, err)
-    }
-  }
-  console.log(`[memory] consolidated ${userId}: extracted=${items.length} saved=${saved}`)
-  return { extracted: items.length, saved }
+  const saved = countMemories(userId, memoryDate) - before
+  console.log(`[memory] consolidated ${userId}: saved=${saved}`)
+  return { saved }
 }
 
 // ── 调度 ──────────────────────────────────────────────────
