@@ -63,11 +63,11 @@ function computeTextHash(text: string): string {
     case 'md5':
       return md5(text)
     case 'sha1':
-      return sha.sha1(text).digest('hex')
+      return sha('sha1').update(text).digest('hex')
     case 'sha256':
-      return sha.sha256(text).digest('hex')
+      return sha('sha256').update(text).digest('hex')
     case 'sha512':
-      return sha.sha512(text).digest('hex')
+      return sha('sha512').update(text).digest('hex')
     case 'sha3-256':
       return sha3_256(text)
     case 'sha3-512':
@@ -94,13 +94,13 @@ function computeFileHash(file: File, onProgress: (pct: number) => void): Promise
           hash = md5(Array.from(uint8))
           break
         case 'sha1':
-          hash = sha.sha1(Array.from(uint8)).digest('hex')
+          hash = sha('sha1').update(Array.from(uint8)).digest('hex')
           break
         case 'sha256':
-          hash = sha.sha256(Array.from(uint8)).digest('hex')
+          hash = sha('sha256').update(Array.from(uint8)).digest('hex')
           break
         case 'sha512':
-          hash = sha.sha512(Array.from(uint8)).digest('hex')
+          hash = sha('sha512').update(Array.from(uint8)).digest('hex')
           break
         case 'sha3-256':
           hash = sha3_256(uint8)
