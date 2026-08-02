@@ -32,6 +32,8 @@ ilinkRouter.delete('/history/:userId', ilinkController.clearMessageHistory)
 ilinkRouter.get('/proactive-chat/config', ilinkController.getProactiveChatConfig)
 ilinkRouter.put('/proactive-chat/config', ilinkController.updateProactiveChatConfig)
 
-// 报告查询
+// 报告查询 / 编辑 / 删除
 ilinkRouter.get('/reports', ilinkController.getReports)
 ilinkRouter.get('/reports/:id', ilinkController.getReport)
+ilinkRouter.put('/reports/:id', ilinkController.updateReport)
+ilinkRouter.delete('/reports/:id', ilinkController.deleteReport)

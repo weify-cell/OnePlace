@@ -16,7 +16,17 @@ export async function fetchReports(params: {
   type?: ReportType
   start?: string
   end?: string
+  keyword?: string
 }): Promise<WeChatReport[]> {
   const res = await api.get('/ilink/reports', { params })
   return res.data
+}
+
+export async function updateReport(id: number, content: string): Promise<WeChatReport> {
+  const res = await api.put(`/ilink/reports/${id}`, { content })
+  return res.data
+}
+
+export async function deleteReport(id: number): Promise<void> {
+  await api.delete(`/ilink/reports/${id}`)
 }

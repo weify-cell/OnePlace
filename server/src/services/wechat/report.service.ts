@@ -99,6 +99,7 @@ export function listReports(params: {
   userId?: string
   start?: string
   end?: string
+  keyword?: string
 }): WeChatReportRow[] {
   const db = connectDatabase()
   const conditions: string[] = []
@@ -107,6 +108,10 @@ export function listReports(params: {
   if (params.userId) { conditions.push('user_id = ?'); values.push(params.userId) }
   if (params.start) { conditions.push('period_end > ?'); values.push(params.start) }
   if (params.end) { conditions.push('period_start < ?'); values.push(params.end) }
+  if (params.keyword) {
+    conditions.push('(instr(content, ?) > 0 OR instr(period_start, ?) > 0 OR instr(period_end, ?) > 0)')
+    values.push(params.keyword, params.keyword, params.keyword)
+  }
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
   return db.prepare(`SELECT * FROM wechat_reports ${where} ORDER BY period_start DESC`).all(...values) as WeChatReportRow[]
 }
@@ -115,6 +120,21 @@ export function getReportById(id: number): WeChatReportRow | null {
   const db = connectDatabase()
   const row = db.prepare('SELECT * FROM wechat_reports WHERE id = ?').get(id) as WeChatReportRow | undefined
   return row ?? null
+}
+
+/** 编辑报告内容，返回更新后的行；id 不存在返回 null。 */
+export function updateReportContent(id: number, content: string): WeChatReportRow | null {
+  const db = connectDatabase()
+  const result = db.prepare('UPDATE wechat_reports SET content = ? WHERE id = ?').run(content, id)
+  if (result.changes === 0) return null
+  return getReportById(id)
+}
+
+/** 删除报告，返回是否实际删除了一行。 */
+export function deleteReport(id: number): boolean {
+  const db = connectDatabase()
+  const result = db.prepare('DELETE FROM wechat_reports WHERE id = ?').run(id)
+  return result.changes > 0
 }
 
 /** 按周期起点查已落库报告（用于发送前去重：命令已生成则定时不再发）。 */

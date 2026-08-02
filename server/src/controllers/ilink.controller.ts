@@ -274,7 +274,8 @@ export function getReports(req: Request, res: Response): void {
   const type = getSingleParam(req.query.type) as reportService.ReportType | undefined
   const start = getSingleParam(req.query.start)
   const end = getSingleParam(req.query.end)
-  res.json(reportService.listReports({ type, start, end }))
+  const keyword = getSingleParam(req.query.keyword)
+  res.json(reportService.listReports({ type, start, end, keyword }))
 }
 
 export function getReport(req: Request, res: Response): void {
@@ -289,4 +290,36 @@ export function getReport(req: Request, res: Response): void {
     return
   }
   res.json(report)
+}
+
+export function updateReport(req: Request, res: Response): void {
+  const id = Number(req.params.id)
+  if (!Number.isInteger(id)) {
+    res.status(400).json({ error: 'BadRequest', message: 'id must be an integer' })
+    return
+  }
+  const { content } = req.body
+  if (typeof content !== 'string' || content.trim() === '') {
+    res.status(400).json({ error: 'BadRequest', message: 'content must be a non-empty string' })
+    return
+  }
+  const report = reportService.updateReportContent(id, content)
+  if (!report) {
+    res.status(404).json({ error: 'NotFound', message: 'report not found' })
+    return
+  }
+  res.json(report)
+}
+
+export function deleteReport(req: Request, res: Response): void {
+  const id = Number(req.params.id)
+  if (!Number.isInteger(id)) {
+    res.status(400).json({ error: 'BadRequest', message: 'id must be an integer' })
+    return
+  }
+  if (reportService.deleteReport(id)) {
+    res.json({ success: true })
+  } else {
+    res.status(404).json({ error: 'NotFound', message: 'report not found' })
+  }
 }

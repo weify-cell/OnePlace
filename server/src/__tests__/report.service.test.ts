@@ -39,7 +39,7 @@ vi.doMock('../services/wechat/ilink-bot.service.js', () => ({
   formatBeijingTime: vi.fn(() => '[2026-08-02 22:00:00 星期日 北京时间]')
 }))
 
-import { queryChatRecords, saveReport, listReports, getReportById } from '../services/wechat/report.service.js'
+import { queryChatRecords, saveReport, listReports, getReportById, updateReportContent, deleteReport } from '../services/wechat/report.service.js'
 
 // 北京 = UTC+8。以下 now 均为 UTC 时刻，注释标明对应北京时间。
 const DAILY_DUE = new Date('2026-08-02T14:00:00.000Z')   // 北京 2026-08-02 22:00
@@ -137,6 +137,49 @@ describe('saveReport / listReports / getReportById', () => {
     const detail = getReportById(all[0].id)
     expect(detail?.report_type).toBe('daily')
     expect(getReportById(9999)).toBeNull()
+  })
+})
+
+describe('listReports keyword / updateReportContent / deleteReport', () => {
+  it('按关键词过滤内容与周期', () => {
+    const db = connectDatabase()
+    const w = { start: '2026-08-08T16:00:00.000Z', end: '2026-08-09T14:00:00.000Z' }
+    saveReport('u2', 'daily', w, '今天聊了项目A与部署')
+    const other = { start: '2026-08-09T16:00:00.000Z', end: '2026-08-10T14:00:00.000Z' }
+    saveReport('u2', 'daily', other, '完全无关内容')
+
+    expect(listReports({ type: 'daily', keyword: '部署' })).toHaveLength(1)
+    // 命中 period_start 也能搜到
+    expect(listReports({ type: 'daily', keyword: '2026-08-08' })).toHaveLength(1)
+    expect(listReports({ type: 'daily', keyword: '不存在关键词' })).toHaveLength(0)
+
+    db.prepare("DELETE FROM wechat_reports WHERE user_id = 'u2'").run()
+  })
+
+  it('编辑内容并返回更新行；不存在的 id 返回 null', () => {
+    const db = connectDatabase()
+    const w = { start: '2026-08-10T16:00:00.000Z', end: '2026-08-11T14:00:00.000Z' }
+    saveReport('u3', 'daily', w, '原文')
+    const row = listReports({ type: 'daily', keyword: '原文' })[0]
+
+    const updated = updateReportContent(row.id, '编辑后的内容')
+    expect(updated?.content).toBe('编辑后的内容')
+    expect(getReportById(row.id)?.content).toBe('编辑后的内容')
+
+    expect(updateReportContent(9999, 'x')).toBeNull()
+    db.prepare("DELETE FROM wechat_reports WHERE user_id = 'u3'").run()
+  })
+
+  it('删除报告并返回是否实际删除', () => {
+    const db = connectDatabase()
+    const w = { start: '2026-08-11T16:00:00.000Z', end: '2026-08-12T14:00:00.000Z' }
+    saveReport('u4', 'daily', w, '待删除')
+    const row = listReports({ type: 'daily', keyword: '待删除' })[0]
+
+    expect(deleteReport(row.id)).toBe(true)
+    expect(getReportById(row.id)).toBeNull()
+    expect(deleteReport(row.id)).toBe(false)
+    db.prepare("DELETE FROM wechat_reports WHERE user_id = 'u4'").run()
   })
 })
 
