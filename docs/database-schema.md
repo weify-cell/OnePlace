@@ -26,6 +26,7 @@
 | 13 | `embedding_tasks` | ⚠️ 遗留表，当前代码未读写 | ⚠️ 孤儿 |
 | 14 | `_migrations` | 迁移跟踪表（基础设施） | ✅ 使用中 |
 | 15 | `_notes_old_20260419*` | 重建 notes 表时遗留的备份表（3 张） | ⚠️ 遗留 |
+| 16 | `wechat_reports` | 微信日报/周报/月报 | ✅ 使用中 |
 
 ---
 
@@ -496,6 +497,42 @@ CREATE TABLE _migrations (
 ## 15. `_notes_old_20260419*` — ⚠️ 遗留备份表
 
 2026-04-19 重建 `notes` 表（补 `is_knowledge_base` 列）时 SQLite 自动生成的旧表备份，共 3 张（`_notes_old_20260419`、`_notes_old_20260419_1`、`_notes_old_20260419_2`），结构与旧版 notes 一致。当前代码不读写，可安全清理。
+
+---
+
+## 16. `wechat_reports` — 微信日报/周报/月报
+
+| 字段 | 类型 | 约束/默认 | 注释 |
+|------|------|-----------|------|
+| id | INTEGER | PK, AUTOINCREMENT | 主键 |
+| user_id | TEXT | NOT NULL | 微信用户 ID |
+| report_type | TEXT | NOT NULL, CHECK | 报告类型：`daily`（日报）/ `weekly`（周报）/ `monthly`（月报） |
+| period_start | TEXT | NOT NULL | 覆盖周期开始（UTC ISO8601） |
+| period_end | TEXT | NOT NULL | 覆盖周期结束 |
+| content | TEXT | NOT NULL | 报告 Markdown 全文 |
+| created_at | TEXT | NOT NULL DEFAULT (now) | 生成时间 |
+
+> 微信 Bot 定时/命令生成的日报、周报、月报存储表（迁移 023）。定时触发无防重发守卫，靠 `UNIQUE(user_id, report_type, period_start)` 兜底防重复入库；`period_start` 唯一即可区分同一用户同类型的不同周期。
+
+```sql
+CREATE TABLE wechat_reports (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id      TEXT    NOT NULL,
+  report_type  TEXT    NOT NULL CHECK(report_type IN ('daily','weekly','monthly')),
+  period_start TEXT    NOT NULL,
+  period_end   TEXT    NOT NULL,
+  content      TEXT    NOT NULL,
+  created_at   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  UNIQUE(user_id, report_type, period_start)
+);
+```
+
+索引：
+
+```sql
+CREATE INDEX idx_wechat_reports_user_type
+ON wechat_reports(user_id, report_type, period_start);
+```
 
 ---
 
