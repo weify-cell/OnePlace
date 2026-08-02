@@ -572,17 +572,17 @@ export function searchMemories(
   ).all(...values) as MemoryRow[]
 }
 
-/** 解析 LLM 抽取输出为条目：兼容 - / * / 数字 / 普通行，过滤空行、过短行、标题行与"无"。 */
+/** 解析 LLM 抽取输出为条目：兼容 - / * / 数字 / 普通行，过滤空行、过短行、标题行、无(含结尾标点)。 */
 export function parseMemoryItems(text: string): string[] {
   return text.split('\n')
     .map(line => line.trim().replace(/^[-*•]\s+/, '').replace(/^\d+[.、]\s*/, ''))
-    .filter(line => line.length >= 2 && !/^#{1,6}\s/.test(line) && !['无', 'none', 'None'].includes(line))
+    .filter(line => line.length >= 2 && !/^#{1,6}\s/.test(line) && !/^无[。！!.]*$/.test(line) && !['none', 'None'].includes(line))
 }
 
 /** 近30天记忆附记段（system prompt 用）；无记忆返回 ''。 */
 export function buildMemoryPrompt(userId: string): string {
   const maxItems = getSettingValue<number>('ilink_memory_prompt_max_items', 0)
-  const limit = maxItems > 0 ? maxItems : 500
+  const limit = maxItems > 0 ? maxItems : 100000 // 0=不限制（与配置说明一致，30天窗口是自然边界）
   const items = queryMemories(userId, { days: 30, limit })
   if (items.length === 0) return ''
   const lines = items.map(m => `- ${m.memory_date.slice(5)}: ${m.content}`)
@@ -791,8 +791,13 @@ const inflightMemories = new Set<string>()
 /** 整理某用户当天对话：抽取记忆条目→落库→新增条目写入向量库。静默执行，不发送微信消息。 */
 export async function consolidateDayMemory(userId: string): Promise<{ extracted: number; saved: number }> {
   const now = new Date()
-  const memoryDate = getMemoryDate(now)
-  const window = getReportWindow('daily', now)
+  // 00:30 整理的是刚结束的「昨天」全天：[昨天北京 00:00, 今天北京 00:00)，memory_date 标为昨天。
+  const todayStart = getReportWindow('daily', now).start // 今天北京 00:00（UTC）
+  const window = {
+    start: new Date(new Date(todayStart).getTime() - 86400000).toISOString(), // 昨天北京 00:00
+    end: todayStart
+  }
+  const memoryDate = getMemoryDate(new Date(now.getTime() - 86400000)) // 昨天
   const records = queryChatRecords(userId, window)
   if (records.length === 0) {
     console.log(`[memory] no messages today for ${userId}, skip`)
