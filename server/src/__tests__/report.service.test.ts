@@ -55,13 +55,19 @@ describe('isReportDue', () => {
     expect(isReportDue('daily', DAILY_DUE)).toBe(true)
     expect(isReportDue('daily', DAILY_OFF)).toBe(false)
   })
-  it('周报：仅周日 8:00 到点', () => {
+  it('日报：22:01 仍判到点（放宽 1 分钟容忍调度漂移，22:02 不再触发）', () => {
+    expect(isReportDue('daily', new Date('2026-08-02T14:01:00.000Z'))).toBe(true) // 北京 22:01
+    expect(isReportDue('daily', new Date('2026-08-02T14:02:00.000Z'))).toBe(false) // 北京 22:02
+  })
+  it('周报：仅周日 8:00 到点（8:01 容忍）', () => {
     expect(isReportDue('weekly', SUNDAY_800)).toBe(true)
+    expect(isReportDue('weekly', new Date('2026-08-02T00:01:00.000Z'))).toBe(true) // 北京 周日 8:01
     expect(isReportDue('weekly', SUNDAY_830)).toBe(false)
     expect(isReportDue('weekly', MONDAY_800)).toBe(false)
   })
-  it('月报：仅每月最后一天 8:00 到点', () => {
+  it('月报：仅每月最后一天 8:00 到点（8:01 容忍）', () => {
     expect(isReportDue('monthly', LAST_DAY_800)).toBe(true)
+    expect(isReportDue('monthly', new Date('2026-08-31T00:01:00.000Z'))).toBe(true) // 北京 8-31 8:01
     expect(isReportDue('monthly', NOT_LAST_800)).toBe(false)
   })
 })
@@ -182,13 +188,48 @@ describe('sendAndPersist', () => {
     expect(send).toHaveBeenCalledTimes(1)
     expect(db.prepare('SELECT COUNT(*) c FROM wechat_reports').get()).toMatchObject({ c: 1 })
 
-    // 同周期再触发：UNIQUE 忽略，仍 1 条
+    // 同周期再触发：DB 去重（findReportByPeriod）直接跳过发送，仍 1 条
     await sendAndPersist('u1', 'daily', send as any)
+    expect(send).toHaveBeenCalledTimes(1)
     expect(db.prepare('SELECT COUNT(*) c FROM wechat_reports').get()).toMatchObject({ c: 1 })
 
     // 发送失败：不落表
     const badSend = vi.fn().mockRejectedValue(new Error('send fail'))
     await sendAndPersist('u1', 'weekly', badSend as any)
     expect(db.prepare('SELECT COUNT(*) c FROM wechat_reports WHERE report_type=\'weekly\'').get()).toMatchObject({ c: 0 })
+  })
+
+  it('命令已落库（同周期）时跳过发送与落库（问题A：命令/定时冲突）', async () => {
+    const db = connectDatabase()
+    db.prepare('DELETE FROM wechat_reports').run()
+
+    // 模拟 14:00 手动 /日报 已落库：period_start 与 sendAndPersist 计算的当天北京 00:00 一致
+    const w = getReportWindow('daily', new Date())
+    saveReport('u1', 'daily', w, '【日报】命令版')
+
+    const send = vi.fn().mockResolvedValue(undefined)
+    await sendAndPersist('u1', 'daily', send as any)
+
+    // 定时触发应被去重：不发送、不新增行，且保留命令版内容
+    expect(send).not.toHaveBeenCalled()
+    expect(db.prepare('SELECT COUNT(*) c FROM wechat_reports').get()).toMatchObject({ c: 1 })
+    expect(db.prepare('SELECT content FROM wechat_reports').get()).toMatchObject({ content: '【日报】命令版' })
+  })
+
+  it('in-flight 锁：并发重复调用只发送一次（问题B：重启双发/并发污染）', async () => {
+    const db = connectDatabase()
+    db.prepare('DELETE FROM wechat_reports').run()
+
+    // 让 runAgentTurn 变慢，确保第一次生成未完成时就发起第二次调用
+    const { runAgentTurn } = await import('../services/wechat/ilink-bot.service.js')
+    runAgentTurn.mockImplementationOnce(() => new Promise((resolve) => setTimeout(() => resolve('【日报】慢生成'), 20)))
+
+    const send = vi.fn().mockResolvedValue(undefined)
+    const p1 = sendAndPersist('u1', 'daily', send as any)
+    const p2 = sendAndPersist('u1', 'daily', send as any)
+    await Promise.all([p1, p2])
+
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(db.prepare('SELECT COUNT(*) c FROM wechat_reports').get()).toMatchObject({ c: 1 })
   })
 })

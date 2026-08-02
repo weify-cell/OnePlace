@@ -24,15 +24,16 @@ function isLastDayOfBeijingMonth(now: Date): boolean {
   return new Date(Date.UTC(y, m, d + 1)).getUTCMonth() !== m
 }
 
-/** 到点判定（北京时间）。日报每天22:00；周报周日8:00；月报每月最后一天8:00。 */
+/** 到点判定（北京时间）。日报每天22:00；周报周日8:00；月报每月最后一天8:00。
+ * 分钟匹配放宽到 <=1：容忍事件循环阻塞/定时器漂移错过整分钟，配合 DB 去重不会重复发送。 */
 export function isReportDue(type: ReportType, now: Date): boolean {
   const b = toBeijing(now)
   const hour = b.getUTCHours()
   const minute = b.getUTCMinutes()
-  if (type === 'daily') return hour === 22 && minute === 0
-  if (type === 'weekly') return b.getUTCDay() === 0 && hour === 8 && minute === 0
+  if (type === 'daily') return hour === 22 && minute <= 1
+  if (type === 'weekly') return b.getUTCDay() === 0 && hour === 8 && minute <= 1
   // monthly
-  return isLastDayOfBeijingMonth(now) && hour === 8 && minute === 0
+  return isLastDayOfBeijingMonth(now) && hour === 8 && minute <= 1
 }
 
 /** 周期窗口。start 为北京 00:00 起（转 UTC），end 为 now。 */
@@ -116,7 +117,24 @@ export function getReportById(id: number): WeChatReportRow | null {
   return row ?? null
 }
 
+/** 按周期起点查已落库报告（用于发送前去重：命令已生成则定时不再发）。 */
+export function findReportByPeriod(
+  userId: string,
+  type: ReportType,
+  periodStart: string
+): WeChatReportRow | null {
+  const db = connectDatabase()
+  const row = db.prepare(
+    'SELECT * FROM wechat_reports WHERE user_id = ? AND report_type = ? AND period_start = ?'
+  ).get(userId, type, periodStart) as WeChatReportRow | undefined
+  return row ?? null
+}
+
 // ── 生成 / 交付 / 调度 / 命令 ──────────────────────────────
+
+/** 内存级 in-flight 去重：同一 (userId, type) 同时只允许一个报告生成在跑，
+ * 防止重启双发/并发调用污染同一 agentId 的上下文。 */
+const inflightReports = new Set<string>()
 
 let reportBot: WeChatBot | null = null
 let reportTimer: ReturnType<typeof setInterval> | null = null
@@ -171,7 +189,9 @@ export async function generateReport(
   return { content, window: w }
 }
 
-/** 生成并交付：成功→微信发送+落表；失败→兜底文案，不落表。 */
+/** 生成并交付：成功→微信发送+落表；失败→兜底文案，不落表。
+ * 发送前先去重：同 (userId,type,period_start) 已落库（如手动 /日报）则跳过；
+ * 内存级 in-flight 锁保证同 (user,type) 同时只有一个生成在跑。 */
 export async function sendAndPersist(
   userId: string,
   type: ReportType,
@@ -181,6 +201,15 @@ export async function sendAndPersist(
   }
 ): Promise<void> {
   const window = getReportWindow(type, new Date())
+  const inflightKey = `${userId}:${type}`
+  // 进入时若已有该 key 则直接 return；add 在首个 await 前同步完成，JS 单线程下无竞态
+  if (inflightReports.has(inflightKey)) return
+  // 该周期已落库（命令 /日报 先跑过）：跳过发送与落库，避免用户当天收到两条
+  if (findReportByPeriod(userId, type, window.start)) {
+    console.log(`[report] ${type} for ${userId} period ${window.start} already exists, skip`)
+    return
+  }
+  inflightReports.add(inflightKey)
   try {
     const { content } = await generateReport(userId, type, window)
     await sendFn(userId, content)
@@ -189,6 +218,8 @@ export async function sendAndPersist(
   } catch (error) {
     console.error(`[report] failed to generate/send ${type} for ${userId}:`, error)
     await sendFn(userId, `${getReportTypeLabel(type)}生成失败，请稍后再试。`).catch(() => {})
+  } finally {
+    inflightReports.delete(inflightKey)
   }
 }
 
