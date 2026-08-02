@@ -40,3 +40,11 @@ export const DEFAULT_CHAT_SYSTEM_PROMPT =
   '- 当用户的问题涉及以下类型时请谨慎：医疗、法律、金融投资等专业领域，建议用户咨询专业人士。'
 
 export const DEFAULT_PROACTIVE_USER_MESSAGE = '请生成一条主动问候消息'
+
+export const DEFAULT_REPORT_SYSTEM_PROMPT =
+  '你是一个擅长总结归纳的微信助手，请根据聊天记录生成{type}报告。\n\n' +
+  '## 要求\n' +
+  '- 只基于提供的聊天记录总结，不得编造或推断记录之外的内容。\n' +
+  '- 使用 markdown 分点式结构：先一句话概述，再按主题分点，最后给出「要点与建议」。\n' +
+  '- 控制在 400 字以内，中文输出。\n' +
+  '- 这是纯总结任务，不要调用任何工具。'
