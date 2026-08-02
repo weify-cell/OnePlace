@@ -623,16 +623,15 @@ export function stopReportService(): void {
   console.log('[report] service stopped')
 }
 
-/** 命令入口：即时生成，回复并落表。 */
+/** 命令入口：即时生成并落表，返回 content（发送由调用方 reply，避免双发）。 */
 export async function handleReportCommand(
   bot: WeChatBot,
   userId: string,
   type: ReportType
 ): Promise<string> {
-  const content = await generateReport(userId, type)
-  const window = getReportWindow(type, new Date())
+  void bot // bot 参数保留给后续可能的需要，当前仅用于对齐签名
+  const { content, window } = await generateReport(userId, type)
   saveReport(userId, type, window, content)
-  await bot.send(userId, content)
   return content
 }
 ```
