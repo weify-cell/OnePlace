@@ -401,12 +401,13 @@ export function clearRemindedTodos(): void {
 }
 
 /**
- * 保存微信用户 ID
+ * 保存微信用户 ID（保留既有 description 列，避免 INSERT OR REPLACE 重置）
  */
 export function saveWeChatUser(userId: string): void {
   const db = connectDatabase()
   db.prepare(`
-    INSERT OR REPLACE INTO settings (key, value, updated_at)
+    INSERT INTO settings (key, value, updated_at)
     VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
   `).run(`ilink_user_${userId}`, '1')
 }

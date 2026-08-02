@@ -76,12 +76,28 @@ function setDbLastSentTime(userId: string, ts: number): void {
   `).run(`ilink_proactive_last_sent_${userId}`, String(ts))
 }
 
-/** Read the user's last interaction time (user message or proactive send, whichever is later). */
-function getUserLastInteractionTime(userId: string): number | null {
+/** Read the last time the user actually sent a message (proactive sends 不写入该字段). */
+function getUserLastMessageTime(userId: string): number | null {
   const db = connectDatabase()
   const row = db.prepare(`SELECT updated_at FROM settings WHERE key = ?`)
     .get(`ilink_user_${userId}`) as { updated_at: string } | undefined
-  const userMsgTime = row?.updated_at ? new Date(row.updated_at).getTime() : null
+  return row?.updated_at ? new Date(row.updated_at).getTime() : null
+}
+
+/**
+ * 用户是否已回复上一条主动消息。
+ * 没有主动消息记录视为"已回复"（可直接触发）；否则要求用户最近一条消息晚于上次主动发送时间。
+ */
+function hasUserRepliedSinceLastProactive(userId: string): boolean {
+  const lastSent = getDbLastSentTime(userId)
+  if (!lastSent) return true
+  const lastUserMsg = getUserLastMessageTime(userId)
+  return lastUserMsg !== null && lastUserMsg > lastSent
+}
+
+/** Read the user's last interaction time (user message or proactive send, whichever is later). */
+function getUserLastInteractionTime(userId: string): number | null {
+  const userMsgTime = getUserLastMessageTime(userId)
   const sentTime = getDbLastSentTime(userId)
   return Math.max(userMsgTime ?? 0, sentTime ?? 0) || null
 }
@@ -185,6 +201,11 @@ async function checkAndSendProactiveMessages(): Promise<void> {
     // 学习模式下不触发主动聊天
     if (isUserInLearningMode(userId)) {
       console.log(`[proactive] user ${userId} is in learning mode, skipping`)
+      continue
+    }
+    // 用户尚未回复上一条主动消息时，不发送新的主动消息
+    if (!hasUserRepliedSinceLastProactive(userId)) {
+      console.log(`[proactive] user ${userId} has not replied to last proactive message, skipping`)
       continue
     }
     if (!hasMinIntervalPassed(userId, config.minInterval)) continue
