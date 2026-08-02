@@ -29,6 +29,20 @@ vi.mock('../database/index.js', async () => {
   return { connectDatabase: () => db }
 })
 
+// Task 4：mock ilink-bot 的动态 import（consolidateDayMemory 内部运行时 await import()）
+vi.doMock('../services/wechat/ilink-bot.service.js', () => ({
+  runAgentTurn: vi.fn(async () => '- 用户喜欢喝美式\n- 项目A正在开发'),
+  formatBeijingTime: vi.fn(() => '[2026-08-02 00:30:00 星期日 北京时间]')
+}))
+
+vi.mock('../services/ai/embedding-client.js', () => ({
+  embedText: vi.fn(async () => [0.1, 0.2, 0.3])
+}))
+vi.mock('../services/vector/vector.service.js', () => ({
+  upsertChunks: vi.fn(async () => ({ success: true, count: 1 })),
+  searchChunks: vi.fn(async () => [])
+}))
+
 import { connectDatabase } from '../database/index.js'
 import {
   isMemoryDue, getMemoryDate, saveMemory, queryMemories,
@@ -115,5 +129,60 @@ describe('buildMemoryPrompt', () => {
     expect(p).toContain('当前用户微信ID：u1')
     expect(p).toContain('用户喝美式')
     expect(buildMemoryPrompt('u2')).toBe('')
+  })
+})
+
+import { consolidateDayMemory, searchMemoryVectors } from '../services/wechat/memory.service.js'
+
+describe('consolidateDayMemory', () => {
+  it('抽取→落库→向量入库，二次整理同内容去重', async () => {
+    const db = connectDatabase()
+    db.prepare('DELETE FROM wechat_messages').run()
+    db.prepare('DELETE FROM wechat_memories').run()
+    // 用当日窗口中点落时间戳：queryChatRecords 用严格的 created_at < end，
+    // 若直接 new Date().toISOString() 与整理侧 now 同毫秒会被窗口排除（间歇性 flake）
+    const { getReportWindow } = await import('../services/wechat/report.service.js')
+    const win = getReportWindow('daily', new Date())
+    const midTs = new Date((new Date(win.start).getTime() + new Date(win.end).getTime()) / 2).toISOString()
+    db.prepare("INSERT INTO wechat_messages (user_id, role, content, created_at) VALUES ('u1','user','今天聊了项目A',?)")
+      .run(midTs)
+
+    const { upsertChunks } = await import('../services/vector/vector.service.js')
+    const first = await consolidateDayMemory('u1')
+    expect(first.saved).toBe(2) // mock 输出两条
+    expect(db.prepare('SELECT COUNT(*) c FROM wechat_memories').get()).toMatchObject({ c: 2 })
+    expect(upsertChunks).toHaveBeenCalledTimes(2)
+    expect(upsertChunks).toHaveBeenCalledWith(
+      expect.arrayContaining([expect.objectContaining({ id: expect.stringMatching(/^mem\d+$/) })]),
+      'oneplace_memory'
+    )
+
+    const second = await consolidateDayMemory('u1')
+    expect(second.saved).toBe(0)
+    expect(db.prepare('SELECT COUNT(*) c FROM wechat_memories').get()).toMatchObject({ c: 2 })
+  })
+
+  it('当天无记录时跳过，不调用 LLM', async () => {
+    const db = connectDatabase()
+    db.prepare('DELETE FROM wechat_messages').run()
+    db.prepare("INSERT INTO wechat_messages (user_id, role, content, created_at) VALUES ('u1','user','昨天的事',?)")
+      .run(new Date(Date.now() - 26 * 3600 * 1000).toISOString()) // 窗口外
+
+    const { runAgentTurn } = await import('../services/wechat/ilink-bot.service.js')
+    runAgentTurn.mockClear() // 清掉上个用例的调用记录，仅验证本次没有调用 LLM
+    const res = await consolidateDayMemory('u1')
+    expect(res.saved).toBe(0)
+    expect(runAgentTurn).not.toHaveBeenCalled()
+  })
+})
+
+describe('searchMemoryVectors', () => {
+  it('映射 Qdrant payload', async () => {
+    const { searchChunks } = await import('../services/vector/vector.service.js')
+    ;(searchChunks as any).mockResolvedValueOnce([
+      { id: 'mem1', score: 0.9, payload: { memory_id: 1, content: '用户喝美式', memory_date: '2026-08-01', user_id: 'u1' } }
+    ])
+    const res = await searchMemoryVectors('美式', { userId: 'u1' })
+    expect(res[0]).toMatchObject({ memory_id: 1, content: '用户喝美式', memory_date: '2026-08-01', score: 0.9 })
   })
 })
