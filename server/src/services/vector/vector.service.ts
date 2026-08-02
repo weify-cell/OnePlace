@@ -58,13 +58,13 @@ function isMissingCollectionError(error: unknown): boolean {
   return error.message.includes('failed: 404')
 }
 
-export async function ensureCollection(): Promise<void> {
-  const collection = getCollectionName()
+export async function ensureCollection(collection?: string): Promise<void> {
+  const name = collection ?? getCollectionName()
   const res = await request<{ result: { collections: { name: string }[] } }>('GET', '/collections')
-  const exists = res.result.collections.some((c) => c.name === collection)
+  const exists = res.result.collections.some((c) => c.name === name)
   if (exists) return
 
-  await request('PUT', `/collections/${collection}`, {
+  await request('PUT', `/collections/${name}`, {
     vectors: {
       size: VECTOR_SIZE,
       distance: DISTANCE,
@@ -72,11 +72,11 @@ export async function ensureCollection(): Promise<void> {
   })
 }
 
-export async function upsertChunks(chunks: Array<{ id: string; vector: number[]; content: string; metadata?: Record<string, unknown> }>): Promise<UpsertResult> {
-  await ensureCollection()
+export async function upsertChunks(chunks: Array<{ id: string; vector: number[]; content: string; metadata?: Record<string, unknown> }>, collection?: string): Promise<UpsertResult> {
+  await ensureCollection(collection)
   if (chunks.length === 0) return { success: true, count: 0 }
 
-  const collection = getCollectionName()
+  const name = collection ?? getCollectionName()
   const points: Array<{ id: number | string; vector: number[]; payload: Record<string, unknown> }> = chunks.map((c) => ({
     id: /^\d+$/.test(c.id) ? Number(c.id) : c.id,
     vector: c.vector,
@@ -84,7 +84,7 @@ export async function upsertChunks(chunks: Array<{ id: string; vector: number[];
   }))
 
   try {
-    await request('PUT', `/collections/${collection}/points`, { points })
+    await request('PUT', `/collections/${name}/points`, { points })
     return { success: true, count: chunks.length }
   } catch (err) {
     console.error('[vector] upsertChunks failed:', err)
@@ -92,20 +92,25 @@ export async function upsertChunks(chunks: Array<{ id: string; vector: number[];
   }
 }
 
-export async function searchChunks(queryVector: number[], topK: number): Promise<SearchResult[]> {
-  const collection = getCollectionName()
-  console.log(`[vector] searchChunks: collection=${collection}, vectorLen=${queryVector.length}`)
+export async function searchChunks(
+  queryVector: number[],
+  topK: number,
+  opts?: {
+    collection?: string
+    filter?: { must: Array<{ key: string; match: { value: string | number } }> }
+  }
+): Promise<SearchResult[]> {
+  const name = opts?.collection ?? getCollectionName()
+  const body: Record<string, unknown> = { vector: queryVector, limit: topK, with_payload: true }
+  if (opts?.filter) body.filter = opts.filter
+  console.log(`[vector] searchChunks: collection=${name}, vectorLen=${queryVector.length}`)
   try {
     const res = await request<{
       result?: Array<{ id: unknown; score: number; payload?: Record<string, unknown> }>
       results?: Array<{ id: unknown; score: number; payload?: Record<string, unknown> }>
       status?: string
       error?: string
-    }>('POST', `/collections/${collection}/points/search`, {
-      vector: queryVector,
-      limit: topK,
-      with_payload: true,
-    })
+    }>('POST', `/collections/${name}/points/search`, body)
 
     console.log(`[vector] searchChunks response:`, JSON.stringify(res).slice(0, 500))
 
