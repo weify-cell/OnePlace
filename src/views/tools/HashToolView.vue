@@ -3,9 +3,7 @@ import { ref, computed } from 'vue'
 import { useMessage } from 'naive-ui'
 import ToolLayout from '@/components/toolbox/ToolLayout.vue'
 import md5 from 'md5'
-import sha1 from 'js-sha1'
-import sha256 from 'js-sha256'
-import { sha512 } from 'js-sha512'
+import sha from 'sha.js'
 import { sha3_256, sha3_512 } from 'js-sha3'
 import sm3 from 'sm3'
 
@@ -65,11 +63,11 @@ function computeTextHash(text: string): string {
     case 'md5':
       return md5(text)
     case 'sha1':
-      return sha1(text)
+      return sha.sha1(text).digest('hex')
     case 'sha256':
-      return sha256(text)
+      return sha.sha256(text).digest('hex')
     case 'sha512':
-      return sha512(text)
+      return sha.sha512(text).digest('hex')
     case 'sha3-256':
       return sha3_256(text)
     case 'sha3-512':
@@ -96,13 +94,13 @@ function computeFileHash(file: File, onProgress: (pct: number) => void): Promise
           hash = md5(Array.from(uint8))
           break
         case 'sha1':
-          hash = sha1(Array.from(uint8))
+          hash = sha.sha1(Array.from(uint8)).digest('hex')
           break
         case 'sha256':
-          hash = sha256(Array.from(uint8))
+          hash = sha.sha256(Array.from(uint8)).digest('hex')
           break
         case 'sha512':
-          hash = sha512(Array.from(uint8))
+          hash = sha.sha512(Array.from(uint8)).digest('hex')
           break
         case 'sha3-256':
           hash = sha3_256(uint8)
