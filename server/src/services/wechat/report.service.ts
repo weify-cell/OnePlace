@@ -164,7 +164,7 @@ export function setReportBot(bot: WeChatBot): void {
   reportBot = bot
 }
 
-function getWeChatUsers(): string[] {
+export function getWeChatUsers(): string[] {
   const db = connectDatabase()
   const rows = db.prepare(
     `SELECT DISTINCT key as userId FROM settings WHERE key LIKE 'ilink_user_%' LIMIT 10`
@@ -173,7 +173,7 @@ function getWeChatUsers(): string[] {
 }
 
 /** 组转录文本：每行 "user/assistant: 内容"。 */
-function buildTranscript(rows: Array<{ role: string; content: string }>): string {
+export function buildTranscript(rows: Array<{ role: string; content: string }>): string {
   return rows.map(r => `${r.role === 'user' ? '用户' : '助手'}: ${r.content}`).join('\n')
 }
 

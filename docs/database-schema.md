@@ -27,6 +27,7 @@
 | 14 | `_migrations` | 迁移跟踪表（基础设施） | ✅ 使用中 |
 | 15 | `_notes_old_20260419*` | 重建 notes 表时遗留的备份表（3 张） | ⚠️ 遗留 |
 | 16 | `wechat_reports` | 微信日报/周报/月报 | ✅ 使用中 |
+| 17 | `wechat_memories` | 微信 Bot 长期记忆 | ✅ 使用中 |
 
 ---
 
@@ -532,6 +533,38 @@ CREATE TABLE wechat_reports (
 ```sql
 CREATE INDEX idx_wechat_reports_user_type
 ON wechat_reports(user_id, report_type, period_start);
+```
+
+---
+
+## 17. `wechat_memories` — 微信 Bot 长期记忆
+
+| 字段 | 类型 | 约束/默认 | 注释 |
+|------|------|-----------|------|
+| id | INTEGER | PK, AUTOINCREMENT | 主键 |
+| user_id | TEXT | NOT NULL | 微信用户 ID |
+| content | TEXT | NOT NULL | 单条记忆内容 |
+| memory_date | TEXT | NOT NULL | 北京日期 YYYY-MM-DD（该记忆整理自哪天） |
+| created_at | TEXT | NOT NULL DEFAULT (now) | 生成时间 |
+
+> 微信 Bot 每晚 00:30 整理当天对话抽取的离散记忆条目（迁移 024）。`UNIQUE(user_id, content)` 内容级去重兜底，防止 LLM 重复抽取。向量副本存 Qdrant 独立 collection `oneplace_memory`（见配置 `qdrant_memory_collection`）。
+
+```sql
+CREATE TABLE wechat_memories (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id      TEXT    NOT NULL,
+  content      TEXT    NOT NULL,
+  memory_date  TEXT    NOT NULL,
+  created_at   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  UNIQUE(user_id, content)
+);
+```
+
+索引：
+
+```sql
+CREATE INDEX idx_wechat_memories_user_date
+ON wechat_memories(user_id, memory_date, id);
 ```
 
 ---
