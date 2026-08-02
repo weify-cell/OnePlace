@@ -131,13 +131,14 @@ export async function runAgentTurn(opts: {
   systemPrompt: string
   userContent: string
   removeAfterRun?: boolean
+  loadHistory?: boolean
 }): Promise<string> {
   if (!agentPool) throw new Error('Agent pool not initialized')
 
   const agentId = opts.agentId ?? opts.userId
   const agent = agentPool.getOrCreate(agentId, () => {
-    const dbHistory = getMessageHistory(opts.userId)
-    return convertMessages(dbHistory as ChatMessage[])
+    const history = opts.loadHistory === false ? [] : getMessageHistory(opts.userId)
+    return convertMessages(history as ChatMessage[])
   })
 
   // 每次动态加载工具，确保管理页的启停即时生效

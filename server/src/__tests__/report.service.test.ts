@@ -31,6 +31,14 @@ vi.mock('../database/index.js', async () => {
   return { connectDatabase: () => db }
 })
 
+// Task 4：mock ilink-bot 的动态 import（runAgentTurn / formatBeijingTime）。
+// vi.doMock 不提升，但 generateReport 内部对该模块是运行时 await import()，
+// 只要本调用先于用例执行即生效；若时序出问题可改为顶层 vi.mock。
+vi.doMock('../services/wechat/ilink-bot.service.js', () => ({
+  runAgentTurn: vi.fn(async () => '【日报】今天聊了项目A…'),
+  formatBeijingTime: vi.fn(() => '[2026-08-02 22:00:00 星期日 北京时间]')
+}))
+
 import { queryChatRecords, saveReport, listReports, getReportById } from '../services/wechat/report.service.js'
 
 // 北京 = UTC+8。以下 now 均为 UTC 时刻，注释标明对应北京时间。
@@ -123,5 +131,36 @@ describe('saveReport / listReports / getReportById', () => {
     const detail = getReportById(all[0].id)
     expect(detail?.report_type).toBe('daily')
     expect(getReportById(9999)).toBeNull()
+  })
+})
+
+import { generateReport, sendAndPersist, handleReportCommand } from '../services/wechat/report.service.js'
+
+describe('generateReport', () => {
+  it('把转录文本与条数拼入 userContent 并返回总结与窗口', async () => {
+    const result = await generateReport('u1', 'daily')
+    expect(result.content).toContain('【日报】')
+    expect(result.window.start).toMatch(/Z$/)
+  })
+})
+
+describe('sendAndPersist', () => {
+  it('发送成功则落表；失败则不落表', async () => {
+    const db = connectDatabase()
+    db.prepare('DELETE FROM wechat_reports').run()
+
+    const send = vi.fn().mockResolvedValue(undefined)
+    await sendAndPersist('u1', 'daily', send as any)
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(db.prepare('SELECT COUNT(*) c FROM wechat_reports').get()).toMatchObject({ c: 1 })
+
+    // 同周期再触发：UNIQUE 忽略，仍 1 条
+    await sendAndPersist('u1', 'daily', send as any)
+    expect(db.prepare('SELECT COUNT(*) c FROM wechat_reports').get()).toMatchObject({ c: 1 })
+
+    // 发送失败：不落表
+    const badSend = vi.fn().mockRejectedValue(new Error('send fail'))
+    await sendAndPersist('u1', 'weekly', badSend as any)
+    expect(db.prepare('SELECT COUNT(*) c FROM wechat_reports WHERE report_type=\'weekly\'').get()).toMatchObject({ c: 0 })
   })
 })

@@ -1,4 +1,7 @@
 import { connectDatabase } from '../../database/index.js'
+import { WeChatBot } from '@wechatbot/wechatbot'
+import { getSettingValue } from '../settings.service.js'
+import { DEFAULT_REPORT_SYSTEM_PROMPT } from '../prompt-defaults.js'
 
 export type ReportType = 'daily' | 'weekly' | 'monthly'
 
@@ -112,4 +115,121 @@ export function getReportById(id: number): WeChatReportRow | null {
   const db = connectDatabase()
   const row = db.prepare('SELECT * FROM wechat_reports WHERE id = ?').get(id) as WeChatReportRow | undefined
   return row ?? null
+}
+
+// ── 生成 / 交付 / 调度 / 命令 ──────────────────────────────
+
+let reportBot: WeChatBot | null = null
+let reportTimer: ReturnType<typeof setInterval> | null = null
+let reportInitTimer: ReturnType<typeof setTimeout> | null = null
+
+export function setReportBot(bot: WeChatBot): void {
+  reportBot = bot
+}
+
+function getWeChatUsers(): string[] {
+  const db = connectDatabase()
+  const rows = db.prepare(
+    `SELECT DISTINCT key as userId FROM settings WHERE key LIKE 'ilink_user_%' LIMIT 10`
+  ).all() as Array<{ userId: string }>
+  return rows.map(r => r.userId.replace('ilink_user_', ''))
+}
+
+/** 组转录文本：每行 "user/assistant: 内容"。 */
+function buildTranscript(rows: Array<{ role: string; content: string }>): string {
+  return rows.map(r => `${r.role === 'user' ? '用户' : '助手'}: ${r.content}`).join('\n')
+}
+
+/** 生成一份报告（完整 agent loop，独立 agentId，不加载用户历史）。 */
+export async function generateReport(
+  userId: string,
+  type: ReportType,
+  window?: { start: string; end: string }
+): Promise<{ content: string; window: { start: string; end: string } }> {
+  const w = window ?? getReportWindow(type, new Date())
+  const records = queryChatRecords(userId, w)
+  const { runAgentTurn, formatBeijingTime } = await import('./ilink-bot.service.js')
+
+  const typeLabel = getReportTypeLabel(type)
+  const systemPrompt = DEFAULT_REPORT_SYSTEM_PROMPT.replace('{type}', typeLabel)
+  const transcript = buildTranscript(records)
+  const userContent = [
+    formatBeijingTime(),
+    `请生成${typeLabel}。`,
+    `覆盖时间：${w.start} ~ ${w.end}（UTC）。`,
+    `本次共 ${records.length} 条聊天记录${records.length === 0 ? '（该周期无聊天记录，请如实说明）' : ''}：`,
+    transcript
+  ].join('\n')
+
+  const content = await runAgentTurn({
+    userId,
+    agentId: `report:${type}:${userId}`,
+    systemPrompt,
+    userContent,
+    removeAfterRun: true,
+    loadHistory: false,
+  })
+  return { content, window: w }
+}
+
+/** 生成并交付：成功→微信发送+落表；失败→兜底文案，不落表。 */
+export async function sendAndPersist(
+  userId: string,
+  type: ReportType,
+  sendFn: (userId: string, content: string) => Promise<unknown> = async (uid, c) => {
+    if (!reportBot) throw new Error('bot not set')
+    await reportBot.send(uid, c)
+  }
+): Promise<void> {
+  const window = getReportWindow(type, new Date())
+  try {
+    const { content } = await generateReport(userId, type, window)
+    await sendFn(userId, content)
+    saveReport(userId, type, window, content)
+    console.log(`[report] sent ${type} to ${userId}: ${content.slice(0, 40)}...`)
+  } catch (error) {
+    console.error(`[report] failed to generate/send ${type} for ${userId}:`, error)
+    await sendFn(userId, `${getReportTypeLabel(type)}生成失败，请稍后再试。`).catch(() => {})
+  }
+}
+
+/** 调度心跳：遍历用户，各类型到点即生成。无守卫。 */
+export async function checkAndSendReports(): Promise<void> {
+  if (!reportBot) return
+  const now = new Date()
+  const types: ReportType[] = ['daily', 'weekly', 'monthly']
+  for (const userId of getWeChatUsers()) {
+    for (const type of types) {
+      if (isReportDue(type, now)) {
+        await sendAndPersist(userId, type)
+      }
+    }
+  }
+}
+
+export function startReportService(): void {
+  if (reportTimer) return
+  console.log('[report] starting report service')
+  reportInitTimer = setTimeout(() => { reportInitTimer = null; checkAndSendReports() }, 30000)
+  reportTimer = setInterval(checkAndSendReports, 60 * 1000)
+}
+
+export function stopReportService(): void {
+  if (reportInitTimer) { clearTimeout(reportInitTimer); reportInitTimer = null }
+  if (reportTimer) { clearInterval(reportTimer); reportTimer = null }
+  reportBot = null
+  console.log('[report] service stopped')
+}
+
+/** 命令入口：即时生成，回复并落表。 */
+export async function handleReportCommand(
+  bot: WeChatBot,
+  userId: string,
+  type: ReportType
+): Promise<string> {
+  const { content } = await generateReport(userId, type)
+  const window = getReportWindow(type, new Date())
+  saveReport(userId, type, window, content)
+  await bot.send(userId, content)
+  return content
 }
