@@ -24,13 +24,13 @@ function isLastDayOfBeijingMonth(now: Date): boolean {
   return new Date(Date.UTC(y, m, d + 1)).getUTCMonth() !== m
 }
 
-/** 到点判定（北京时间）。日报每天22:00；周报周日8:00；月报每月最后一天8:00。
- * 分钟匹配放宽到 <=1：容忍事件循环阻塞/定时器漂移错过整分钟，配合 DB 去重不会重复发送。 */
+/** 到点判定（北京时间）。日报每天23:30；周报周日8:00；月报每月最后一天8:00。
+ * 分钟匹配放宽到 1 分钟窗口（整点/整半点 +1 分钟）：容忍事件循环阻塞/定时器漂移错过，配合 DB 去重不会重复发送。 */
 export function isReportDue(type: ReportType, now: Date): boolean {
   const b = toBeijing(now)
   const hour = b.getUTCHours()
   const minute = b.getUTCMinutes()
-  if (type === 'daily') return hour === 22 && minute <= 1
+  if (type === 'daily') return hour === 23 && minute >= 30 && minute <= 31
   if (type === 'weekly') return b.getUTCDay() === 0 && hour === 8 && minute <= 1
   // monthly
   return isLastDayOfBeijingMonth(now) && hour === 8 && minute <= 1

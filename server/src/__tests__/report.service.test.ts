@@ -36,14 +36,14 @@ vi.mock('../database/index.js', async () => {
 // 只要本调用先于用例执行即生效；若时序出问题可改为顶层 vi.mock。
 vi.doMock('../services/wechat/ilink-bot.service.js', () => ({
   runAgentTurn: vi.fn(async () => '【日报】今天聊了项目A…'),
-  formatBeijingTime: vi.fn(() => '[2026-08-02 22:00:00 星期日 北京时间]')
+  formatBeijingTime: vi.fn(() => '[2026-08-02 23:30:00 星期日 北京时间]')
 }))
 
 import { queryChatRecords, saveReport, listReports, getReportById, updateReportContent, deleteReport } from '../services/wechat/report.service.js'
 
 // 北京 = UTC+8。以下 now 均为 UTC 时刻，注释标明对应北京时间。
-const DAILY_DUE = new Date('2026-08-02T14:00:00.000Z')   // 北京 2026-08-02 22:00
-const DAILY_OFF = new Date('2026-08-02T14:05:00.000Z')   // 北京 2026-08-02 22:05
+const DAILY_DUE = new Date('2026-08-02T15:30:00.000Z')   // 北京 2026-08-02 23:30
+const DAILY_OFF = new Date('2026-08-02T15:35:00.000Z')   // 北京 2026-08-02 23:35
 const SUNDAY_830 = new Date('2026-08-02T00:30:00.000Z')  // 北京 2026-08-02(周日) 08:30
 const SUNDAY_800 = new Date('2026-08-02T00:00:00.000Z')  // 北京 2026-08-02(周日) 08:00
 const MONDAY_800 = new Date('2026-08-03T00:00:00.000Z')  // 北京 2026-08-03(周一) 08:00
@@ -51,13 +51,14 @@ const LAST_DAY_800 = new Date('2026-08-31T00:00:00.000Z') // 北京 2026-08-31 0
 const NOT_LAST_800 = new Date('2026-08-30T00:00:00.000Z') // 北京 2026-08-30 08:00
 
 describe('isReportDue', () => {
-  it('日报：每天 22:00 到点', () => {
+  it('日报：每天 23:30 到点', () => {
     expect(isReportDue('daily', DAILY_DUE)).toBe(true)
     expect(isReportDue('daily', DAILY_OFF)).toBe(false)
   })
-  it('日报：22:01 仍判到点（放宽 1 分钟容忍调度漂移，22:02 不再触发）', () => {
-    expect(isReportDue('daily', new Date('2026-08-02T14:01:00.000Z'))).toBe(true) // 北京 22:01
-    expect(isReportDue('daily', new Date('2026-08-02T14:02:00.000Z'))).toBe(false) // 北京 22:02
+  it('日报：23:31 仍判到点（放宽 1 分钟容忍调度漂移，23:32 不再触发）', () => {
+    expect(isReportDue('daily', new Date('2026-08-02T15:31:00.000Z'))).toBe(true) // 北京 23:31
+    expect(isReportDue('daily', new Date('2026-08-02T15:32:00.000Z'))).toBe(false) // 北京 23:32
+    expect(isReportDue('daily', new Date('2026-08-02T15:29:00.000Z'))).toBe(false) // 北京 23:29
   })
   it('周报：仅周日 8:00 到点（8:01 容忍）', () => {
     expect(isReportDue('weekly', SUNDAY_800)).toBe(true)
@@ -76,7 +77,7 @@ describe('getReportWindow', () => {
   it('日报窗口：当天北京 00:00 起，到 now', () => {
     const w = getReportWindow('daily', DAILY_DUE)
     expect(w.start).toBe('2026-08-01T16:00:00.000Z') // 北京 8-02 00:00
-    expect(w.end).toBe('2026-08-02T14:00:00.000Z')
+    expect(w.end).toBe('2026-08-02T15:30:00.000Z')
   })
   it('周报窗口：本周一北京 00:00 起', () => {
     const w = getReportWindow('weekly', SUNDAY_800)
