@@ -111,7 +111,13 @@ export function getBuiltinToolMap(): Map<string, AgentTool> {
         const type = todo.type ? { work: '工作', study: '学习', personal: '个人', health: '健康', finance: '财务', family: '家庭' }[todo.type] : ''
         const kind = todo.task_kind === 'long_term' ? '长期任务' : '一次性任务'
         const progress = todo.progress_percent != null ? `\n当前进度: ${todo.progress_percent}%` : ''
-        return textResult(`# ${todo.title}\n\n状态: ${status}\n优先级: ${priority}\n类型: ${kind}${type ? ` (${type})` : ''}${progress}\n${todo.description ? `描述: ${todo.description}\n` : ''}${todo.due_date ? `截止日期: ${todo.due_date}\n` : ''}${todo.reminder_time ? `提醒时间: ${todo.reminder_time}\n` : ''}${todo.tags.length > 0 ? `标签: ${todo.tags.join(', ')}` : ''}`)
+        // 提醒行为随任务性质不同：一次性提醒一次即关闭，长期每天同一时间重复提醒
+        const reminder = todo.reminder_time
+          ? `提醒时间: ${todo.reminder_time}${todo.reminder_enabled
+            ? (todo.task_kind === 'long_term' ? '（已启用，每天重复提醒）' : '（已启用，仅提醒一次）')
+            : '（已关闭）'}\n`
+          : ''
+        return textResult(`# ${todo.title}\n\n状态: ${status}\n优先级: ${priority}\n类型: ${kind}${type ? ` (${type})` : ''}${progress}\n${todo.description ? `描述: ${todo.description}\n` : ''}${todo.due_date ? `截止日期: ${todo.due_date}\n` : ''}${reminder}${todo.tags.length > 0 ? `标签: ${todo.tags.join(', ')}` : ''}`)
       }
     },
 
@@ -119,30 +125,35 @@ export function getBuiltinToolMap(): Map<string, AgentTool> {
     {
       name: 'create_todo',
       label: '创建待办',
-      description: '创建新的待办任务',
+      description: '创建新的待办任务。任务性质(task_kind)决定提醒行为：一次性(one_time)到点提醒一次后自动关闭；长期(long_term)到点提醒后自动顺延到次日同一时间，每天重复提醒，并支持进度跟踪。当用户说「每天/每日/习惯/坚持/长期」时，应使用 long_term。',
       parameters: Type.Object({
         title: Type.String({ description: '任务标题' }),
         description: Type.Optional(Type.String({ description: '任务描述' })),
         priority: Type.Optional(Type.String({ description: '优先级: low/medium/high/urgent，默认 medium' })),
+        task_kind: Type.Optional(Type.String({ description: '任务性质: one_time=一次性（提醒一次后自动关闭，默认）/ long_term=长期（每天同一时间重复提醒 + 可跟踪进度）' })),
         due_date: Type.Optional(Type.String({ description: '截止日期，格式 YYYY-MM-DD' })),
-        reminder_time: Type.Optional(Type.String({ description: '提醒时间，格式 YYYY-MM-DD HH:mm，启用提醒时必须填提醒时间' })),
+        reminder_time: Type.Optional(Type.String({ description: '提醒时间，格式 YYYY-MM-DD HH:mm，启用提醒时必须填。一次性任务到点提醒一次即关闭；长期任务到点提醒后自动顺延到次日同一时间' })),
         reminder_enabled: Type.Optional(Type.Boolean({ description: '是否启用提醒，默认 true' })),
         tags: Type.Optional(Type.Array(Type.String(), { description: '标签列表' }))
       }),
       execute: async (_toolCallId: string, params: {
-        title: string; description?: string; priority?: string; due_date?: string;
+        title: string; description?: string; priority?: string; task_kind?: string; due_date?: string;
         reminder_time?: string; reminder_enabled?: boolean; tags?: string[]
       }) => {
         const todo = createTodo({
           title: params.title,
           description: params.description,
           priority: (params.priority || 'medium') as 'low' | 'medium' | 'high' | 'urgent',
+          task_kind: params.task_kind as 'one_time' | 'long_term' | undefined,
           due_date: params.due_date,
           reminder_time: params.reminder_time,
           reminder_enabled: params.reminder_enabled !== false,
           tags: params.tags
         })
-        return textResult(`已创建待办任务: [${todo.id}] ${todo.title}`)
+        const kindHint = todo.task_kind === 'long_term'
+          ? '长期任务，将每天同一时间重复提醒'
+          : '一次性任务，提醒一次后自动关闭'
+        return textResult(`已创建待办任务: [${todo.id}] ${todo.title}（${kindHint}）`)
       }
     },
 
@@ -150,26 +161,28 @@ export function getBuiltinToolMap(): Map<string, AgentTool> {
     {
       name: 'update_todo',
       label: '更新待办',
-      description: '更新待办任务的状态或信息',
+      description: '更新待办任务的状态或信息。可通过 task_kind 在「一次性」与「长期」之间转换：改为 long_term 后提醒将每天重复；改为 one_time 后提醒只发一次，且已记录的进度会被清空。',
       parameters: Type.Object({
         todo_id: Type.Number({ description: '待办任务 ID' }),
         status: Type.Optional(Type.String({ description: '新状态: todo/in_progress/done/cancelled' })),
         title: Type.Optional(Type.String({ description: '新标题' })),
         description: Type.Optional(Type.String({ description: '新描述' })),
         priority: Type.Optional(Type.String({ description: '新优先级: low/medium/high/urgent' })),
+        task_kind: Type.Optional(Type.String({ description: '任务性质: one_time=一次性（提醒一次后自动关闭）/ long_term=长期（每天同一时间重复提醒 + 可跟踪进度）。改为 one_time 会清空已记录的进度' })),
         due_date: Type.Optional(Type.String({ description: '新截止日期，格式 YYYY-MM-DD' })),
-        reminder_time: Type.Optional(Type.String({ description: '新提醒时间，格式 YYYY-MM-DD HH:mm' })),
+        reminder_time: Type.Optional(Type.String({ description: '新提醒时间，格式 YYYY-MM-DD HH:mm。一次性任务到点提醒一次即关闭；长期任务到点提醒后自动顺延到次日同一时间' })),
         reminder_enabled: Type.Optional(Type.Boolean({ description: '是否启用提醒' }))
       }),
       execute: async (_toolCallId: string, params: {
         todo_id: number; status?: string; title?: string; description?: string;
-        priority?: string; due_date?: string; reminder_time?: string; reminder_enabled?: boolean
+        priority?: string; task_kind?: string; due_date?: string; reminder_time?: string; reminder_enabled?: boolean
       }) => {
         const todo = updateTodo(params.todo_id, {
           status: params.status as 'todo' | 'in_progress' | 'done' | 'cancelled' | undefined,
           title: params.title,
           description: params.description,
           priority: params.priority as 'low' | 'medium' | 'high' | 'urgent' | undefined,
+          task_kind: params.task_kind as 'one_time' | 'long_term' | undefined,
           due_date: params.due_date,
           reminder_time: params.reminder_time,
           reminder_enabled: params.reminder_enabled
@@ -177,7 +190,10 @@ export function getBuiltinToolMap(): Map<string, AgentTool> {
         if (!todo) {
           return textResult(`待办任务 ${params.todo_id} 不存在`)
         }
-        return textResult(`已更新待办任务: [${todo.id}] ${todo.title}`)
+        const kindHint = todo.task_kind === 'long_term'
+          ? '长期任务，将每天同一时间重复提醒'
+          : '一次性任务，提醒一次后自动关闭'
+        return textResult(`已更新待办任务: [${todo.id}] ${todo.title}（${kindHint}）`)
       }
     },
 
@@ -202,7 +218,7 @@ export function getBuiltinToolMap(): Map<string, AgentTool> {
     {
       name: 'update_todo_progress',
       label: '更新待办进度',
-      description: '更新长期待办任务的进度百分比和备注',
+      description: '更新长期待办任务的进度百分比和备注。仅 long_term 任务可用；一次性任务调用会报错（需先用 update_todo 改为 long_term）。',
       parameters: Type.Object({
         todo_id: Type.Number({ description: '待办任务 ID' }),
         progress_percent: Type.Optional(Type.Number({ description: '进度百分比 0-100' })),
@@ -224,7 +240,7 @@ export function getBuiltinToolMap(): Map<string, AgentTool> {
     {
       name: 'get_todo_progress_logs',
       label: '获取进度日志',
-      description: '获取长期待办任务的进度更新日志',
+      description: '获取长期待办任务的进度更新日志。仅 long_term 任务可用；一次性任务调用会报错。',
       parameters: Type.Object({
         todo_id: Type.Number({ description: '待办任务 ID' }),
         limit: Type.Optional(Type.Number({ description: '返回数量，默认 10', default: 10 }))
@@ -290,8 +306,8 @@ export function getBuiltinToolMap(): Map<string, AgentTool> {
           const priority = { low: '🟢低', medium: '🟡中', high: '🟠高', urgent: '🔴紧急' }[t.priority] || t.priority
           const status = { todo: '⬜待办', in_progress: '🔵进行中', done: '✅已完成', cancelled: '❌已取消' }[t.status] || t.status
           const due = t.due_date ? ` 📅${t.due_date}` : ''
-          const reminder = t.reminder_time ? ` ⏰${t.reminder_time}` : ''
-          const kind = t.task_kind === 'long_term' ? '📆' : ''
+          const reminder = t.reminder_time ? ` ⏰${t.reminder_time}${t.reminder_enabled ? '' : '(提醒已关)'}` : ''
+          const kind = t.task_kind === 'long_term' ? ' 📆长期' : ''
           const prog = t.progress_percent != null ? ` ${t.progress_percent}%` : ''
           return `[${t.id}] ${status} ${priority}${kind} ${t.title}${due}${reminder}${prog}`
         }).join('\n')

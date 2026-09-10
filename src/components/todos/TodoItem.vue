@@ -36,6 +36,16 @@ const dueDateStatus = computed(() => {
 
 const progressPercent = computed(() => props.todo.progress_percent ?? 0)
 
+// 提醒标识：长期任务显示「每天 HH:mm」，一次性任务显示「MM-DD HH:mm」；关闭时追加提示
+const reminderLabel = computed(() => {
+  if (!props.todo.reminder_time) return ''
+  const date = props.todo.reminder_time.slice(0, 10)
+  const time = props.todo.reminder_time.slice(11, 16)
+  const prefix = props.todo.task_kind === 'long_term' ? '每天 ' : `${date.slice(5)} `
+  const suffix = props.todo.reminder_enabled ? '' : '（已关闭）'
+  return `${prefix}${time}${suffix}`
+})
+
 async function toggleStatus() {
   await todoStore.toggleStatus(props.todo.id)
 }
@@ -127,6 +137,12 @@ function confirmDelete() {
           <span v-else-if="todo.due_date" class="todo-item__due todo-item__due--normal">
             📅 {{ todo.due_date }}
           </span>
+          <span
+            v-if="todo.reminder_time"
+            :class="['todo-item__reminder', !todo.reminder_enabled && 'todo-item__reminder--off']"
+          >
+            ⏰ {{ reminderLabel }}
+          </span>
           <span v-for="tag in todo.tags" :key="tag" class="todo-item__tag">
             {{ tag }}
           </span>
@@ -171,6 +187,19 @@ function confirmDelete() {
 .todo-item:hover {
   box-shadow: var(--shadow-md);
   border-color: rgba(251, 191, 36, 0.35);
+}
+
+.todo-item__reminder {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.todo-item__reminder--off {
+  color: var(--text-muted);
+  text-decoration: line-through;
 }
 
 .todo-item--done {

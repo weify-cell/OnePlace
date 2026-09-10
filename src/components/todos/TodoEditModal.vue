@@ -80,6 +80,13 @@ watch(
 const priorityOptions = Object.entries(TODO_PRIORITY_LABELS).map(([value, label]) => ({ label, value }))
 const statusOptions = Object.entries(TODO_STATUS_LABELS).map(([value, label]) => ({ label, value }))
 const taskKindOptions = Object.entries(TODO_TASK_KIND_LABELS).map(([value, label]) => ({ label, value }))
+
+// 任务性质决定提醒行为，页面显式提示（长期每天顺延重复提醒 / 一次性只提醒一次）
+const taskKindHint = computed(() =>
+  form.value.task_kind === 'long_term'
+    ? '长期任务：提醒到点后自动顺延到次日同一时间，每天重复提醒，并可记录进度'
+    : '一次性任务：提醒到点后只推送一次，随后自动关闭提醒'
+)
 const typeOptions = [
   { label: '未分类', value: null },
   ...Object.entries(TODO_TYPE_LABELS).map(([value, label]) => ({ label, value }))
@@ -193,16 +200,19 @@ async function handleUpdateProgress() {
       </div>
 
       <n-form-item label="任务性质">
-        <n-radio-group v-model:value="form.task_kind" name="edit-task-kind">
-          <n-radio-button
-            v-for="option in taskKindOptions"
-            :key="option.value"
-            :value="option.value"
-            :label="option.label"
-          >
-            {{ option.label }}
-          </n-radio-button>
-        </n-radio-group>
+        <div class="task-kind">
+          <n-radio-group v-model:value="form.task_kind" name="edit-task-kind">
+            <n-radio-button
+              v-for="option in taskKindOptions"
+              :key="option.value"
+              :value="option.value"
+              :label="option.label"
+            >
+              {{ option.label }}
+            </n-radio-button>
+          </n-radio-group>
+          <div class="form-hint">{{ taskKindHint }}</div>
+        </div>
       </n-form-item>
 
       <n-form-item label="类型">
@@ -235,6 +245,8 @@ async function handleUpdateProgress() {
           <n-switch v-model:value="form.reminder_enabled" />
         </n-form-item>
       </div>
+
+      <div class="form-hint form-hint--block">需同时填写「提醒时间」并打开「启用提醒」才会生效，到点后通过微信机器人推送。</div>
 
       <n-form-item label="标签">
         <TagInput :tags="form.tags" @update:tags="form.tags = $event" />
@@ -304,6 +316,22 @@ async function handleUpdateProgress() {
 </template>
 
 <style scoped>
+.task-kind {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.form-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.form-hint--block {
+  margin: -8px 0 16px;
+}
 .progress-panel {
   margin-top: 20px;
   border-top: 1px solid var(--border-subtle);
