@@ -1,6 +1,6 @@
 ﻿import { Response } from 'express'
 import { connectDatabase } from '../database/index.js'
-import { runAgentTurn } from './ai/agent-turn.js'
+import { runAgentTurn, webAgentId } from './ai/agent-turn.js'
 import { buildSystemPrompt } from './ai/prompt.js'
 import { getSettingValue } from './settings.service.js'
 import type { ChatMessage } from './ai/pi-ai.adapter.js'
@@ -161,7 +161,7 @@ export async function streamChat(
     })
 
     const assistantContent = await runAgentTurn({
-      agentId: `conv:${conversationId}`,
+      agentId: webAgentId(conversationId),
       systemPrompt,
       userContent,
       history: () => dbMessages as ChatMessage[],

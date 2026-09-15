@@ -1,8 +1,9 @@
 import { WeChatBot } from '@wechatbot/wechatbot'
 import { convertMessages, type ChatMessage } from '../ai/pi-ai.adapter.js'
-import { runAgentTurn, removeAgent, shutdownAgents } from '../ai/agent-turn.js'
+import { AGENT_SCOPE_WECHAT, removeAgent, runAgentTurn, shutdownAgents, wechatAgentId } from '../ai/agent-turn.js'
 import { buildSystemPrompt } from '../ai/prompt.js'
 import { getSettingValue, setSetting } from '../settings.service.js'
+import { DEFAULT_ILINK_SYSTEM_PROMPT } from '../prompt-defaults.js'
 import { connectDatabase } from '../../database/index.js'
 import { startAllSubsystems, stopAllSubsystems } from './subsystems.js'
 import { saveWeChatUser } from './users.service.js'
@@ -147,11 +148,14 @@ export function getUserLearningMode(userId: string): { mode: 'normal' | 'learnin
  * 获取 Bot 配置
  */
 export function getILinkConfig() {
+  // 模型设置走 wechat/model.ts（唯一来源），避免两处各读一遍 ilink_provider / ilink_model
+  const { provider, model } = getILinkModel()
   return {
     enabled: getSettingValue<boolean>('ilink_enabled', false),
-    provider: getSettingValue<string>('ilink_provider', 'qwen'),
-    model: getSettingValue<string>('ilink_model', 'qwen-turbo'),
-    system_prompt: getSettingValue<string>('ilink_system_prompt', '你是一个智能助手，可以通过微信为用户提供服务。请用中文回复。'),
+    provider,
+    model,
+    // 默认值来自 prompt-defaults.ts（唯一来源），与运行时 buildSystemPrompt 同一份
+    system_prompt: getSettingValue<string>('ilink_system_prompt', DEFAULT_ILINK_SYSTEM_PROMPT),
     max_tool_rounds: getSettingValue<number>('ilink_max_tool_rounds', 5)
   }
 }
@@ -257,7 +261,7 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
       if (msg.text?.trim() === '/清空上下文') {
         clearMessageHistory(msg.userId)
         userModes.delete(msg.userId)
-        removeAgent(msg.userId)
+        removeAgent(wechatAgentId(msg.userId))
         await bot!.reply(msg, '已清空当前对话上下文。')
         return
       }
@@ -322,7 +326,7 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
         }
 
         const replyContent = await runAgentTurn({
-          agentId: msg.userId,
+          agentId: wechatAgentId(msg.userId),
           systemPrompt,
           userContent: userText,
           history: () => historyLoader(msg.userId),
@@ -426,7 +430,8 @@ export function stopILinkBot(): { success: boolean; error?: string } {
     stopAllSubsystems()
 
     // WeChatBot 没有 stop 方法，直接清理状态
-    shutdownAgents()
+    // 只清理微信层的 agent：Web 对话的上下文不属于本生命周期
+    shutdownAgents(AGENT_SCOPE_WECHAT)
 
     bot = null
     botRunning = false

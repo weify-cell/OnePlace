@@ -4,14 +4,7 @@ import * as reminderService from '../services/wechat/todo-reminder.service.js'
 import * as proactiveChat from '../services/wechat/proactive-chat.service.js'
 import * as reportService from '../services/wechat/report.service.js'
 import * as settingsService from '../services/settings.service.js'
-import {
-  DEFAULT_ILINK_LEARNING_PROMPT,
-  DEFAULT_MEMORY_SYSTEM_PROMPT,
-  DEFAULT_MEMORY_USER_TEMPLATE,
-  DEFAULT_NOTE_TOOLS_PROMPT,
-  DEFAULT_PROACTIVE_SYSTEM_PROMPT,
-  DEFAULT_PROACTIVE_USER_MESSAGE
-} from '../services/prompt-defaults.js'
+import { resolvePromptSettings } from '../services/ai/prompt.js'
 
 function getSingleParam(value: string | string[] | object | undefined): string | undefined {
   if (Array.isArray(value)) return value[0]
@@ -50,43 +43,28 @@ export function getLearningModeStatus(req: Request, res: Response): void {
 
 export function getConfig(req: Request, res: Response): void {
   const config = ilinkBot.getILinkConfig()
-  const noteToolsPrompt = settingsService.getSettingValue<string>(
-    'note_tools_prompt',
-    settingsService.getSettingValue<string>('ilink_tool_usage_prompt', DEFAULT_NOTE_TOOLS_PROMPT)
-  )
+  // 提示词字段统一由 ai/prompt.ts 解析：与运行时同一套规则（含空串视为未设置），
+  // 因此设置页展示的就是实际会生效的。不再回退遗留键 ilink_tool_usage_prompt
+  // （已无任何服务读取它）。
+  const prompts = resolvePromptSettings()
 
   res.json({
     enabled: config.enabled,
     provider: config.provider,
     model: config.model,
-    system_prompt: config.system_prompt,
-    note_tools_prompt: noteToolsPrompt,
+    system_prompt: prompts.system_prompt,
+    note_tools_prompt: prompts.note_tools_prompt,
     max_tool_rounds: config.max_tool_rounds,
     proactive_enabled: settingsService.getSettingValue<boolean>('ilink_proactive_chat_enabled', true),
     proactive_min_interval: settingsService.getSettingValue<number>('ilink_proactive_chat_min_interval', 45),
     proactive_quiet_hours_start: settingsService.getSettingValue<number>('ilink_proactive_chat_quiet_hours_start', 0),
     proactive_quiet_hours_end: settingsService.getSettingValue<number>('ilink_proactive_chat_quiet_hours_end', 8),
     proactive_check_interval: settingsService.getSettingValue<number>('ilink_proactive_chat_check_interval', 5),
-    proactive_system_prompt: settingsService.getSettingValue<string>(
-      'ilink_proactive_chat_system_prompt',
-      DEFAULT_PROACTIVE_SYSTEM_PROMPT
-    ),
-    proactive_user_message: settingsService.getSettingValue<string>(
-      'ilink_proactive_chat_user_message',
-      DEFAULT_PROACTIVE_USER_MESSAGE
-    ),
-    learning_prompt: settingsService.getSettingValue<string>(
-      'ilink_learning_prompt',
-      DEFAULT_ILINK_LEARNING_PROMPT
-    ),
-    memory_system_prompt: settingsService.getSettingValue<string>(
-      'ilink_memory_system_prompt',
-      DEFAULT_MEMORY_SYSTEM_PROMPT
-    ),
-    memory_user_template: settingsService.getSettingValue<string>(
-      'ilink_memory_user_template',
-      DEFAULT_MEMORY_USER_TEMPLATE
-    )
+    proactive_system_prompt: prompts.proactive_system_prompt,
+    proactive_user_message: prompts.proactive_user_message,
+    learning_prompt: prompts.learning_prompt,
+    memory_system_prompt: prompts.memory_system_prompt,
+    memory_user_template: prompts.memory_user_template
   })
 }
 
@@ -235,20 +213,16 @@ export function clearRemindedTodos(req: Request, res: Response): void {
 
 export function getProactiveChatConfig(req: Request, res: Response): void {
   const status = proactiveChat.getProactiveChatStatus()
+  // 与 getConfig 同源：提示词解析走 ai/prompt.ts
+  const prompts = resolvePromptSettings()
   res.json({
     enabled: status.config.enabled,
     min_interval: status.config.minInterval,
     quiet_hours_start: status.config.quietHoursStart,
     quiet_hours_end: status.config.quietHoursEnd,
     check_interval: status.config.checkInterval,
-    system_prompt: settingsService.getSettingValue<string>(
-      'ilink_proactive_chat_system_prompt',
-      DEFAULT_PROACTIVE_SYSTEM_PROMPT
-    ),
-    user_message: settingsService.getSettingValue<string>(
-      'ilink_proactive_chat_user_message',
-      DEFAULT_PROACTIVE_USER_MESSAGE
-    )
+    system_prompt: prompts.proactive_system_prompt,
+    user_message: prompts.proactive_user_message
   })
 }
 

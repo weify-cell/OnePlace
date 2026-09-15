@@ -32,7 +32,8 @@ vi.mock('../database/index.js', async () => {
 // 回合接缝（ai/agent-turn）现在是静态依赖，用顶层 vi.mock。
 // 模拟真实 agent 行为：整理时对每条抽取结果调用一次 add_memory 工具写入。
 // 因 vi.mock 被提升，工厂内不引用外部导入；实现放在 beforeEach 里（见下）。
-vi.mock('../services/ai/agent-turn.js', () => ({
+vi.mock('../services/ai/agent-turn.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../services/ai/agent-turn.js')>()),
   runAgentTurn: vi.fn(async () => '')
 }))
 
@@ -179,7 +180,7 @@ describe('consolidateDayMemory', () => {
   beforeEach(async () => {
     const { runAgentTurn } = await import('../services/ai/agent-turn.js')
     vi.mocked(runAgentTurn).mockImplementation(async (opts: any) => {
-      const userId = String(opts.agentId).replace('memory:consolidate:', '')
+      const userId = String(opts.agentId).replace('wx:memory:consolidate:', '')
       const memoryDate = getMemoryDate(new Date(Date.now() - 86400000)) // 昨天
       await addMemory(userId, '用户喜欢喝美式', memoryDate)
       await addMemory(userId, '项目A正在开发', memoryDate)

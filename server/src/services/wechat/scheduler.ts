@@ -10,7 +10,7 @@
  */
 
 /** 一个周期性后台作业。 */
-export interface SubsystemJob<TBot = unknown> {
+export interface SubsystemJob {
   /** 唯一名字，用于启停、重建与状态查询 */
   name: string
   /** 到点执行；单次抛错只记录，不打断后续 tick */
@@ -19,14 +19,10 @@ export interface SubsystemJob<TBot = unknown> {
   intervalMinutes: () => number
   /** 首次执行前的延迟（毫秒）；省略则启动时立即执行一次 */
   initDelayMs?: number
-  /** 启动前注入依赖（例如 WeChatBot 实例） */
-  prepare?: (bot: TBot) => void
-  /** 停止时清理依赖 */
-  cleanup?: () => void
 }
 
 interface RunningJob {
-  job: SubsystemJob<never>
+  job: SubsystemJob
   interval: ReturnType<typeof setInterval>
   initTimer: ReturnType<typeof setTimeout> | null
 }
@@ -45,7 +41,7 @@ export function normalizeIntervalMinutes(minutes: number): number {
 }
 
 /** 构造到点回调；同步抛错与异步 rejection 都被隔离，否则会变成 unhandledRejection。 */
-function makeTick(job: SubsystemJob<never>): () => void {
+function makeTick(job: SubsystemJob): () => void {
   return () => {
     try {
       const result = job.run()
@@ -59,7 +55,7 @@ function makeTick(job: SubsystemJob<never>): () => void {
 }
 
 /** 读取间隔并建立定时器，返回实际采用的分钟数（间隔只读一次）。 */
-function createInterval(job: SubsystemJob<never>): { interval: ReturnType<typeof setInterval>; minutes: number } {
+function createInterval(job: SubsystemJob): { interval: ReturnType<typeof setInterval>; minutes: number } {
   const minutes = normalizeIntervalMinutes(job.intervalMinutes())
   return { interval: setInterval(makeTick(job), minutes * 60 * 1000), minutes }
 }
@@ -70,7 +66,7 @@ function clearTimers(entry: RunningJob): void {
 }
 
 /** 启动一个作业；已在运行则忽略（重复启动守卫）。 */
-export function startJob(job: SubsystemJob<never>): void {
+export function startJob(job: SubsystemJob): void {
   if (running.has(job.name)) {
     console.log(`[scheduler] ${job.name} already running`)
     return
@@ -99,13 +95,12 @@ export function startJob(job: SubsystemJob<never>): void {
   console.log(`[scheduler] ${job.name} started (interval: ${minutes}min${job.initDelayMs ? `, init delay: ${job.initDelayMs}ms` : ', immediate first tick'})`)
 }
 
-/** 停止一个作业并执行其清理。 */
+/** 停止一个作业。 */
 export function stopJob(name: string): void {
   const entry = running.get(name)
   if (!entry) return
   clearTimers(entry)
   running.delete(name)
-  entry.job.cleanup?.()
   console.log(`[scheduler] ${name} stopped`)
 }
 

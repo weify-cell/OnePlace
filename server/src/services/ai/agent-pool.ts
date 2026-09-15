@@ -53,6 +53,11 @@ export class AgentPool {
     return this.agents.get(id)
   }
 
+  /** 当前池中全部 agent id（供按层销毁使用） */
+  ids(): string[] {
+    return [...this.agents.keys()]
+  }
+
   /** 关闭所有 Agent */
   shutdown(): void {
     this.agents.clear()

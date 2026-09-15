@@ -21,7 +21,7 @@ vi.mock('../services/ai/agent-pool.js', () => ({
 
 import { connectDatabase } from '../database/index.js'
 import { setSetting } from '../services/settings.service.js'
-import { buildMemoryUserContent, buildSystemPrompt, composePrompt, renderTemplate } from '../services/ai/prompt.js'
+import { buildMemoryUserContent, buildSystemPrompt, composePrompt, renderTemplate, resolvePromptSettings } from '../services/ai/prompt.js'
 import { loadSkillPrompt } from '../services/ai/agent-pool.js'
 import {
   DEFAULT_CHAT_SYSTEM_PROMPT,
@@ -138,6 +138,36 @@ describe('buildSystemPrompt — 设置优先，空串视为未设置', () => {
     setSetting('note_tools_prompt', '')
     const p = await buildSystemPrompt({ kind: 'web-chat', toolsEnabled: true })
     expect(p).toContain(DEFAULT_NOTE_TOOLS_PROMPT)
+  })
+})
+
+describe('resolvePromptSettings — 设置页与运行时同源（不变式）', () => {
+  it('设置全空时，设置页解析出的每一项都等于默认值来源', () => {
+    const prompts = resolvePromptSettings()
+    expect(prompts.system_prompt).toBe(DEFAULT_ILINK_SYSTEM_PROMPT)
+    expect(prompts.note_tools_prompt).toBe(DEFAULT_NOTE_TOOLS_PROMPT)
+    expect(prompts.learning_prompt).toBe(DEFAULT_ILINK_LEARNING_PROMPT)
+    expect(prompts.proactive_system_prompt).toBe(DEFAULT_PROACTIVE_SYSTEM_PROMPT)
+    expect(prompts.memory_system_prompt).toBe(DEFAULT_MEMORY_SYSTEM_PROMPT)
+  })
+
+  it('设置页展示的基础提示词就是运行时实际使用的那一份', async () => {
+    const prompts = resolvePromptSettings()
+    const botChat = await buildSystemPrompt({ kind: 'bot-chat' })
+    expect(botChat).toContain(prompts.system_prompt)
+    expect(botChat).toContain(prompts.note_tools_prompt)
+
+    // 回归：getILinkConfig 曾自带一份内联副本，与设置页/运行时不同源
+    setSetting('ilink_system_prompt', '自定义人设')
+    expect(resolvePromptSettings().system_prompt).toBe('自定义人设')
+    await expect(buildSystemPrompt({ kind: 'bot-chat' })).resolves.toContain('自定义人设')
+  })
+
+  it('空串设置在两侧同样被穿透（不再只在一侧加守卫）', async () => {
+    setSetting('note_tools_prompt', '')
+    expect(resolvePromptSettings().note_tools_prompt).toBe(DEFAULT_NOTE_TOOLS_PROMPT)
+    await expect(buildSystemPrompt({ kind: 'web-chat', toolsEnabled: true }))
+      .resolves.toContain(DEFAULT_NOTE_TOOLS_PROMPT)
   })
 })
 

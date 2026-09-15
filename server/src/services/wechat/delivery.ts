@@ -5,7 +5,7 @@ import type { WeChatBot } from '@wechatbot/wechatbot'
 import { getSettingValue, setSetting } from '../settings.service.js'
 
 /**
- * 微信投递接缝：发送、context_token 过期后的积压与补发、并发去重、上次投递时间。
+ * 微信投递接缝：发送、context_token 过期后的积压与补发、上次投递时间。
  *
  * 此前四个子系统各造一套投递记账：提醒的 pendingReminders 内存队列 + 直接改写
  * bot 私有 token 文件、报告与记忆各自的 inflight 集合、主动聊天的「上次发送」对。
@@ -13,7 +13,8 @@ import { getSettingValue, setSetting } from '../settings.service.js'
  * 报告与主动聊天的消息在 token 过期时会静默丢失。
  *
  * 现在：bot 实例只由本模块持有（启动时注入一次），所有对外发送都走 sendToUser，
- * 过期策略、去重、积压持久化只在这里定义。
+ * 过期策略、积压持久化、上次投递时间只在这里定义；并发去重属于通用原语，
+ * 住在 utils/inflight.ts。
  */
 
 /** 待发送队列的存储键（放在 settings 表，重启不丢）。 */
@@ -47,6 +48,9 @@ function readPending(userId: string): PendingMessage[] {
 }
 
 function writePending(userId: string, pending: PendingMessage[]): void {
+  if (pending.length > MAX_PENDING) {
+    console.warn(`[delivery] ${userId} pending queue exceeds ${MAX_PENDING}, dropping oldest ${pending.length - MAX_PENDING}`)
+  }
   setSetting(pendingKey(userId), pending.slice(-MAX_PENDING))
 }
 
@@ -130,22 +134,6 @@ export function hasPending(userId: string): boolean {
   return readPending(userId).length > 0
 }
 
-/** 进行中的投递任务键（并发去重，纯内存：只关乎并发，不关乎持久化）。 */
-const inflight = new Set<string>()
-
-/**
- * 同一 key 并发去重：已有同 key 任务在跑时不执行并返回 undefined。
- * 替代各模块自建的 inflight 集合。
- */
-export async function withInflight<T>(key: string, fn: () => Promise<T>): Promise<T | undefined> {
-  if (inflight.has(key)) return undefined
-  inflight.add(key)
-  try {
-    return await fn()
-  } finally {
-    inflight.delete(key)
-  }
-}
 
 /** 某通道上次成功投递时间（毫秒时间戳）；从未投递返回 null。 */
 export function getLastSentAt(channel: string, userId: string): number | null {

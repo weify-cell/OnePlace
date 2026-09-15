@@ -1,12 +1,12 @@
 import { connectDatabase } from '../../database/index.js'
 import { WeChatBot } from '@wechatbot/wechatbot'
-import { runAgentTurn } from '../ai/agent-turn.js'
+import { runAgentTurn, wechatTaskAgentId } from '../ai/agent-turn.js'
 import { buildSystemPrompt } from '../ai/prompt.js'
-import { formatBeijingTime } from '../../utils/time.js'
-import { BEIJING_OFFSET_MS, toBeijingDate } from '../../utils/time.js'
+import { BEIJING_OFFSET_MS, formatBeijingTime, toBeijingDate } from '../../utils/time.js'
 import { getWeChatUsers } from './users.service.js'
 import { getILinkModel } from './model.js'
-import { isDeliveryReady, sendToUser, withInflight } from './delivery.js'
+import { isDeliveryReady, sendToUser } from './delivery.js'
+import { withInflight } from '../../utils/inflight.js'
 import type { SubsystemJob } from './scheduler.js'
 
 export type ReportType = 'daily' | 'weekly' | 'monthly'
@@ -190,7 +190,7 @@ export async function generateReport(
   ].join('\n')
 
   const content = await runAgentTurn({
-    agentId: `report:${type}:${userId}`,
+    agentId: wechatTaskAgentId('report', `${type}:${userId}`),
     systemPrompt,
     userContent,
     ephemeral: true,
@@ -199,14 +199,17 @@ export async function generateReport(
   return { content, window: w }
 }
 
-/** 生成并交付：成功→微信发送+落表；失败→兜底文案，不落表。
+/** 生成并交付：送达→微信发送+落表；未送达（入队）→不落表；失败→兜底文案，不落表。
  * 发送前先去重：同 (userId,type,period_start) 已落库（如手动 /日报）则跳过；
- * 并发去重由 delivery 的 withInflight 保证同 (user,type) 同时只跑一个。 */
+ * 并发去重由 delivery 的 withInflight 保证同 (user,type) 同时只跑一个。
+ *
+ * sendFn 返回 false 表示「未送达」（context_token 过期已入队补发）——
+ * 此时不能落表，否则去重逻辑会把未送达的当期报告当成已发，用户再也收不到。 */
 export async function sendAndPersist(
   userId: string,
   type: ReportType,
   sendFn: (userId: string, content: string) => Promise<unknown> = async (uid, c) => {
-    await sendToUser(uid, c)
+    return sendToUser(uid, c)
   }
 ): Promise<void> {
   const window = getReportWindow(type, new Date())
@@ -219,7 +222,13 @@ export async function sendAndPersist(
   await withInflight(`${userId}:${type}`, async () => {
     try {
       const { content } = await generateReport(userId, type, window)
-      await sendFn(userId, content)
+      const delivered = await sendFn(userId, content)
+
+      if (delivered === false) {
+        console.log(`[report] ${type} for ${userId} queued for later delivery, not persisted`)
+        return
+      }
+
       saveReport(userId, type, window, content)
       console.log(`[report] sent ${type} to ${userId}: ${content.slice(0, 40)}...`)
     } catch (error) {

@@ -40,7 +40,8 @@ vi.mock('../database/index.js', async () => {
 
 // 回合接缝（ai/agent-turn）现在是静态依赖，用顶层 vi.mock；实现由用例按需覆盖。
 // 不再需要解释「doMock 何时生效」——这正是把接缝从 bot 模块搬出来换来的。
-vi.mock('../services/ai/agent-turn.js', () => ({
+vi.mock('../services/ai/agent-turn.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../services/ai/agent-turn.js')>()),
   runAgentTurn: vi.fn(async () => '【日报】今天聊了项目A…')
 }))
 
@@ -204,7 +205,7 @@ describe('generateReport', () => {
     // doMock 不提升，须在用例内动态 import 才拿到 mock 实例
     const { runAgentTurn } = await import('../services/ai/agent-turn.js')
     expect(runAgentTurn).toHaveBeenCalledWith(expect.objectContaining({
-      agentId: 'report:daily:u1',
+      agentId: 'wx:report:daily:u1',
       systemPrompt: expect.stringContaining('日报'),
       userContent: expect.stringContaining('本次共 0 条'),
       ephemeral: true
@@ -244,6 +245,24 @@ describe('sendAndPersist', () => {
     const badSend = vi.fn().mockRejectedValue(new Error('send fail'))
     await sendAndPersist('u1', 'weekly', badSend as any)
     expect(db.prepare('SELECT COUNT(*) c FROM wechat_reports WHERE report_type=\'weekly\'').get()).toMatchObject({ c: 0 })
+  })
+
+  it('未送达（入队待补发）时不落表——否则该期报告会被当成已发，用户再也收不到', async () => {
+    const db = connectDatabase()
+    db.prepare('DELETE FROM wechat_reports').run()
+
+    // delivery 在 context_token 过期时返回 false（已入队补发），而不是抛错
+    const queuedSend = vi.fn().mockResolvedValue(false)
+    await sendAndPersist('u1', 'daily', queuedSend as any)
+
+    expect(queuedSend).toHaveBeenCalledTimes(1)
+    expect(db.prepare('SELECT COUNT(*) c FROM wechat_reports').get()).toMatchObject({ c: 0 })
+
+    // 下个周期应重试（未落库即未被去重跳过）
+    const okSend = vi.fn().mockResolvedValue(true)
+    await sendAndPersist('u1', 'daily', okSend as any)
+    expect(okSend).toHaveBeenCalledTimes(1)
+    expect(db.prepare('SELECT COUNT(*) c FROM wechat_reports').get()).toMatchObject({ c: 1 })
   })
 
   it('命令已落库（同周期）时跳过发送与落库（问题A：命令/定时冲突）', async () => {

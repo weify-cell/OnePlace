@@ -31,6 +31,37 @@ export interface AgentTurnRequest {
   onEvent?: (event: AgentEvent) => void
 }
 
+/**
+ * agent 池的层作用域。
+ *
+ * Web 对话与微信层共用同一处池注册表，但生命周期互不隶属：
+ * 停止微信 bot 不得连带清掉 Web 对话的上下文，反之亦然。
+ * 因此 agentId 统一带层前缀，销毁按层限定。
+ */
+export const AGENT_SCOPE_WEB = 'web:'
+export const AGENT_SCOPE_WECHAT = 'wx:'
+export type AgentScope = typeof AGENT_SCOPE_WEB | typeof AGENT_SCOPE_WECHAT
+
+/** Web 对话层的 agent id（一个对话一个实例）。 */
+export function webAgentId(conversationId: number): string {
+  return `${AGENT_SCOPE_WEB}conv:${conversationId}`
+}
+
+/** 微信层的 agent id（一个用户一个实例）。 */
+export function wechatAgentId(userId: string): string {
+  return `${AGENT_SCOPE_WECHAT}${userId}`
+}
+
+/** 微信层一次性任务的 agent id（报告/记忆整理/主动聊天，回合后销毁）。 */
+export function wechatTaskAgentId(task: string, key: string): string {
+  return `${AGENT_SCOPE_WECHAT}${task}:${key}`
+}
+
+/** agent id 是否属于某一层。 */
+export function belongsToScope(agentId: string, scope: AgentScope): boolean {
+  return agentId.startsWith(scope)
+}
+
 /** 从消息序列末尾取最后一条 assistant 文本。 */
 export function extractAssistantText(messages: AgentMessage[]): string {
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -112,8 +143,14 @@ export function removeAgent(agentId: string): void {
   }
 }
 
-/** 关闭全部 agent（bot 停止时）。 */
-export function shutdownAgents(): void {
-  for (const pool of pools.values()) pool.shutdown()
-  pools.clear()
+/**
+ * 关闭某一层的全部 agent。
+ * 作用域限定是必要的：两层共用地注册表，清错层会丢掉另一层的会话上下文。
+ */
+export function shutdownAgents(scope: AgentScope): void {
+  for (const pool of pools.values()) {
+    for (const agentId of pool.ids()) {
+      if (belongsToScope(agentId, scope)) pool.remove(agentId)
+    }
+  }
 }

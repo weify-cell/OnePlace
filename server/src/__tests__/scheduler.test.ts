@@ -102,15 +102,13 @@ describe('startJob', () => {
 })
 
 describe('stopJob / restartJob', () => {
-  it('停止后不再到点，并执行 cleanup', () => {
+  it('停止后不再到点', () => {
     vi.useFakeTimers()
-    const cleanup = vi.fn()
-    const job = makeJob('stoppable', { cleanup })
+    const job = makeJob('stoppable')
 
     startJob(job)
     stopJob('stoppable')
     expect(isJobRunning('stoppable')).toBe(false)
-    expect(cleanup).toHaveBeenCalledTimes(1)
 
     const before = (job.run as ReturnType<typeof vi.fn>).mock.calls.length
     vi.advanceTimersByTime(180_000)
@@ -119,11 +117,10 @@ describe('stopJob / restartJob', () => {
 
   it('restartJob 只重建定时器以应用新间隔，不额外重跑首次执行', () => {
     vi.useFakeTimers()
-    const cleanup = vi.fn()
     let interval = 60
     const intervalSource = vi.fn(() => interval)
     const run = vi.fn()
-    const job = makeJob('retunable', { cleanup, intervalMinutes: intervalSource, run })
+    const job = makeJob('retunable', { intervalMinutes: intervalSource, run })
 
     startJob(job)
     expect(intervalSource).toHaveBeenCalledTimes(1)
@@ -131,7 +128,6 @@ describe('stopJob / restartJob', () => {
 
     interval = 5
     restartJob('retunable')
-    expect(cleanup).not.toHaveBeenCalled()
     expect(intervalSource).toHaveBeenCalledTimes(2)
     expect(run).toHaveBeenCalledTimes(1) // 重建不定额外地立即执行
 

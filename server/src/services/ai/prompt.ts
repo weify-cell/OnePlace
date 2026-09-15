@@ -8,6 +8,7 @@ import {
   DEFAULT_MEMORY_USER_TEMPLATE,
   DEFAULT_NOTE_TOOLS_PROMPT,
   DEFAULT_PROACTIVE_SYSTEM_PROMPT,
+  DEFAULT_PROACTIVE_USER_MESSAGE,
   DEFAULT_REPORT_SYSTEM_PROMPT
 } from '../prompt-defaults.js'
 
@@ -37,24 +38,17 @@ export interface SystemPromptRequest {
   memoryPrompt?: string
 }
 
-/** 各类回合是否追加技能提示词。 */
-const INCLUDE_SKILLS: Record<TurnKind, boolean> = {
-  'web-chat': true,
-  'bot-chat': true,
-  learning: true,
-  proactive: true,
-  report: false,
-  memory: false
-}
-
-/** 各类回合是否追加该用户的记忆提示词。 */
-const INCLUDE_MEMORY: Record<TurnKind, boolean> = {
-  'web-chat': false,
-  'bot-chat': true,
-  learning: true,
-  proactive: false,
-  report: false,
-  memory: false
+/**
+ * 各类回合的附加规则（一张表，避免两张并行表随类型增长而失同步）。
+ * skills：是否追加技能提示词；memory：是否追加该用户的记忆提示词。
+ */
+const TURN_RULES: Record<TurnKind, { skills: boolean; memory: boolean }> = {
+  'web-chat': { skills: true, memory: false },
+  'bot-chat': { skills: true, memory: true },
+  learning: { skills: true, memory: true },
+  proactive: { skills: true, memory: false },
+  report: { skills: false, memory: false },
+  memory: { skills: false, memory: false }
 }
 
 /** 渲染 `{var}` 占位符（替换全部出现处，而非只替换第一处）。 */
@@ -115,12 +109,39 @@ function basePromptFor(req: SystemPromptRequest): string {
 
 /** 拼装一个回合的 system prompt。 */
 export async function buildSystemPrompt(req: SystemPromptRequest): Promise<string> {
-  const skills = INCLUDE_SKILLS[req.kind] ? await loadSkillPrompt() : ''
-  const memory = INCLUDE_MEMORY[req.kind] ? req.memoryPrompt : ''
+  const rules = TURN_RULES[req.kind]
+  const skills = rules.skills ? await loadSkillPrompt() : ''
+  const memory = rules.memory ? req.memoryPrompt : ''
   return composePrompt([basePromptFor(req), skills, memory])
 }
 
 /** 记忆整理的用户消息：取模板（设置优先）并注入变量。 */
 export function buildMemoryUserContent(vars: Record<string, string>): string {
   return renderTemplate(setting('ilink_memory_user_template', DEFAULT_MEMORY_USER_TEMPLATE), vars)
+}
+
+/**
+ * 设置页展示用的提示词解析。
+ *
+ * 与运行时（buildSystemPrompt）走同一套规则：同一个设置键、同一个默认值来源、
+ * 空串一律视为未设置。因此不存在「页面显示的不是实际生效的」这种漂移。
+ */
+export function resolvePromptSettings(): {
+  system_prompt: string
+  note_tools_prompt: string
+  proactive_system_prompt: string
+  proactive_user_message: string
+  learning_prompt: string
+  memory_system_prompt: string
+  memory_user_template: string
+} {
+  return {
+    system_prompt: setting('ilink_system_prompt', DEFAULT_ILINK_SYSTEM_PROMPT),
+    note_tools_prompt: setting('note_tools_prompt', DEFAULT_NOTE_TOOLS_PROMPT),
+    proactive_system_prompt: setting('ilink_proactive_chat_system_prompt', DEFAULT_PROACTIVE_SYSTEM_PROMPT),
+    proactive_user_message: setting('ilink_proactive_chat_user_message', DEFAULT_PROACTIVE_USER_MESSAGE),
+    learning_prompt: setting('ilink_learning_prompt', DEFAULT_ILINK_LEARNING_PROMPT),
+    memory_system_prompt: setting('ilink_memory_system_prompt', DEFAULT_MEMORY_SYSTEM_PROMPT),
+    memory_user_template: setting('ilink_memory_user_template', DEFAULT_MEMORY_USER_TEMPLATE)
+  }
 }

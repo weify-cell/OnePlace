@@ -13,7 +13,7 @@ import { memoryJob } from './memory.service.js'
  * 这里只负责把它们拼成一份清单。因此 ilink-bot 说「启停全部子系统」，
  * 而不是按名字认识每一个——新增子系统时只改这个文件。
  */
-export const WECHAT_SUBSYSTEMS: Array<SubsystemJob<WeChatBot>> = [
+export const WECHAT_SUBSYSTEMS: SubsystemJob[] = [
   reminderJob,
   proactiveChatJob,
   reportJob,
@@ -26,10 +26,7 @@ export const WECHAT_SUBSYSTEMS: Array<SubsystemJob<WeChatBot>> = [
  */
 export function startAllSubsystems(bot: WeChatBot): void {
   setDeliveryBot(bot)
-  for (const job of WECHAT_SUBSYSTEMS) {
-    job.prepare?.(bot)
-    startJob(job as SubsystemJob<never>)
-  }
+  for (const job of WECHAT_SUBSYSTEMS) startJob(job)
 }
 
 /** 停止全部子系统并清除投递层持有的 bot 引用。 */
@@ -38,7 +35,3 @@ export function stopAllSubsystems(): void {
   setDeliveryBot(null)
 }
 
-/** 已注册的子系统名字（供状态查询与自检）。 */
-export function listSubsystemNames(): string[] {
-  return WECHAT_SUBSYSTEMS.map(job => job.name)
-}

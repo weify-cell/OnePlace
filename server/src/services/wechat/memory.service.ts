@@ -3,14 +3,13 @@ import { getSettingValue } from '../settings.service.js'
 import { getReportWindow, queryChatRecords, buildTranscript } from './report.service.js'
 import { getWeChatUsers } from './users.service.js'
 import { getILinkModel } from './model.js'
-import { withInflight } from './delivery.js'
+import { withInflight } from '../../utils/inflight.js'
 import type { SubsystemJob } from './scheduler.js'
-import { runAgentTurn } from '../ai/agent-turn.js'
+import { runAgentTurn, wechatTaskAgentId } from '../ai/agent-turn.js'
 import { buildMemoryUserContent, buildSystemPrompt } from '../ai/prompt.js'
-import { formatBeijingTime } from '../../utils/time.js'
+import { formatBeijingTime, getBeijingDate, toBeijingDate } from '../../utils/time.js'
 import { embedText } from '../ai/embedding-client.js'
 import { upsertChunks, searchChunks } from '../vector/vector.service.js'
-import { getBeijingDate, toBeijingDate } from '../../utils/time.js'
 
 /** 北京日期 YYYY-MM-DD。 */
 export function getMemoryDate(now: Date): string {
@@ -207,7 +206,7 @@ export async function consolidateDayMemory(userId: string): Promise<{ saved: num
   // 写库由 agent 在 loop 内调用 add_memory 工具完成；saved 用 (user, memory_date) 行数差值统计
   const before = countMemories(userId, memoryDate)
   await runAgentTurn({
-    agentId: `memory:consolidate:${userId}`,
+    agentId: wechatTaskAgentId('memory', `consolidate:${userId}`),
     systemPrompt,
     userContent,
     ephemeral: true,
