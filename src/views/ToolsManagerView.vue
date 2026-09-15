@@ -45,9 +45,17 @@ async function saveCat() {
 }
 function removeCat(cat: Category, e: Event) {
   e.stopPropagation()
-  if (cat.tool_count > 0) { message.warning(`「${cat.name}」下还有 ${cat.tool_count} 个工具，无法删除`); return }
+  // 「有子项则拒绝删除」的不变式在服务端（category.service），这里只负责呈现原因
   dialog.warning({ title: '确认删除', content: `确定删除分类「${cat.name}」？`, positiveText: '删除', negativeText: '取消',
-    onPositiveClick: async () => { try { await api.delete(`/tool-category/${cat.id}`); message.success('已删除'); await fetchCategories() } catch { message.error('删除失败') } } })
+    onPositiveClick: async () => {
+      try {
+        await api.delete(`/tool-category/${cat.id}`)
+        message.success('已删除')
+        await fetchCategories()
+      } catch (error: any) {
+        message.error(error?.response?.data?.message || '删除失败')
+      }
+    } })
 }
 
 // ── 工具 CRUD ──

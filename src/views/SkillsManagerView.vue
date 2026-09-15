@@ -38,7 +38,7 @@ function goBack() { router.push('/skills-manager') }
 function openCatCreate() { editingCat.value = null; catForm.value = { name: '', description: '' }; showCatModal.value = true }
 function editCat(cat: Category, e: Event) { e.stopPropagation(); editingCat.value = cat; catForm.value = { name: cat.name, description: cat.description }; showCatModal.value = true }
 async function saveCat() { if (!catForm.value.name) { message.warning('名称不能为空'); return }; try { if (editingCat.value) await api.put(`/skill-category/${editingCat.value.id}`, catForm.value); else await api.post('/skill-category', catForm.value); message.success(editingCat.value ? '已更新' : '已创建'); showCatModal.value = false; await fetchCategories() } catch { message.error('保存失败') } }
-function removeCat(cat: Category, e: Event) { e.stopPropagation(); if (cat.skill_count > 0) { message.warning(`「${cat.name}」下还有 ${cat.skill_count} 个技能，无法删除`); return }; dialog.warning({ title: '确认删除', content: `确定删除分类「${cat.name}」？`, positiveText: '删除', negativeText: '取消', onPositiveClick: async () => { try { await api.delete(`/skill-category/${cat.id}`); message.success('已删除'); await fetchCategories() } catch { message.error('删除失败') } } }) }
+function removeCat(cat: Category, e: Event) { e.stopPropagation(); dialog.warning({ title: '确认删除', content: `确定删除分类「${cat.name}」？`, positiveText: '删除', negativeText: '取消', onPositiveClick: async () => { try { await api.delete(`/skill-category/${cat.id}`); message.success('已删除'); await fetchCategories() } catch (error: any) { message.error(error?.response?.data?.message || '删除失败') } } }) }
 
 // 技能 CRUD
 function openCreate() { editing.value = null; form.value = { name: '', path: '', enabled: 1, category_id: categoryId.value }; showModal.value = true }
