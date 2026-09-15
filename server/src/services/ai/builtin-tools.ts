@@ -387,7 +387,3 @@ export function getBuiltinToolMap(): Map<string, AgentTool> {
   ] as unknown as AgentTool[]
   return new Map(tools.map(t => [t.name, t]))
 }
-
-export function getBuiltinTools(): AgentTool[] {
-  return Array.from(getBuiltinToolMap().values())
-}
