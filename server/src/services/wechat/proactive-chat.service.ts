@@ -5,6 +5,7 @@ import { addMessageToHistory, isUserInLearningMode } from './ilink-bot.service.j
 import { loadSkillPrompt } from '../ai/agent-pool.js'
 import { DEFAULT_PROACTIVE_SYSTEM_PROMPT, DEFAULT_PROACTIVE_USER_MESSAGE } from '../prompt-defaults.js'
 import { getBeijingHour } from '../../utils/time.js'
+import { getWeChatUsers, getUserLastActiveTime } from './users.service.js'
 
 let proactiveTimer: ReturnType<typeof setInterval> | null = null
 let proactiveInitTimer: ReturnType<typeof setTimeout> | null = null
@@ -37,17 +38,6 @@ function getProactiveChatConfig(): ProactiveChatConfig {
   }
 }
 
-function getWeChatUsers(): string[] {
-  const db = connectDatabase()
-  const rows = db.prepare(`
-    SELECT DISTINCT key as userId
-    FROM settings
-    WHERE key LIKE 'ilink_user_%'
-    LIMIT 10
-  `).all() as Array<{ userId: string }>
-  return rows.map(r => r.userId.replace('ilink_user_', ''))
-}
-
 /** Read last proactive-sent time from DB (persists across restarts). */
 function getDbLastSentTime(userId: string): number | null {
   const db = connectDatabase()
@@ -68,14 +58,6 @@ function setDbLastSentTime(userId: string, ts: number): void {
   `).run(`ilink_proactive_last_sent_${userId}`, String(ts))
 }
 
-/** Read the last time the user actually sent a message (proactive sends 不写入该字段). */
-function getUserLastMessageTime(userId: string): number | null {
-  const db = connectDatabase()
-  const row = db.prepare(`SELECT updated_at FROM settings WHERE key = ?`)
-    .get(`ilink_user_${userId}`) as { updated_at: string } | undefined
-  return row?.updated_at ? new Date(row.updated_at).getTime() : null
-}
-
 /**
  * 用户是否已回复上一条主动消息。
  * 没有主动消息记录视为"已回复"（可直接触发）；否则要求用户最近一条消息晚于上次主动发送时间。
@@ -83,13 +65,13 @@ function getUserLastMessageTime(userId: string): number | null {
 function hasUserRepliedSinceLastProactive(userId: string): boolean {
   const lastSent = getDbLastSentTime(userId)
   if (!lastSent) return true
-  const lastUserMsg = getUserLastMessageTime(userId)
+  const lastUserMsg = getUserLastActiveTime(userId)
   return lastUserMsg !== null && lastUserMsg > lastSent
 }
 
 /** Read the user's last interaction time (user message or proactive send, whichever is later). */
 function getUserLastInteractionTime(userId: string): number | null {
-  const userMsgTime = getUserLastMessageTime(userId)
+  const userMsgTime = getUserLastActiveTime(userId)
   const sentTime = getDbLastSentTime(userId)
   return Math.max(userMsgTime ?? 0, sentTime ?? 0) || null
 }

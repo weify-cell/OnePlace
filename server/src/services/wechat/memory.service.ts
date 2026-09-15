@@ -1,6 +1,7 @@
 import { connectDatabase } from '../../database/index.js'
 import { getSettingValue } from '../settings.service.js'
-import { getReportWindow, queryChatRecords, buildTranscript, getWeChatUsers } from './report.service.js'
+import { getReportWindow, queryChatRecords, buildTranscript } from './report.service.js'
+import { getWeChatUsers } from './users.service.js'
 import { DEFAULT_MEMORY_SYSTEM_PROMPT, DEFAULT_MEMORY_USER_TEMPLATE } from '../prompt-defaults.js'
 import { embedText } from '../ai/embedding-client.js'
 import { upsertChunks, searchChunks } from '../vector/vector.service.js'

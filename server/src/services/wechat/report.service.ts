@@ -2,6 +2,7 @@ import { connectDatabase } from '../../database/index.js'
 import { WeChatBot } from '@wechatbot/wechatbot'
 import { DEFAULT_REPORT_SYSTEM_PROMPT } from '../prompt-defaults.js'
 import { BEIJING_OFFSET_MS, toBeijingDate } from '../../utils/time.js'
+import { getWeChatUsers } from './users.service.js'
 
 export type ReportType = 'daily' | 'weekly' | 'monthly'
 
@@ -156,14 +157,6 @@ let reportInitTimer: ReturnType<typeof setTimeout> | null = null
 
 export function setReportBot(bot: WeChatBot): void {
   reportBot = bot
-}
-
-export function getWeChatUsers(): string[] {
-  const db = connectDatabase()
-  const rows = db.prepare(
-    `SELECT DISTINCT key as userId FROM settings WHERE key LIKE 'ilink_user_%' LIMIT 10`
-  ).all() as Array<{ userId: string }>
-  return rows.map(r => r.userId.replace('ilink_user_', ''))
 }
 
 /** 组转录文本：每行 "user/assistant: 内容"。 */

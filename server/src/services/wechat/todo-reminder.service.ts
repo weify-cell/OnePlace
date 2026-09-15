@@ -1,6 +1,7 @@
 import { WeChatBot } from '@wechatbot/wechatbot'
 import { connectDatabase } from '../../database/index.js'
 import { getBeijingDate, getBeijingDateTime, getBeijingDateAfter } from '../../utils/time.js'
+import { getWeChatUsers } from './users.service.js'
 
 // 定时器
 let reminderTimer: ReturnType<typeof setInterval> | null = null
@@ -153,23 +154,6 @@ export async function sendPendingReminders(userId: string): Promise<void> {
 export function hasPendingReminders(userId: string): boolean {
   const pending = pendingReminders.get(userId)
   return pending !== undefined && pending.length > 0
-}
-
-/**
- * 获取所有微信用户 ID
- */
-function getWeChatUsers(): string[] {
-  const db = connectDatabase()
-  // 从 ilink_bot_status 中获取用户列表
-  // 这里简化为从消息历史中获取
-  const rows = db.prepare(`
-    SELECT DISTINCT key as userId
-    FROM settings
-    WHERE key LIKE 'ilink_user_%'
-    LIMIT 10
-  `).all() as Array<{ userId: string }>
-
-  return rows.map(r => r.userId.replace('ilink_user_', ''))
 }
 
 /**
@@ -350,16 +334,4 @@ export function clearRemindedTodos(): void {
   db.prepare(
     "UPDATE todos SET reminder_enabled = 1 WHERE is_deleted = 0 AND status NOT IN ('done','cancelled') AND task_kind != 'long_term' AND reminder_time IS NOT NULL AND reminder_enabled = 0"
   ).run()
-}
-
-/**
- * 保存微信用户 ID（保留既有 description 列，避免 INSERT OR REPLACE 重置）
- */
-export function saveWeChatUser(userId: string): void {
-  const db = connectDatabase()
-  db.prepare(`
-    INSERT INTO settings (key, value, updated_at)
-    VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
-  `).run(`ilink_user_${userId}`, '1')
 }
