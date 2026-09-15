@@ -125,6 +125,17 @@ export function clearMessages(conversationId: number): void {
   db.prepare('DELETE FROM messages WHERE conversation_id = ?').run(conversationId)
 }
 
+/**
+ * 读该对话的历史消息（按写入顺序，id 作为同毫秒的稳定次序）。
+ * 必须在写入本轮提问之前调用（见 streamChat 开头注释）。
+ */
+function loadHistory(conversationId: number): Array<{ role: string; content: string }> {
+  const db = connectDatabase()
+  return db.prepare(
+    'SELECT role, content FROM messages WHERE conversation_id = ? AND is_error = 0 ORDER BY created_at ASC, id ASC'
+  ).all(conversationId) as Array<{ role: string; content: string }>
+}
+
 export async function streamChat(
   conversationId: number,
   userContent: string,
@@ -133,6 +144,11 @@ export async function streamChat(
   const db = connectDatabase()
   const conversation = getConversationById(conversationId)
   if (!conversation) throw new Error('Conversation not found')
+
+  // 先读历史（此刻还不含本轮提问），再写入本轮提问。
+  // 顺序不能倒：agent 首次创建（含服务重启后重建）时，历史会作为初始 messages 注入，
+  // 而本问随后由 prompt() 追加；若历史里已含本问，模型就会收到重复提问。
+  const historyRows = loadHistory(conversationId)
 
   const userMsgResult = db.prepare('INSERT INTO messages (conversation_id, role, content) VALUES (?, ?, ?)')
     .run(conversationId, 'user', userContent)
@@ -150,10 +166,6 @@ export async function streamChat(
   writeSSE('start', { messageId: 0, conversationId, userMessageId })
 
   try {
-    const dbMessages = db.prepare(
-      'SELECT role, content FROM messages WHERE conversation_id = ? AND is_error = 0 ORDER BY created_at ASC'
-    ).all(conversationId) as { role: string; content: string }[]
-
     // 提示词拼装与回合执行都走 ai/ 的共享接缝（与微信层同构）
     const systemPrompt = await buildSystemPrompt({
       kind: 'web-chat',
@@ -164,7 +176,9 @@ export async function streamChat(
       agentId: webAgentId(conversationId),
       systemPrompt,
       userContent,
-      history: () => dbMessages as ChatMessage[],
+      // 历史在本轮提问落库前就已读取（见函数开头），因此不含本问；
+      // 转成 pi-ai 消息形状由回合接缝内部完成
+      history: () => historyRows as ChatMessage[],
       provider: conversation.provider,
       model: conversation.model
     })
