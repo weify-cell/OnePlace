@@ -4,12 +4,12 @@ import { runAgentTurn, removeAgent, shutdownAgents } from '../ai/agent-turn.js'
 import { buildSystemPrompt } from '../ai/prompt.js'
 import { getSettingValue, setSetting } from '../settings.service.js'
 import { connectDatabase } from '../../database/index.js'
-import { sendPendingReminders, hasPendingReminders } from './todo-reminder.service.js'
 import { startAllSubsystems, stopAllSubsystems } from './subsystems.js'
 import { saveWeChatUser } from './users.service.js'
 import { handleReportCommand } from './report.service.js'
 import { buildMemoryPrompt } from './memory.service.js'
 import { getILinkModel } from './model.js'
+import { flushPending, hasPending } from './delivery.js'
 import { AgentEvent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import { formatBeijingTime } from '../../utils/time.js'
 
@@ -280,10 +280,10 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
         return
       }
 
-      // 检查是否有待发送的提醒（context_token 过期后积压的）
-      if (hasPendingReminders(msg.userId)) {
-        console.log(`[ilink] 发现待发送提醒，正在补发给 ${msg.userId}`)
-        await sendPendingReminders(msg.userId)
+      // 检查是否有待发送的积压消息（context_token 过期后暂存的）
+      if (hasPending(msg.userId)) {
+        console.log(`[ilink] 发现积压消息，正在补发给 ${msg.userId}`)
+        await flushPending(msg.userId)
       }
 
       // 只处理文本消息

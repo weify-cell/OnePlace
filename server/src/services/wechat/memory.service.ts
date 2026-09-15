@@ -3,6 +3,7 @@ import { getSettingValue } from '../settings.service.js'
 import { getReportWindow, queryChatRecords, buildTranscript } from './report.service.js'
 import { getWeChatUsers } from './users.service.js'
 import { getILinkModel } from './model.js'
+import { withInflight } from './delivery.js'
 import type { SubsystemJob } from './scheduler.js'
 import { runAgentTurn } from '../ai/agent-turn.js'
 import { buildMemoryUserContent, buildSystemPrompt } from '../ai/prompt.js'
@@ -171,8 +172,7 @@ export async function searchMemoryVectors(
 
 // ── 每晚整理 ──────────────────────────────────────────────
 
-/** 内存级 in-flight 锁：同一用户同时只允许一个整理在跑。 */
-const inflightMemories = new Set<string>()
+/** 并发去重：同一用户同时只允许一个整理在跑（由 delivery 的 withInflight 实现）。 */
 
 /** 整理某用户昨天对话：抽取记忆→由 agent 逐条调用 add_memory 工具写入。静默执行，不发送微信消息。 */
 export async function consolidateDayMemory(userId: string): Promise<{ saved: number }> {
@@ -235,14 +235,11 @@ export const memoryJob: SubsystemJob = {
 export async function checkAndConsolidateMemories(): Promise<void> {
   if (!isMemoryDue(new Date())) return
   for (const userId of getWeChatUsers()) {
-    if (inflightMemories.has(userId)) continue
-    inflightMemories.add(userId)
     try {
-      await consolidateDayMemory(userId)
+      // 已有同 key 任务在跑时 withInflight 返回 undefined（跳过本轮）
+      await withInflight(`memory:${userId}`, () => consolidateDayMemory(userId))
     } catch (err) {
       console.error(`[memory] consolidate failed for ${userId}:`, err)
-    } finally {
-      inflightMemories.delete(userId)
     }
   }
 }

@@ -6,6 +6,7 @@ import { formatBeijingTime } from '../../utils/time.js'
 import { BEIJING_OFFSET_MS, toBeijingDate } from '../../utils/time.js'
 import { getWeChatUsers } from './users.service.js'
 import { getILinkModel } from './model.js'
+import { isDeliveryReady, sendToUser, withInflight } from './delivery.js'
 import type { SubsystemJob } from './scheduler.js'
 
 export type ReportType = 'daily' | 'weekly' | 'monthly'
@@ -151,24 +152,16 @@ export function findReportByPeriod(
 
 // ── 生成 / 交付 / 调度 / 命令 ──────────────────────────────
 
-/** 内存级 in-flight 去重：同一 (userId, type) 同时只允许一个报告生成在跑，
- * 防止重启双发/并发调用污染同一 agentId 的上下文。 */
-const inflightReports = new Set<string>()
+/** 内存级 in-flight 去重已下沉到 delivery.withInflight（同一 (userId, type)）。 */
 
-let reportBot: WeChatBot | null = null
-
-/**
- * 报告子系统作业描述。
+/** 报告子系统作业描述。
  * 每分钟检查一次到点（日报 23:30 / 周报周日 8:00 / 月报月末 8:00），
- * 首次延迟 30 秒等 WeChatBot 的 contextStore 就绪。
- */
-export const reportJob: SubsystemJob<WeChatBot> = {
+ * 首次延迟 30 秒等 WeChatBot 的 contextStore 就绪。发送由 delivery 模块负责。 */
+export const reportJob: SubsystemJob = {
   name: 'report',
   run: checkAndSendReports,
   intervalMinutes: () => 1,
   initDelayMs: 30_000,
-  prepare: (bot) => { reportBot = bot },
-  cleanup: () => { reportBot = null },
 }
 
 /** 组转录文本：每行 "user/assistant: 内容"。 */
@@ -208,41 +201,37 @@ export async function generateReport(
 
 /** 生成并交付：成功→微信发送+落表；失败→兜底文案，不落表。
  * 发送前先去重：同 (userId,type,period_start) 已落库（如手动 /日报）则跳过；
- * 内存级 in-flight 锁保证同 (user,type) 同时只有一个生成在跑。 */
+ * 并发去重由 delivery 的 withInflight 保证同 (user,type) 同时只跑一个。 */
 export async function sendAndPersist(
   userId: string,
   type: ReportType,
   sendFn: (userId: string, content: string) => Promise<unknown> = async (uid, c) => {
-    if (!reportBot) throw new Error('bot not set')
-    await reportBot.send(uid, c)
+    await sendToUser(uid, c)
   }
 ): Promise<void> {
   const window = getReportWindow(type, new Date())
-  const inflightKey = `${userId}:${type}`
-  // 进入时若已有该 key 则直接 return；add 在首个 await 前同步完成，JS 单线程下无竞态
-  if (inflightReports.has(inflightKey)) return
   // 该周期已落库（命令 /日报 先跑过）：跳过发送与落库，避免用户当天收到两条
   if (findReportByPeriod(userId, type, window.start)) {
     console.log(`[report] ${type} for ${userId} period ${window.start} already exists, skip`)
     return
   }
-  inflightReports.add(inflightKey)
-  try {
-    const { content } = await generateReport(userId, type, window)
-    await sendFn(userId, content)
-    saveReport(userId, type, window, content)
-    console.log(`[report] sent ${type} to ${userId}: ${content.slice(0, 40)}...`)
-  } catch (error) {
-    console.error(`[report] failed to generate/send ${type} for ${userId}:`, error)
-    await sendFn(userId, `${getReportTypeLabel(type)}生成失败，请稍后再试。`).catch(() => {})
-  } finally {
-    inflightReports.delete(inflightKey)
-  }
+
+  await withInflight(`${userId}:${type}`, async () => {
+    try {
+      const { content } = await generateReport(userId, type, window)
+      await sendFn(userId, content)
+      saveReport(userId, type, window, content)
+      console.log(`[report] sent ${type} to ${userId}: ${content.slice(0, 40)}...`)
+    } catch (error) {
+      console.error(`[report] failed to generate/send ${type} for ${userId}:`, error)
+      await sendFn(userId, `${getReportTypeLabel(type)}生成失败，请稍后再试。`).catch(() => {})
+    }
+  })
 }
 
 /** 调度心跳：遍历用户，各类型到点即生成。无守卫。 */
 export async function checkAndSendReports(): Promise<void> {
-  if (!reportBot) return
+  if (!isDeliveryReady()) return
   const now = new Date()
   const types: ReportType[] = ['daily', 'weekly', 'monthly']
   for (const userId of getWeChatUsers()) {

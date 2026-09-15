@@ -1,28 +1,21 @@
-import { WeChatBot } from '@wechatbot/wechatbot'
 import { connectDatabase } from '../../database/index.js'
 import { getSettingValue } from '../settings.service.js'
 import { getBeijingDate, getBeijingDateTime, getBeijingDateAfter } from '../../utils/time.js'
 import { getWeChatUsers } from './users.service.js'
 import { isJobRunning, type SubsystemJob } from './scheduler.js'
-
-let bot: WeChatBot | null = null
+import { isDeliveryReady, sendToUser } from './delivery.js'
 
 /**
  * 提醒子系统作业描述。
  * 间隔取自设置 `ilink_reminder_interval`（每次启动/重建时读取）；
  * 不设首次延迟——启动即检查一次（保持原语义）。
+ * 不再持有 bot：发送与积压由 delivery 模块负责。
  */
-export const reminderJob: SubsystemJob<WeChatBot> = {
+export const reminderJob: SubsystemJob = {
   name: 'reminder',
   run: checkAndRemind,
   intervalMinutes: () => getSettingValue<number>('ilink_reminder_interval', 60),
-  prepare: (botInstance) => { bot = botInstance },
-  cleanup: () => { bot = null },
 }
-
-
-// 待发送提醒队列（context_token 过期时暂存）
-const pendingReminders = new Map<string, Array<{ message: string; timestamp: number }>>()
 
 /**
  * 获取需要提醒的任务
@@ -70,10 +63,10 @@ function getTodayTodos(): Array<{ id: number; title: string; due_date: string; p
 }
 
 /**
- * 发送提醒消息
+ * 发送提醒消息；返回本次是否真的送达（token 过期入队时算未送达）。
  */
-async function sendReminder(userId: string, todos: Array<{ id: number; title: string; due_date: string; priority: string; reminder_time: string }>): Promise<void> {
-  if (!bot || todos.length === 0) return
+async function sendReminder(userId: string, todos: Array<{ id: number; title: string; due_date: string; priority: string; reminder_time: string }>): Promise<boolean> {
+  if (!isDeliveryReady() || todos.length === 0) return false
 
   const priorityEmoji: Record<string, string> = {
     urgent: '🔴',
@@ -96,70 +89,8 @@ async function sendReminder(userId: string, todos: Array<{ id: number; title: st
 
   const message = `⏰ 待办任务提醒\n\n${todoList}\n\n请及时处理！`
 
-  try {
-    await bot.send(userId, message)
-    console.log(`[reminder] sent reminder to ${userId} for ${todos.length} todos`)
-  } catch (err: any) {
-    console.error(`[reminder] failed to send reminder to ${userId}:`, err.message || err)
-
-    // 如果是 context_token 过期 (ret=-2)，保存到待发送队列
-    if (err.code === 'API_ERROR' && err.payload?.ret === -2) {
-      console.log(`[reminder] context_token expired for ${userId}, saving to pending queue`)
-
-      // 保存到待发送队列
-      const pending = pendingReminders.get(userId) || []
-      pending.push({ message, timestamp: Date.now() })
-      pendingReminders.set(userId, pending)
-
-      // 清除存储中的 context_token
-      try {
-        const fs = await import('node:fs/promises')
-        const path = await import('node:path')
-        const os = await import('node:os')
-        const tokenFile = path.join(os.homedir(), '.wechatbot', 'context_tokens.json')
-        const raw = await fs.readFile(tokenFile, 'utf8').catch(() => '{}')
-        const tokens = JSON.parse(raw)
-        delete tokens[userId]
-        await fs.writeFile(tokenFile, JSON.stringify(tokens, null, 2) + '\n')
-      } catch (clearErr) {
-        console.error('[reminder] failed to clear context_token:', clearErr)
-      }
-    }
-
-    throw err // 重新抛出异常，让调用者知道发送失败
-  }
-}
-
-/**
- * 发送积压的提醒（用户重新发消息后调用）
- */
-export async function sendPendingReminders(userId: string): Promise<void> {
-  const pending = pendingReminders.get(userId)
-  if (!pending || pending.length === 0 || !bot) return
-
-  console.log(`[reminder] sending ${pending.length} pending reminders to ${userId}`)
-
-  // 合并所有积压的提醒为一条消息
-  const messages = pending.map(p => p.message)
-  const combinedMessage = messages.join('\n\n---\n\n')
-
-  try {
-    await bot.send(userId, combinedMessage)
-    console.log(`[reminder] sent ${pending.length} pending reminders to ${userId}`)
-    // 清除队列
-    pendingReminders.delete(userId)
-  } catch (err) {
-    console.error(`[reminder] failed to send pending reminders to ${userId}:`, err)
-    // 如果还是失败，保留队列等待下次重试
-  }
-}
-
-/**
- * 检查是否有待发送的提醒
- */
-export function hasPendingReminders(userId: string): boolean {
-  const pending = pendingReminders.get(userId)
-  return pending !== undefined && pending.length > 0
+  // 投递策略（token 过期→入队补发、并发去重）统一由 delivery 模块负责
+  return sendToUser(userId, message)
 }
 
 /**
@@ -195,8 +126,7 @@ async function checkAndRemind(): Promise<void> {
     let successCount = 0
     for (const userId of users) {
       try {
-        await sendReminder(userId, dueTodos)
-        successCount++
+        if (await sendReminder(userId, dueTodos)) successCount++
       } catch (err) {
         console.error(`[reminder] failed to send to ${userId}:`, err)
       }
@@ -258,7 +188,6 @@ export async function triggerReminder(): Promise<{ success: boolean; count: numb
     }
 
     const db = connectDatabase()
-
     // 长期任务：推迟到明天
     const longTermTodos = dueTodos.filter(t => t.task_kind === 'long_term')
     if (longTermTodos.length > 0) {

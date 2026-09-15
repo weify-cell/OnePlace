@@ -1,5 +1,6 @@
 import type { WeChatBot } from '@wechatbot/wechatbot'
 import { startJob, stopAllJobs, type SubsystemJob } from './scheduler.js'
+import { setDeliveryBot } from './delivery.js'
 import { reminderJob } from './todo-reminder.service.js'
 import { proactiveChatJob } from './proactive-chat.service.js'
 import { reportJob } from './report.service.js'
@@ -19,17 +20,22 @@ export const WECHAT_SUBSYSTEMS: Array<SubsystemJob<WeChatBot>> = [
   memoryJob
 ]
 
-/** 注入依赖并启动全部子系统；已在运行的作业会被跳过。 */
+/**
+ * 注入依赖并启动全部子系统；已在运行的作业会被跳过。
+ * bot 实例同时注入投递层：各子系统不再各自持有 bot，发送统一走 delivery。
+ */
 export function startAllSubsystems(bot: WeChatBot): void {
+  setDeliveryBot(bot)
   for (const job of WECHAT_SUBSYSTEMS) {
     job.prepare?.(bot)
     startJob(job as SubsystemJob<never>)
   }
 }
 
-/** 停止全部子系统并清理各自持有的 bot 引用。 */
+/** 停止全部子系统并清除投递层持有的 bot 引用。 */
 export function stopAllSubsystems(): void {
   stopAllJobs()
+  setDeliveryBot(null)
 }
 
 /** 已注册的子系统名字（供状态查询与自检）。 */

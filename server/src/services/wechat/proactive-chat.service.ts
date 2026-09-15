@@ -1,6 +1,4 @@
-import { WeChatBot } from '@wechatbot/wechatbot'
 import { getSettingValue } from '../settings.service.js'
-import { connectDatabase } from '../../database/index.js'
 import { addMessageToHistory, isUserInLearningMode } from './ilink-bot.service.js'
 import { DEFAULT_PROACTIVE_SYSTEM_PROMPT, DEFAULT_PROACTIVE_USER_MESSAGE } from '../prompt-defaults.js'
 import { formatBeijingTime, getBeijingHour } from '../../utils/time.js'
@@ -9,21 +7,18 @@ import { isJobRunning, restartJob, type SubsystemJob } from './scheduler.js'
 import { runAgentTurn } from '../ai/agent-turn.js'
 import { buildSystemPrompt } from '../ai/prompt.js'
 import { getILinkModel } from './model.js'
-
-let bot: WeChatBot | null = null
+import { getLastSentAt, isDeliveryReady, markSentAt, sendToUser } from './delivery.js'
 
 /**
  * 主动聊天子系统作业描述。
  * 间隔取自设置 `ilink_proactive_chat_check_interval`（每次启动/重建时读取），
  * 首次延迟 30 秒等 contextStore 就绪。
  */
-export const proactiveChatJob: SubsystemJob<WeChatBot> = {
+export const proactiveChatJob: SubsystemJob = {
   name: 'proactive',
   run: checkAndSendProactiveMessages,
   intervalMinutes: () => getProactiveChatConfig().checkInterval,
   initDelayMs: 30_000,
-  prepare: (botInstance) => { bot = botInstance },
-  cleanup: () => { bot = null },
 }
 
 interface ProactiveChatConfig {
@@ -53,24 +48,9 @@ function getProactiveChatConfig(): ProactiveChatConfig {
   }
 }
 
-/** Read last proactive-sent time from DB (persists across restarts). */
-function getDbLastSentTime(userId: string): number | null {
-  const db = connectDatabase()
-  const row = db.prepare(`SELECT value FROM settings WHERE key = ?`)
-    .get(`ilink_proactive_last_sent_${userId}`) as { value: string } | undefined
-  if (!row) return null
-  const ts = Number(row.value)
-  return Number.isFinite(ts) ? ts : null
-}
-
-/** Persist last proactive-sent time to DB. */
-function setDbLastSentTime(userId: string, ts: number): void {
-  const db = connectDatabase()
-  db.prepare(`
-    INSERT INTO settings (key, value, updated_at)
-    VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
-  `).run(`ilink_proactive_last_sent_${userId}`, String(ts))
+/** 上一條主动消息的发送时间（由 delivery 持久化）；从未发过返回 null。 */
+function getLastProactiveSentAt(userId: string): number | null {
+  return getLastSentAt('proactive', userId)
 }
 
 /**
@@ -78,7 +58,7 @@ function setDbLastSentTime(userId: string, ts: number): void {
  * 没有主动消息记录视为"已回复"（可直接触发）；否则要求用户最近一条消息晚于上次主动发送时间。
  */
 function hasUserRepliedSinceLastProactive(userId: string): boolean {
-  const lastSent = getDbLastSentTime(userId)
+  const lastSent = getLastProactiveSentAt(userId)
   if (!lastSent) return true
   const lastUserMsg = getUserLastActiveTime(userId)
   return lastUserMsg !== null && lastUserMsg > lastSent
@@ -87,7 +67,7 @@ function hasUserRepliedSinceLastProactive(userId: string): boolean {
 /** Read the user's last interaction time (user message or proactive send, whichever is later). */
 function getUserLastInteractionTime(userId: string): number | null {
   const userMsgTime = getUserLastActiveTime(userId)
-  const sentTime = getDbLastSentTime(userId)
+  const sentTime = getLastProactiveSentAt(userId)
   return Math.max(userMsgTime ?? 0, sentTime ?? 0) || null
 }
 
@@ -102,7 +82,7 @@ function calculateTriggerWeight(lastInteractionTime: number | null): number {
 }
 
 function hasMinIntervalPassed(userId: string, minIntervalMinutes: number): boolean {
-  const lastSent = getDbLastSentTime(userId)
+  const lastSent = getLastProactiveSentAt(userId)
   if (!lastSent) return true
   return (Date.now() - lastSent) >= minIntervalMinutes * 60 * 1000
 }
@@ -145,22 +125,23 @@ function pickDefaultMessage(): string {
 
 /** Send a proactive message. Only writes history after successful send. */
 async function sendProactiveMessage(userId: string): Promise<boolean> {
-  if (!bot) {
-    console.error('[proactive] bot instance not set')
+  if (!isDeliveryReady()) {
+    console.error('[proactive] delivery not ready')
     return false
   }
 
   try {
     const message = await generateProactiveMessage(userId)
-    await bot.send(userId, message)
+    // token 过期时 sendToUser 会入队并返回 false（不算送达）
+    const delivered = await sendToUser(userId, message)
+    if (!delivered) return false
 
     // 共用 messageHistory：也写入触发指令，保证交替格式
-    const { formatBeijingTime } = await import('./ilink-bot.service.js')
     const timestamp = formatBeijingTime()
     const userMessage = getSettingValue<string>('ilink_proactive_chat_user_message', DEFAULT_PROACTIVE_USER_MESSAGE)
     addMessageToHistory(userId, 'user', `${timestamp} ${userMessage}`)
     addMessageToHistory(userId, 'assistant', message)
-    setDbLastSentTime(userId, Date.now())
+    markSentAt('proactive', userId)
 
     console.log(`[proactive] sent message to ${userId}: ${message.slice(0, 50)}...`)
     return true
