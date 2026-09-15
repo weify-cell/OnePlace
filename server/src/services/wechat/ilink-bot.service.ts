@@ -3,11 +3,11 @@ import { AgentPool, loadToolsFromDb, loadSkillPrompt } from '../ai/agent-pool.js
 import { createStreamFn, createModel, convertMessages, extractApiKey, type ChatMessage } from '../ai/pi-ai.adapter.js'
 import { getSettingValue, setSetting } from '../settings.service.js'
 import { connectDatabase } from '../../database/index.js'
-import { setReminderBot, startReminderService, stopReminderService, sendPendingReminders, hasPendingReminders } from './todo-reminder.service.js'
+import { sendPendingReminders, hasPendingReminders } from './todo-reminder.service.js'
+import { startAllSubsystems, stopAllSubsystems } from './subsystems.js'
 import { saveWeChatUser } from './users.service.js'
-import { setProactiveBot, startProactiveChatService, stopProactiveChatService } from './proactive-chat.service.js'
-import { setReportBot, startReportService, stopReportService, handleReportCommand } from './report.service.js'
-import { startMemoryService, stopMemoryService, buildMemoryPrompt } from './memory.service.js'
+import { handleReportCommand } from './report.service.js'
+import { buildMemoryPrompt } from './memory.service.js'
 import { AgentEvent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import { formatBeijingTime } from '../../utils/time.js'
 
@@ -487,24 +487,9 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
 
           // 延迟启动提醒服务和主动聊天服务（等待 contextStore 加载完成）
           setTimeout(() => {
-            setReminderBot(bot!)
-            const reminderInterval = getSettingValue<number>('ilink_reminder_interval', 60)
-            startReminderService(reminderInterval)
-            console.log(`[ilink] reminder service started (interval: ${reminderInterval}min)`)
-
-            // 启动主动聊天服务
-            setProactiveBot(bot!)
-            startProactiveChatService()
-            console.log('[ilink] proactive chat service started')
-
-            // 启动报告服务
-            setReportBot(bot!)
-            startReportService()
-            console.log('[ilink] report service started')
-
-            // 启动记忆服务（每晚整理当天对话）
-            startMemoryService()
-            console.log('[ilink] memory service started')
+            // 子系统启停统一由调度层负责：bot 不再需要按名字认识每一个
+            startAllSubsystems(bot!)
+            console.log('[ilink] 微信后台子系统已启动')
           }, 2000) // 延迟 2 秒，确保 contextStore 加载完成
 
           await bot!.start()
@@ -540,17 +525,8 @@ export function stopILinkBot(): { success: boolean; error?: string } {
   }
 
   try {
-    // 停止提醒服务
-    stopReminderService()
-
-    // 停止主动聊天服务
-    stopProactiveChatService()
-
-    // 停止报告服务
-    stopReportService()
-
-    // 停止记忆服务
-    stopMemoryService()
+    // 子系统统一停止（含各自的 bot 引用清理）
+    stopAllSubsystems()
 
     // WeChatBot 没有 stop 方法，直接清理状态
     agentPool?.shutdown()

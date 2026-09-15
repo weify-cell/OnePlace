@@ -6,10 +6,23 @@ import { loadSkillPrompt } from '../ai/agent-pool.js'
 import { DEFAULT_PROACTIVE_SYSTEM_PROMPT, DEFAULT_PROACTIVE_USER_MESSAGE } from '../prompt-defaults.js'
 import { getBeijingHour } from '../../utils/time.js'
 import { getWeChatUsers, getUserLastActiveTime } from './users.service.js'
+import { isJobRunning, restartJob, type SubsystemJob } from './scheduler.js'
 
-let proactiveTimer: ReturnType<typeof setInterval> | null = null
-let proactiveInitTimer: ReturnType<typeof setTimeout> | null = null
 let bot: WeChatBot | null = null
+
+/**
+ * 主动聊天子系统作业描述。
+ * 间隔取自设置 `ilink_proactive_chat_check_interval`（每次启动/重建时读取），
+ * 首次延迟 30 秒等 contextStore 就绪。
+ */
+export const proactiveChatJob: SubsystemJob<WeChatBot> = {
+  name: 'proactive',
+  run: checkAndSendProactiveMessages,
+  intervalMinutes: () => getProactiveChatConfig().checkInterval,
+  initDelayMs: 30_000,
+  prepare: (botInstance) => { bot = botInstance },
+  cleanup: () => { bot = null },
+}
 
 interface ProactiveChatConfig {
   enabled: boolean
@@ -192,42 +205,6 @@ async function checkAndSendProactiveMessages(): Promise<void> {
   }
 }
 
-export function setProactiveBot(botInstance: WeChatBot): void {
-  bot = botInstance
-}
-
-export function startProactiveChatService(intervalMinutes?: number): void {
-  if (proactiveTimer) {
-    console.log('[proactive] service already running')
-    return
-  }
-
-  const config = getProactiveChatConfig()
-  const interval = intervalMinutes || config.checkInterval
-
-  console.log(`[proactive] starting proactive chat service (interval: ${interval}min)`)
-
-  proactiveInitTimer = setTimeout(() => {
-    proactiveInitTimer = null
-    checkAndSendProactiveMessages()
-  }, 30000)
-
-  proactiveTimer = setInterval(checkAndSendProactiveMessages, interval * 60 * 1000)
-}
-
-export function stopProactiveChatService(): void {
-  if (proactiveInitTimer) {
-    clearTimeout(proactiveInitTimer)
-    proactiveInitTimer = null
-  }
-  if (proactiveTimer) {
-    clearInterval(proactiveTimer)
-    proactiveTimer = null
-  }
-  bot = null
-  console.log('[proactive] service stopped')
-}
-
 export function getProactiveChatStatus(): {
   running: boolean
   config: ProactiveChatConfig
@@ -235,7 +212,7 @@ export function getProactiveChatStatus(): {
 } {
   const config = getProactiveChatConfig()
   return {
-    running: proactiveTimer !== null,
+    running: isJobRunning(proactiveChatJob.name),
     config,
     isQuietHours: isQuietHours(config)
   }
@@ -243,12 +220,7 @@ export function getProactiveChatStatus(): {
 
 /** Rebuild the timer when check_interval changes at runtime. */
 export function updateProactiveChatConfig(updates: Partial<ProactiveChatConfig>): void {
-  if (updates.checkInterval !== undefined && proactiveTimer) {
-    clearInterval(proactiveTimer)
-    proactiveTimer = setInterval(
-      checkAndSendProactiveMessages,
-      updates.checkInterval * 60 * 1000
-    )
-    console.log(`[proactive] timer rebuilt with interval: ${updates.checkInterval}min`)
+  if (updates.checkInterval !== undefined) {
+    restartJob(proactiveChatJob.name)
   }
 }

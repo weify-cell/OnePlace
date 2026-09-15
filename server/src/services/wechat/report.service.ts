@@ -3,6 +3,7 @@ import { WeChatBot } from '@wechatbot/wechatbot'
 import { DEFAULT_REPORT_SYSTEM_PROMPT } from '../prompt-defaults.js'
 import { BEIJING_OFFSET_MS, toBeijingDate } from '../../utils/time.js'
 import { getWeChatUsers } from './users.service.js'
+import type { SubsystemJob } from './scheduler.js'
 
 export type ReportType = 'daily' | 'weekly' | 'monthly'
 
@@ -152,11 +153,19 @@ export function findReportByPeriod(
 const inflightReports = new Set<string>()
 
 let reportBot: WeChatBot | null = null
-let reportTimer: ReturnType<typeof setInterval> | null = null
-let reportInitTimer: ReturnType<typeof setTimeout> | null = null
 
-export function setReportBot(bot: WeChatBot): void {
-  reportBot = bot
+/**
+ * 报告子系统作业描述。
+ * 每分钟检查一次到点（日报 23:30 / 周报周日 8:00 / 月报月末 8:00），
+ * 首次延迟 30 秒等 WeChatBot 的 contextStore 就绪。
+ */
+export const reportJob: SubsystemJob<WeChatBot> = {
+  name: 'report',
+  run: checkAndSendReports,
+  intervalMinutes: () => 1,
+  initDelayMs: 30_000,
+  prepare: (bot) => { reportBot = bot },
+  cleanup: () => { reportBot = null },
 }
 
 /** 组转录文本：每行 "user/assistant: 内容"。 */
@@ -242,20 +251,6 @@ export async function checkAndSendReports(): Promise<void> {
       }
     }
   }
-}
-
-export function startReportService(): void {
-  if (reportTimer) return
-  console.log('[report] starting report service')
-  reportInitTimer = setTimeout(() => { reportInitTimer = null; checkAndSendReports() }, 30000)
-  reportTimer = setInterval(checkAndSendReports, 60 * 1000)
-}
-
-export function stopReportService(): void {
-  if (reportInitTimer) { clearTimeout(reportInitTimer); reportInitTimer = null }
-  if (reportTimer) { clearInterval(reportTimer); reportTimer = null }
-  reportBot = null
-  console.log('[report] service stopped')
 }
 
 /** 命令入口：即时生成并落表，返回 content 不发送（发送由命令处理器 reply）。 */

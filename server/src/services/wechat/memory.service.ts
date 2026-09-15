@@ -2,6 +2,7 @@ import { connectDatabase } from '../../database/index.js'
 import { getSettingValue } from '../settings.service.js'
 import { getReportWindow, queryChatRecords, buildTranscript } from './report.service.js'
 import { getWeChatUsers } from './users.service.js'
+import type { SubsystemJob } from './scheduler.js'
 import { DEFAULT_MEMORY_SYSTEM_PROMPT, DEFAULT_MEMORY_USER_TEMPLATE } from '../prompt-defaults.js'
 import { embedText } from '../ai/embedding-client.js'
 import { upsertChunks, searchChunks } from '../vector/vector.service.js'
@@ -227,8 +228,16 @@ export async function consolidateDayMemory(userId: string): Promise<{ saved: num
 
 // ── 调度 ──────────────────────────────────────────────────
 
-let memoryTimer: ReturnType<typeof setInterval> | null = null
-let memoryInitTimer: ReturnType<typeof setTimeout> | null = null
+/**
+ * 记忆整理子系统作业描述。
+ * 每分钟检查一次到点（北京 00:30），首次延迟 30 秒等 contextStore 就绪；不需要 bot 实例。
+ */
+export const memoryJob: SubsystemJob = {
+  name: 'memory',
+  run: checkAndConsolidateMemories,
+  intervalMinutes: () => 1,
+  initDelayMs: 30_000,
+}
 
 /** 心跳：到点则遍历用户逐人整理（in-flight 锁防并发）。 */
 export async function checkAndConsolidateMemories(): Promise<void> {
@@ -244,17 +253,4 @@ export async function checkAndConsolidateMemories(): Promise<void> {
       inflightMemories.delete(userId)
     }
   }
-}
-
-export function startMemoryService(): void {
-  if (memoryTimer) return
-  console.log('[memory] starting memory service')
-  memoryInitTimer = setTimeout(() => { memoryInitTimer = null; checkAndConsolidateMemories() }, 30000)
-  memoryTimer = setInterval(checkAndConsolidateMemories, 60 * 1000)
-}
-
-export function stopMemoryService(): void {
-  if (memoryInitTimer) { clearTimeout(memoryInitTimer); memoryInitTimer = null }
-  if (memoryTimer) { clearInterval(memoryTimer); memoryTimer = null }
-  console.log('[memory] service stopped')
 }

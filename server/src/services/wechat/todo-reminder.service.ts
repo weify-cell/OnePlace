@@ -1,22 +1,28 @@
 import { WeChatBot } from '@wechatbot/wechatbot'
 import { connectDatabase } from '../../database/index.js'
+import { getSettingValue } from '../settings.service.js'
 import { getBeijingDate, getBeijingDateTime, getBeijingDateAfter } from '../../utils/time.js'
 import { getWeChatUsers } from './users.service.js'
+import { isJobRunning, type SubsystemJob } from './scheduler.js'
 
-// 定时器
-let reminderTimer: ReturnType<typeof setInterval> | null = null
 let bot: WeChatBot | null = null
+
+/**
+ * 提醒子系统作业描述。
+ * 间隔取自设置 `ilink_reminder_interval`（每次启动/重建时读取）；
+ * 不设首次延迟——启动即检查一次（保持原语义）。
+ */
+export const reminderJob: SubsystemJob<WeChatBot> = {
+  name: 'reminder',
+  run: checkAndRemind,
+  intervalMinutes: () => getSettingValue<number>('ilink_reminder_interval', 60),
+  prepare: (botInstance) => { bot = botInstance },
+  cleanup: () => { bot = null },
+}
 
 
 // 待发送提醒队列（context_token 过期时暂存）
 const pendingReminders = new Map<string, Array<{ message: string; timestamp: number }>>()
-
-/**
- * 设置 Bot 实例
- */
-export function setReminderBot(botInstance: WeChatBot): void {
-  bot = botInstance
-}
 
 /**
  * 获取需要提醒的任务
@@ -231,35 +237,6 @@ async function checkAndRemind(): Promise<void> {
 }
 
 /**
- * 启动定时提醒服务
- */
-export function startReminderService(intervalMinutes: number = 60): void {
-  if (reminderTimer) {
-    console.log('[reminder] service already running')
-    return
-  }
-
-  console.log(`[reminder] starting reminder service (interval: ${intervalMinutes}min)`)
-
-  // 立即检查一次
-  checkAndRemind()
-
-  // 设置定时器
-  reminderTimer = setInterval(checkAndRemind, intervalMinutes * 60 * 1000)
-}
-
-/**
- * 停止定时提醒服务
- */
-export function stopReminderService(): void {
-  if (reminderTimer) {
-    clearInterval(reminderTimer)
-    reminderTimer = null
-    console.log('[reminder] service stopped')
-  }
-}
-
-/**
  * 手动触发提醒检查
  */
 export async function triggerReminder(): Promise<{ success: boolean; count: number }> {
@@ -320,7 +297,7 @@ export function getReminderStatus(): {
     "SELECT COUNT(*) as c FROM todos WHERE is_deleted = 0 AND status NOT IN ('done','cancelled') AND reminder_enabled = 1 AND reminder_time IS NOT NULL"
   ).get() as { c: number }
   return {
-    running: reminderTimer !== null,
+    running: isJobRunning(reminderJob.name),
     activeReminders: countRow.c,
     dueTodos: getDueTodos()
   }
