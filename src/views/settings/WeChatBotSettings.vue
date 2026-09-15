@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useSettingsStore } from '@/stores/settings.store'
 import { useILinkStore } from '@/stores/ilink.store'
+import { resolveBotState } from '@/utils/botState'
 import SettingsLayout from './SettingsLayout.vue'
 
 const settingsStore = useSettingsStore()
@@ -12,6 +13,8 @@ const activeTab = ref('basic')
 // 提示词默认值由后端 /api/ilink/config 提供（唯一来源在 server 的 prompt-defaults.ts），
 // 前端不再自带副本，避免两边漂移。初始值为空，load 时由后端返回值覆盖。
 const ilinkConfig = ref({
+  // 启用意图：服务启动时是否自动拉起（与「启动/停止 Bot」是两层，见 docs/adr/0001）
+  enabled: true,
   provider: 'qwen',
   model: 'qwen-turbo',
   system_prompt: '',
@@ -51,6 +54,7 @@ onMounted(async () => {
 
   if (ilinkStore.config) {
     ilinkConfig.value = {
+      enabled: ilinkStore.config.enabled ?? true,
       provider: ilinkStore.config.provider ?? 'qwen',
       model: ilinkStore.config.model ?? 'qwen-turbo',
       system_prompt: ilinkStore.config.system_prompt ?? '',
@@ -83,6 +87,17 @@ async function saveILinkConfig() {
     await ilinkStore.updateConfig(ilinkConfig.value)
     message.success('Bot 配置已保存')
   } catch (err: any) {
+    message.error('保存失败: ' + (err.message || '未知错误'))
+  }
+}
+
+async function handleEnabledChange(value: boolean) {
+  try {
+    await ilinkStore.updateConfig({ enabled: value })
+    ilinkConfig.value.enabled = value
+    message.success(value ? '已启用：服务启动时会自动拉起' : '已关闭：不再自动拉起')
+  } catch (err: any) {
+    ilinkConfig.value.enabled = !value
     message.error('保存失败: ' + (err.message || '未知错误'))
   }
 }
@@ -142,6 +157,15 @@ function formatUptime(ms: number): string {
   if (minutes > 0) return `${minutes}分钟`
   return `${seconds}秒`
 }
+
+// 四态映射的规则本身住在 utils/botState.ts（已被单测钉住），这里只负责喂给它当前事实
+const botState = computed(() =>
+  resolveBotState({
+    enabled: ilinkConfig.value.enabled,
+    running: ilinkStore.status?.running ?? false,
+    loginStatus: ilinkStore.status?.login.status
+  })
+)
 </script>
 
 <template>
@@ -157,10 +181,23 @@ function formatUptime(ms: number): string {
         </div>
         <div class="settings-card__body">
           <div class="settings-field">
+            <label class="settings-field__label">启用微信机器人</label>
+            <div class="ilink-enabled">
+              <n-switch
+                v-model:value="ilinkConfig.enabled"
+                :loading="ilinkStore.isLoading"
+                @update:value="handleEnabledChange"
+              />
+              <span class="ilink-enabled__hint">服务启动时自动拉起</span>
+            </div>
+            <div class="settings-field__hint">关闭后不再自动拉起，但手动启动仍然可用</div>
+          </div>
+
+          <div class="settings-field">
             <label class="settings-field__label">运行状态</label>
             <div class="ilink-status">
-              <div :class="['status-dot', ilinkStore.status?.running ? 'status-dot--running' : 'status-dot--stopped']" />
-              <span>{{ ilinkStore.status?.running ? '运行中' : '已停止' }}</span>
+              <div :class="['status-dot', `status-dot--${botState.dot}`]" />
+              <span>{{ botState.label }}</span>
               <span v-if="ilinkStore.status?.running && ilinkStore.status?.uptime" class="status-uptime">
                 (已运行 {{ formatUptime(ilinkStore.status.uptime) }})
               </span>
@@ -168,6 +205,7 @@ function formatUptime(ms: number): string {
                 · 处理 {{ ilinkStore.status.messages_processed }} 条消息
               </span>
             </div>
+            <div v-if="botState.hint" class="settings-field__hint">{{ botState.hint }}</div>
             <div v-if="ilinkStore.status?.error" class="status-error">
               {{ ilinkStore.status.error }}
             </div>
@@ -212,6 +250,10 @@ function formatUptime(ms: number): string {
                 <div class="status-dot status-dot--running" />
                 <span>已登录</span>
                 <n-button size="small" @click="handleResetLogin">重新登录</n-button>
+              </div>
+              <div v-else-if="ilinkStore.status?.login.status === 'expired'">
+                <div class="status-dot status-dot--error" />
+                <span>会话已过期，需重新扫码——请点上方「启动 Bot」</span>
               </div>
               <div v-else>
                 <div class="status-dot status-dot--stopped" />

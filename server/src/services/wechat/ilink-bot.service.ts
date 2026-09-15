@@ -195,11 +195,8 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
     return { success: false, error: 'Bot is already running' }
   }
 
-  const config = getILinkConfig()
-  if (!config.enabled) {
-    return { success: false, error: 'Bot is not enabled' }
-  }
-
+  // 不读启用意图：意图只决定服务启动时要不要自动拉起（那件事由 bootstrap.ts 负责判断），
+  // 它不是功能总开关——手动启动在任何意图下都必须可用。
   try {
     // 创建 Bot 实例
     bot = new WeChatBot({
@@ -222,7 +219,12 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
     bot.on('session:expired', () => {
       console.log('[ilink] 会话已过期')
       lastError = 'Session expired'
+      loginStatus = 'expired'
       botRunning = false
+      // SDK 会自己清凭证并强制重登，但那条路径不传二维码回调（登录二维码拿不到），
+      // 于是它会一直空转等一个没人能看到的扫码。这里把死实例的轮询停掉，
+      // 否则用户在设置页点「启动 Bot」重建时，两个轮询器会抢同一个游标文件。
+      bot?.stop()
     })
 
     bot.on('error', (err: unknown) => {
@@ -429,13 +431,19 @@ export function stopILinkBot(): { success: boolean; error?: string } {
     // 子系统统一停止（含各自的 bot 引用清理）
     stopAllSubsystems()
 
-    // WeChatBot 没有 stop 方法，直接清理状态
+    // 必须让 SDK 真的停掉长轮询：只把引用置空的话旧实例会继续收消息，
+    // 而「停止 → 再启动」会造出第二个轮询器——两个实例共享同一份游标文件，
+    // 且 SDK 层没有任何去重。
+    bot.stop()
+
     // 只清理微信层的 agent：Web 对话的上下文不属于本生命周期
     shutdownAgents(AGENT_SCOPE_WECHAT)
 
     bot = null
     botRunning = false
     botStartTime = null
+    loginStatus = 'idle'
+    loginQRCode = null
 
     console.log('[ilink] bot stopped')
     return { success: true }

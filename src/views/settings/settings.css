@@ -376,6 +376,17 @@
   gap: 8px;
 }
 
+.ilink-enabled {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ilink-enabled__hint {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
 .ilink-login {
   display: flex;
   flex-direction: column;

@@ -17,6 +17,7 @@ import { foldersRouter } from './routes/folders.routes.js'
 import { uploadRouter } from './routes/upload.routes.js'
 import { kbRouter } from './routes/knowledge-base.routes.js'
 import { ilinkRouter } from './routes/ilink.routes.js'
+import { autoStartWeChatBot } from './services/wechat/bootstrap.js'
 import { toolConfigRouter } from './routes/tool-config.routes.js'
 import { skillConfigRouter } from './routes/skill-config.routes.js'
 import { toolCategoryRouter } from './routes/tool-category.routes.js'
@@ -90,4 +91,8 @@ runMigrations(db)
 app.listen(Number(PORT), '0.0.0.0', () => {
   console.log(`OnePlace server running on http://0.0.0.0:${PORT}`)
   console.log(`Environment: ${isProduction ? 'production' : 'development'}`)
+
+  // 机器人按「启用意图」自动拉起。刻意不 await：本函数从不外抛，
+  // 但即便哪天它抛了，也不能拖住 HTTP 服务启动（详见 bootstrap.ts）。
+  void autoStartWeChatBot()
 })
