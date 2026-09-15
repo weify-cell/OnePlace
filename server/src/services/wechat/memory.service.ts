@@ -4,26 +4,16 @@ import { getReportWindow, queryChatRecords, buildTranscript, getWeChatUsers } fr
 import { DEFAULT_MEMORY_SYSTEM_PROMPT, DEFAULT_MEMORY_USER_TEMPLATE } from '../prompt-defaults.js'
 import { embedText } from '../ai/embedding-client.js'
 import { upsertChunks, searchChunks } from '../vector/vector.service.js'
-
-const BEIJING_OFFSET_MS = 8 * 60 * 60 * 1000
-
-/** 把 UTC 时刻偏移为"北京墙钟时间"的 Date，用 getUTC* 读取即得北京时间各分量。 */
-function toBeijing(now: Date): Date {
-  return new Date(now.getTime() + BEIJING_OFFSET_MS)
-}
+import { getBeijingDate, toBeijingDate } from '../../utils/time.js'
 
 /** 北京日期 YYYY-MM-DD。 */
 export function getMemoryDate(now: Date): string {
-  const b = toBeijing(now)
-  const y = b.getUTCFullYear()
-  const m = String(b.getUTCMonth() + 1).padStart(2, '0')
-  const d = String(b.getUTCDate()).padStart(2, '0')
-  return `${y}-${m}-${d}`
+  return getBeijingDate(now)
 }
 
 /** 每晚 00:30（北京时间）到点判定；[00:30, 00:31] 容忍调度漂移（与报告一致）。 */
 export function isMemoryDue(now: Date): boolean {
-  const b = toBeijing(now)
+  const b = toBeijingDate(now)
   return b.getUTCHours() === 0 && b.getUTCMinutes() >= 30 && b.getUTCMinutes() <= 31
 }
 

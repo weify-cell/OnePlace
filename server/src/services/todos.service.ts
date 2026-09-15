@@ -1,4 +1,5 @@
 import { connectDatabase } from '../database/index.js'
+import { getBeijingDateAfter } from '../utils/time.js'
 
 export type TodoPriority = 'low' | 'medium' | 'high' | 'urgent'
 export type TodoStatus = 'todo' | 'in_progress' | 'done' | 'cancelled'
@@ -404,10 +405,8 @@ export function getPendingCount(): number {
 
 export function getUrgentCount(): number {
   const db = connectDatabase()
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const threeDaysLater = new Date(today.getTime() + 3 * 24 * 60 * 60 * 1000)
-  const threeDaysLaterStr = threeDaysLater.toISOString().split('T')[0]
+  // 以北京时间为准：统计「3 天内（含今天）到期或已逾期」的未完成任务
+  const threeDaysLaterStr = getBeijingDateAfter(3)
 
   const result = db.prepare(`
     SELECT COUNT(*) as count FROM todos

@@ -4,6 +4,7 @@ import { connectDatabase } from '../../database/index.js'
 import { addMessageToHistory, isUserInLearningMode } from './ilink-bot.service.js'
 import { loadSkillPrompt } from '../ai/agent-pool.js'
 import { DEFAULT_PROACTIVE_SYSTEM_PROMPT, DEFAULT_PROACTIVE_USER_MESSAGE } from '../prompt-defaults.js'
+import { getBeijingHour } from '../../utils/time.js'
 
 let proactiveTimer: ReturnType<typeof setInterval> | null = null
 let proactiveInitTimer: ReturnType<typeof setTimeout> | null = null
@@ -15,15 +16,6 @@ interface ProactiveChatConfig {
   quietHoursStart: number
   quietHoursEnd: number
   checkInterval: number
-}
-
-function getBeijingHour(): number {
-  const options: Intl.DateTimeFormatOptions = {
-    timeZone: 'Asia/Shanghai',
-    hour: 'numeric',
-    hour12: false
-  }
-  return parseInt(new Intl.DateTimeFormat('en-US', options).format(new Date()), 10)
 }
 
 function isQuietHours(config: ProactiveChatConfig): boolean {

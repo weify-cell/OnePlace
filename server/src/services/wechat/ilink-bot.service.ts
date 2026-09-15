@@ -8,27 +8,11 @@ import { setProactiveBot, startProactiveChatService, stopProactiveChatService } 
 import { setReportBot, startReportService, stopReportService, handleReportCommand } from './report.service.js'
 import { startMemoryService, stopMemoryService, buildMemoryPrompt } from './memory.service.js'
 import { AgentEvent, type AgentMessage } from '@earendil-works/pi-agent-core'
+import { formatBeijingTime } from '../../utils/time.js'
 
-/**
- * 格式化当前时间为北京时间字符串
- */
-export function formatBeijingTime(): string {
-  const now = new Date()
-  const timestamp = now.toLocaleString('zh-CN', {
-    timeZone: 'Asia/Shanghai',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit'
-  })
-  const weekDay = now.toLocaleString('zh-CN', {
-    timeZone: 'Asia/Shanghai',
-    weekday: 'long'
-  })
-  return `[${timestamp} ${weekDay} 北京时间]`
-}
+// 北京时间格式化统一由 utils/time.js 实现，此处 re-export 以保持既有引用
+// （report/memory/proactive-chat 的动态 import 与相关测试 mock）可用
+export { formatBeijingTime }
 
 // Bot 实例
 let bot: WeChatBot | null = null

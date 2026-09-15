@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import AppLayout from '@/components/common/AppLayout.vue'
 import { fetchReports, updateReport, deleteReport, type ReportType, type WeChatReport } from '@/api/reports.api'
 import MarkdownPreview from '@/components/notes/MarkdownPreview.vue'
+import { beijingDateToUtcIso, toBeijingDate, toBeijingDateLabel } from '@/utils/datetime'
 
 const typeOptions: Array<{ label: string; value: ReportType }> = [
   { label: '日报', value: 'daily' },
@@ -23,19 +24,6 @@ const editing = ref(false)
 const editContent = ref('')
 const saving = ref(false)
 
-/** 北京时区 YYYY-MM-DD → UTC ISO。inclusiveEnd=true 时含当天（取次日北京 00:00 作为排他上界）。 */
-function beijingDateToUtcIso(dateStr: string, inclusiveEnd: boolean): string {
-  const d = new Date(`${dateStr}T00:00:00.000Z`)
-  if (inclusiveEnd) d.setUTCDate(d.getUTCDate() + 1)
-  // 北京 00:00 = UTC 前一天的 16:00
-  return new Date(d.getTime() - 8 * 3600 * 1000).toISOString()
-}
-
-/** UTC ISO → 北京日期 YYYY-MM-DD。 */
-function isoToBeijingDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' })
-}
-
 function buildRange(): { start?: string; end?: string } {
   const range: { start?: string; end?: string } = {}
   if (startDate.value) range.start = beijingDateToUtcIso(startDate.value, false)
@@ -44,8 +32,8 @@ function buildRange(): { start?: string; end?: string } {
 }
 
 function periodLabel(r: WeChatReport): string {
-  const start = new Date(r.period_start).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })
-  const end = new Date(r.period_end).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' })
+  const start = toBeijingDateLabel(r.period_start)
+  const end = toBeijingDateLabel(r.period_end)
   const label = typeOptions.find(t => t.value === r.report_type)?.label || r.report_type
   return start === end ? `${label} ${start}` : `${label} ${start} ~ ${end}`
 }
@@ -85,8 +73,8 @@ function select(r: WeChatReport) {
 function drillDown(target: ReportType) {
   if (!selected.value) return
   type.value = target
-  startDate.value = isoToBeijingDate(selected.value.period_start)
-  endDate.value = isoToBeijingDate(selected.value.period_end)
+  startDate.value = toBeijingDate(selected.value.period_start)
+  endDate.value = toBeijingDate(selected.value.period_end)
   breadcrumb.value = [periodLabel(selected.value)]
   load()
 }

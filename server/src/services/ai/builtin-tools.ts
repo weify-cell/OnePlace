@@ -5,6 +5,7 @@ import { getTodos, getTodoById, createTodo, updateTodo, updateTodoProgress, getT
 import { getFolders } from '../folders.service.js'
 import { searchKnowledgeBase } from '../knowledge-base.service.js'
 import { searchMemories, searchMemoryVectors, addMemory, resolvePrimaryMemoryUser, getMemoryDate } from '../wechat/memory.service.js'
+import { formatBeijingTime, getBeijingDateTimeSec } from '../../utils/time.js'
 
 function textResult(text: string): AgentToolResult<undefined> {
   return { content: [{ type: 'text' as const, text }], details: undefined }
@@ -321,9 +322,9 @@ export function getBuiltinToolMap(): Map<string, AgentTool> {
       label: '获取当前时间',
       parameters: Type.Object({}),
       execute: async () => {
-        const now = new Date()
-        const beijingTime = now.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })
-        const iso = now.toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }).replace(' ', 'T')
+        // 北京时间由 utils/time.js 统一提供（含星期，便于模型推算相对日期）
+        const beijingTime = formatBeijingTime()
+        const iso = getBeijingDateTimeSec().replace(' ', 'T')
         return textResult(`当前北京时间: ${beijingTime} (${iso})`)
       }
     },

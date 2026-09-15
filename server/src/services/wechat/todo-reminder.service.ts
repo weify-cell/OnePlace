@@ -1,5 +1,6 @@
 import { WeChatBot } from '@wechatbot/wechatbot'
 import { connectDatabase } from '../../database/index.js'
+import { getBeijingDate, getBeijingDateTime, getBeijingDateAfter } from '../../utils/time.js'
 
 // 定时器
 let reminderTimer: ReturnType<typeof setInterval> | null = null
@@ -17,41 +18,14 @@ export function setReminderBot(botInstance: WeChatBot): void {
 }
 
 /**
- * 获取北京时间字符串
- */
-function getBeijingTime(): string {
-  const now = new Date()
-  const options: Intl.DateTimeFormatOptions = {
-    timeZone: 'Asia/Shanghai',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false
-  }
-  const formatter = new Intl.DateTimeFormat('zh-CN', options)
-  const parts = formatter.formatToParts(now)
-  const year = parts.find(p => p.type === 'year')?.value || ''
-  const month = parts.find(p => p.type === 'month')?.value || ''
-  const day = parts.find(p => p.type === 'day')?.value || ''
-  const hour = parts.find(p => p.type === 'hour')?.value || ''
-  const minute = parts.find(p => p.type === 'minute')?.value || ''
-  const second = parts.find(p => p.type === 'second')?.value || ''
-  return `${year}-${month}-${day} ${hour}:${minute}:${second}`
-}
-
-/**
  * 获取需要提醒的任务
  */
 function getDueTodos(): Array<{ id: number; title: string; due_date: string; priority: string; reminder_time: string; task_kind: string }> {
   const db = connectDatabase()
-  const now = new Date()
 
-  // 使用北京时间进行比较
-  const currentTime = getBeijingTime().slice(0, 16) // YYYY-MM-DD HH:mm
-  const today = getBeijingTime().slice(0, 10) // YYYY-MM-DD
+  // 统一使用北京时间比较（reminder_time 亦为北京时间字符串，可直接字符串比较）
+  const currentTime = getBeijingDateTime() // YYYY-MM-DD HH:mm
+  const today = getBeijingDate() // YYYY-MM-DD
 
   console.log(`[reminder] checking with Beijing time: ${currentTime}, today: ${today}`)
 
@@ -74,7 +48,7 @@ function getDueTodos(): Array<{ id: number; title: string; due_date: string; pri
  */
 function getTodayTodos(): Array<{ id: number; title: string; due_date: string; priority: string }> {
   const db = connectDatabase()
-  const today = new Date().toISOString().split('T')[0]
+  const today = getBeijingDate()
 
   const rows = db.prepare(`
     SELECT id, title, due_date, priority
@@ -101,8 +75,7 @@ async function sendReminder(userId: string, todos: Array<{ id: number; title: st
     low: '🟢'
   }
 
-  const now = new Date()
-  const today = now.toISOString().split('T')[0]
+  const today = getBeijingDate()
 
   const todoList = todos.map(t => {
     const emoji = priorityEmoji[t.priority] || '⚪'
@@ -200,34 +173,13 @@ function getWeChatUsers(): string[] {
 }
 
 /**
- * 将 reminder_time 推迟一天（保持相同的 HH:mm）。
- * 入参格式："2026-07-08 14:30"，返回 "2026-07-09 14:30"。
+ * 将 reminder_time 推迟一天（保持相同的 HH:mm）。入参格式 "2026-07-08 14:30" → "2026-07-09 14:30"。
+ * 新日期取「北京今天 + 1 天」（而非原日期 +1）：长期任务积压多天时也只跳一次到明天，不会连环补发。
  */
 function advanceReminderByOneDay(reminderTime: string): string {
-  // 解析 "YYYY-MM-DD HH:mm" 格式
-  const [datePart, timePart] = reminderTime.split(' ')
-  if (!datePart || !timePart) return reminderTime
-
-  // 用北京时间计算明天
-  const now = new Date()
-  const beijingFormatter = new Intl.DateTimeFormat('zh-CN', {
-    timeZone: 'Asia/Shanghai',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  })
-  const parts = beijingFormatter.formatToParts(now)
-  const year = parts.find(p => p.type === 'year')?.value || ''
-  const month = parts.find(p => p.type === 'month')?.value || ''
-  const day = parts.find(p => p.type === 'day')?.value || ''
-
-  // 今天 + 1 天
-  const tomorrow = new Date(Number(year), Number(month) - 1, Number(day) + 1)
-  const tYear = tomorrow.getFullYear()
-  const tMonth = String(tomorrow.getMonth() + 1).padStart(2, '0')
-  const tDay = String(tomorrow.getDate()).padStart(2, '0')
-
-  return `${tYear}-${tMonth}-${tDay} ${timePart}`
+  const timePart = reminderTime.split(' ')[1]
+  if (!timePart) return reminderTime
+  return `${getBeijingDateAfter(1)} ${timePart}`
 }
 
 /**

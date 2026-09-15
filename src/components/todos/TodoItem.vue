@@ -9,6 +9,7 @@ import {
   TODO_TYPE_LABELS
 } from '@/types'
 import TodoEditModal from './TodoEditModal.vue'
+import { daysFromBeijingToday } from '@/utils/datetime'
 
 const props = defineProps<{ todo: Todo }>()
 const todoStore = useTodoStore()
@@ -20,13 +21,8 @@ const showEditModal = ref(false)
 const dueDateStatus = computed(() => {
   if (!props.todo.due_date) return null
 
-  const now = new Date()
-  now.setHours(0, 0, 0, 0)
-
-  const due = new Date(props.todo.due_date)
-  due.setHours(0, 0, 0, 0)
-
-  const diffDays = (due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
+  // 与后端 getUrgentCount 同口径：按「北京日」计算整天差，不依赖浏览器本地时区
+  const diffDays = daysFromBeijingToday(props.todo.due_date)
 
   if (diffDays < 0) return { label: '已逾期', colorClass: 'due-date--overdue' }
   if (diffDays < 1) return { label: '今日到期', colorClass: 'due-date--urgent' }

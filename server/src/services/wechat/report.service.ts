@@ -1,15 +1,9 @@
 import { connectDatabase } from '../../database/index.js'
 import { WeChatBot } from '@wechatbot/wechatbot'
 import { DEFAULT_REPORT_SYSTEM_PROMPT } from '../prompt-defaults.js'
+import { BEIJING_OFFSET_MS, toBeijingDate } from '../../utils/time.js'
 
 export type ReportType = 'daily' | 'weekly' | 'monthly'
-
-const BEIJING_OFFSET_MS = 8 * 60 * 60 * 1000
-
-/** 把 UTC 时刻偏移为"北京墙钟时间"的 Date，用 getUTC* 读取即得北京时间各分量。 */
-function toBeijing(now: Date): Date {
-  return new Date(now.getTime() + BEIJING_OFFSET_MS)
-}
 
 export function getReportTypeLabel(type: ReportType): string {
   return { daily: '日报', weekly: '周报', monthly: '月报' }[type]
@@ -17,7 +11,7 @@ export function getReportTypeLabel(type: ReportType): string {
 
 /** 该周期内的最近一条已发报告是否跨天/跨周/跨月（用于调度到点判定，无状态守卫）。 */
 function isLastDayOfBeijingMonth(now: Date): boolean {
-  const b = toBeijing(now)
+  const b = toBeijingDate(now)
   const y = b.getUTCFullYear()
   const m = b.getUTCMonth()
   const d = b.getUTCDate()
@@ -27,7 +21,7 @@ function isLastDayOfBeijingMonth(now: Date): boolean {
 /** 到点判定（北京时间）。日报每天23:30；周报周日8:00；月报每月最后一天8:00。
  * 分钟匹配放宽到 1 分钟窗口（整点/整半点 +1 分钟）：容忍事件循环阻塞/定时器漂移错过，配合 DB 去重不会重复发送。 */
 export function isReportDue(type: ReportType, now: Date): boolean {
-  const b = toBeijing(now)
+  const b = toBeijingDate(now)
   const hour = b.getUTCHours()
   const minute = b.getUTCMinutes()
   if (type === 'daily') return hour === 23 && minute >= 30 && minute <= 31
@@ -38,7 +32,7 @@ export function isReportDue(type: ReportType, now: Date): boolean {
 
 /** 周期窗口。start 为北京 00:00 起（转 UTC），end 为 now。 */
 export function getReportWindow(type: ReportType, now: Date): { start: string; end: string } {
-  const b = toBeijing(now)
+  const b = toBeijingDate(now)
   const y = b.getUTCFullYear()
   const m = b.getUTCMonth()
   const d = b.getUTCDate()

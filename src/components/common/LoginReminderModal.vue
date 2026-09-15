@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTodoStore } from '@/stores/todo.store'
+import { getBeijingDate } from '@/utils/datetime'
 
 const router = useRouter()
 const todoStore = useTodoStore()
@@ -12,7 +13,7 @@ const urgentCount = ref(0)
 const dontRemindToday = ref(false)
 
 onMounted(async () => {
-  const today = new Date().toISOString().split('T')[0]
+  const today = getBeijingDate()
   const lastReminder = localStorage.getItem('todo_reminder_date')
 
   if (lastReminder !== today) {
@@ -34,8 +35,7 @@ onMounted(async () => {
 
 const handleClose = () => {
   if (dontRemindToday.value) {
-    const today = new Date().toISOString().split('T')[0]
-    localStorage.setItem('todo_reminder_date', today)
+    localStorage.setItem('todo_reminder_date', getBeijingDate())
   }
   showModal.value = false
 }
