@@ -49,3 +49,17 @@ CLAUDE.md
 openSpec/
 qdrant/
 qdrant_storage/
+
+# 本地工单 / spec（issue tracker，见 docs/agents/issue-tracker.md）
+.scratch/
+
+# Agent skills（个人本地工具配置，不进仓库；见 CLAUDE.md 的「Agent skills」段）
+.pi/
+skills-lock.json
+
+# 部署打包产物与临时文件（保留在本地供部署使用，不提交）
+# 说明：/env 是 .env 的副本（内含 JWT_SECRET）——切勿提交
+# /oneplace/ 为最小部署包解压产物，*.tar.gz 为部署打包结果
+*.tar.gz
+/oneplace/
+/env
