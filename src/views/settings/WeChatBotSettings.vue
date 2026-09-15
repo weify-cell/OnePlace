@@ -3,37 +3,30 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useSettingsStore } from '@/stores/settings.store'
 import { useILinkStore } from '@/stores/ilink.store'
 import SettingsLayout from './SettingsLayout.vue'
-import {
-  DEFAULT_ILINK_LEARNING_PROMPT,
-  DEFAULT_ILINK_SYSTEM_PROMPT,
-  DEFAULT_MEMORY_SYSTEM_PROMPT,
-  DEFAULT_MEMORY_USER_TEMPLATE,
-  DEFAULT_NOTE_TOOLS_PROMPT,
-  DEFAULT_PROACTIVE_SYSTEM_PROMPT,
-  DEFAULT_PROACTIVE_USER_MESSAGE
-} from '@/constants/promptDefaults'
 
 const settingsStore = useSettingsStore()
 const ilinkStore = useILinkStore()
 const message = useMessage()
 const activeTab = ref('basic')
 
+// 提示词默认值由后端 /api/ilink/config 提供（唯一来源在 server 的 prompt-defaults.ts），
+// 前端不再自带副本，避免两边漂移。初始值为空，load 时由后端返回值覆盖。
 const ilinkConfig = ref({
   provider: 'qwen',
   model: 'qwen-turbo',
-  system_prompt: DEFAULT_ILINK_SYSTEM_PROMPT,
-  note_tools_prompt: DEFAULT_NOTE_TOOLS_PROMPT,
+  system_prompt: '',
+  note_tools_prompt: '',
   max_tool_rounds: 5,
   proactive_enabled: true,
   proactive_min_interval: 45,
   proactive_quiet_hours_start: 0,
   proactive_quiet_hours_end: 8,
   proactive_check_interval: 5,
-  proactive_user_message: DEFAULT_PROACTIVE_USER_MESSAGE,
-  proactive_system_prompt: DEFAULT_PROACTIVE_SYSTEM_PROMPT,
-  learning_prompt: DEFAULT_ILINK_LEARNING_PROMPT,
-  memory_system_prompt: DEFAULT_MEMORY_SYSTEM_PROMPT,
-  memory_user_template: DEFAULT_MEMORY_USER_TEMPLATE
+  proactive_user_message: '',
+  proactive_system_prompt: '',
+  learning_prompt: '',
+  memory_system_prompt: '',
+  memory_user_template: ''
 })
 
 const ilinkProviderModels = computed(() => {
@@ -60,19 +53,19 @@ onMounted(async () => {
     ilinkConfig.value = {
       provider: ilinkStore.config.provider ?? 'qwen',
       model: ilinkStore.config.model ?? 'qwen-turbo',
-      system_prompt: ilinkStore.config.system_prompt ?? DEFAULT_ILINK_SYSTEM_PROMPT,
-      note_tools_prompt: ilinkStore.config.note_tools_prompt ?? DEFAULT_NOTE_TOOLS_PROMPT,
+      system_prompt: ilinkStore.config.system_prompt ?? '',
+      note_tools_prompt: ilinkStore.config.note_tools_prompt ?? '',
       max_tool_rounds: ilinkStore.config.max_tool_rounds ?? 5,
       proactive_enabled: ilinkStore.config.proactive_enabled ?? true,
       proactive_min_interval: ilinkStore.config.proactive_min_interval ?? 45,
       proactive_quiet_hours_start: ilinkStore.config.proactive_quiet_hours_start ?? 0,
       proactive_quiet_hours_end: ilinkStore.config.proactive_quiet_hours_end ?? 8,
       proactive_check_interval: ilinkStore.config.proactive_check_interval ?? 5,
-      proactive_user_message: ilinkStore.config.proactive_user_message ?? DEFAULT_PROACTIVE_USER_MESSAGE,
-      proactive_system_prompt: ilinkStore.config.proactive_system_prompt ?? DEFAULT_PROACTIVE_SYSTEM_PROMPT,
-      learning_prompt: ilinkStore.config.learning_prompt ?? DEFAULT_ILINK_LEARNING_PROMPT,
-      memory_system_prompt: ilinkStore.config.memory_system_prompt ?? DEFAULT_MEMORY_SYSTEM_PROMPT,
-      memory_user_template: ilinkStore.config.memory_user_template ?? DEFAULT_MEMORY_USER_TEMPLATE
+      proactive_user_message: ilinkStore.config.proactive_user_message ?? '',
+      proactive_system_prompt: ilinkStore.config.proactive_system_prompt ?? '',
+      learning_prompt: ilinkStore.config.learning_prompt ?? '',
+      memory_system_prompt: ilinkStore.config.memory_system_prompt ?? '',
+      memory_user_template: ilinkStore.config.memory_user_template ?? ''
     }
   }
   const initialModels = settingsStore.availableProviders.find(item => item.name === ilinkConfig.value.provider)?.models || []

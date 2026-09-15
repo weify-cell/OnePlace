@@ -1,8 +1,11 @@
 import { connectDatabase } from '../../database/index.js'
 import { WeChatBot } from '@wechatbot/wechatbot'
-import { DEFAULT_REPORT_SYSTEM_PROMPT } from '../prompt-defaults.js'
+import { runAgentTurn } from '../ai/agent-turn.js'
+import { buildSystemPrompt } from '../ai/prompt.js'
+import { formatBeijingTime } from '../../utils/time.js'
 import { BEIJING_OFFSET_MS, toBeijingDate } from '../../utils/time.js'
 import { getWeChatUsers } from './users.service.js'
+import { getILinkModel } from './model.js'
 import type { SubsystemJob } from './scheduler.js'
 
 export type ReportType = 'daily' | 'weekly' | 'monthly'
@@ -181,10 +184,9 @@ export async function generateReport(
 ): Promise<{ content: string; window: { start: string; end: string } }> {
   const w = window ?? getReportWindow(type, new Date())
   const records = queryChatRecords(userId, w)
-  const { runAgentTurn, formatBeijingTime } = await import('./ilink-bot.service.js')
 
   const typeLabel = getReportTypeLabel(type)
-  const systemPrompt = DEFAULT_REPORT_SYSTEM_PROMPT.replace('{type}', typeLabel)
+  const systemPrompt = await buildSystemPrompt({ kind: 'report', reportType: typeLabel })
   const transcript = buildTranscript(records)
   const userContent = [
     formatBeijingTime(),
@@ -195,12 +197,11 @@ export async function generateReport(
   ].join('\n')
 
   const content = await runAgentTurn({
-    userId,
     agentId: `report:${type}:${userId}`,
     systemPrompt,
     userContent,
-    removeAfterRun: true,
-    loadHistory: false,
+    ephemeral: true,
+    ...getILinkModel(),
   })
   return { content, window: w }
 }

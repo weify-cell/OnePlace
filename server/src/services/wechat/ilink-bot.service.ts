@@ -1,6 +1,7 @@
 import { WeChatBot } from '@wechatbot/wechatbot'
-import { AgentPool, loadToolsFromDb, loadSkillPrompt } from '../ai/agent-pool.js'
-import { createStreamFn, createModel, convertMessages, extractApiKey, type ChatMessage } from '../ai/pi-ai.adapter.js'
+import { convertMessages, type ChatMessage } from '../ai/pi-ai.adapter.js'
+import { runAgentTurn, removeAgent, shutdownAgents } from '../ai/agent-turn.js'
+import { buildSystemPrompt } from '../ai/prompt.js'
 import { getSettingValue, setSetting } from '../settings.service.js'
 import { connectDatabase } from '../../database/index.js'
 import { sendPendingReminders, hasPendingReminders } from './todo-reminder.service.js'
@@ -8,11 +9,11 @@ import { startAllSubsystems, stopAllSubsystems } from './subsystems.js'
 import { saveWeChatUser } from './users.service.js'
 import { handleReportCommand } from './report.service.js'
 import { buildMemoryPrompt } from './memory.service.js'
+import { getILinkModel } from './model.js'
 import { AgentEvent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import { formatBeijingTime } from '../../utils/time.js'
 
-// 北京时间格式化统一由 utils/time.js 实现，此处 re-export 以保持既有引用
-// （report/memory/proactive-chat 的动态 import 与相关测试 mock）可用
+// 北京时间格式化统一由 utils/time.js 实现，此处 re-export 以保持既有引用可用
 export { formatBeijingTime }
 
 // Bot 实例
@@ -27,30 +28,11 @@ let lastError: string | null = null
 let loginQRCode: string | null = null
 let loginStatus: 'idle' | 'waiting' | 'scanned' | 'confirmed' | 'expired' = 'idle'
 
-let agentPool: AgentPool | null = null
-
 // 消息历史持久化到数据库
 const MAX_HISTORY_LENGTH = 100
 
 // 用户模式状态
 const userModes = new Map<string, { mode: 'normal' | 'learning'; learningTopic: string }>()
-
-// 学习模式 systemPrompt 模板
-function getLearningPrompt(topic: string): string {
-  const template = getSettingValue<string>('ilink_learning_prompt', '你是一个学习导师，正在帮助用户学习「{topic}」。请按以下方式教学：1. 先使用 search_knowledge_base 和 get_note 工具检索用户的笔记资料 2. 以问答方式测试用户对知识点的掌握 3. 根据用户的回答给予反馈和补充解释 4. 控制每次提问1-2个问题，不要连续轰炸 5. 用户答对时鼓励，答错时耐心纠正 6. 如果笔记中没有相关内容，诚实告知并给出通用知识')
-  return template.replace('{topic}', topic)
-}
-
-function initAgentPool(provider: string, modelId: string): void {
-  const model = createModel(provider, modelId)
-  const streamFn = createStreamFn()
-  const tools = loadToolsFromDb()
-  agentPool = new AgentPool(
-    streamFn, tools, model,
-    (p) => extractApiKey(p),
-    ''
-  )
-}
 
 // ── agent event 监控 ──────────────────────────────────────────
 
@@ -92,65 +74,11 @@ function briefMsg(msg: AgentMessage): string {
 }
 
 /** 从消息数组中提取最后一个 assistant 消息的文本内容 */
-function extractAssistantText(messages: AgentMessage[]): string {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i]
-    if (m.role === 'assistant' && Array.isArray(m.content)) {
-      return m.content
-        .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
-        .map(c => c.text)
-        .join('')
-    }
-  }
-  return ''
-}
-
 /**
- * 复用共享 AgentPool 跑一轮完整 agent loop（与 bot 消息处理同构）。
- * - 工具动态加载 loadToolsFromDb()，管理页启停即时生效（与 bot 一致）
- * - systemPrompt 写入 state.systemPrompt（pi-agent 真正生效的 system 位置）
- * - 首次创建时从 DB 恢复该用户消息历史
- * - 返回最终 assistant 文本（多轮工具调用收敛后的结果）
+ * 取某个用户的历史消息（转成 pi-ai 消息形状），仅在 agent 首次创建时调用。
  */
-export async function runAgentTurn(opts: {
-  userId: string
-  agentId?: string
-  systemPrompt: string
-  userContent: string
-  removeAfterRun?: boolean
-  loadHistory?: boolean
-}): Promise<string> {
-  if (!agentPool) throw new Error('Agent pool not initialized')
-
-  const agentId = opts.agentId ?? opts.userId
-  const agent = agentPool.getOrCreate(agentId, () => {
-    const history = opts.loadHistory === false ? [] : getMessageHistory(opts.userId)
-    return convertMessages(history as ChatMessage[])
-  })
-
-  // 每次动态加载工具，确保管理页的启停即时生效
-  agent.state.tools = loadToolsFromDb()
-  agent.state.systemPrompt = opts.systemPrompt
-
-  let assistantContent = ''
-  const unsub = agent.subscribe((event) => {
-    if (event.type === 'agent_end') {
-      assistantContent = extractAssistantText(event.messages)
-    }
-  })
-
-  try {
-    const userMsg: ChatMessage = { role: 'user', content: opts.userContent }
-    await agent.prompt(convertMessages([userMsg]))
-    await agent.waitForIdle()
-  } finally {
-    unsub()
-    if (opts.removeAfterRun) {
-      agentPool.remove(agentId)
-    }
-  }
-
-  return assistantContent
+function historyLoader(userId: string): ChatMessage[] {
+  return getMessageHistory(userId) as ChatMessage[]
 }
 
 function readAgentStart() {
@@ -267,7 +195,6 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
   if (!config.enabled) {
     return { success: false, error: 'Bot is not enabled' }
   }
-  initAgentPool(config.provider, config.model)
 
   try {
     // 创建 Bot 实例
@@ -330,7 +257,7 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
       if (msg.text?.trim() === '/清空上下文') {
         clearMessageHistory(msg.userId)
         userModes.delete(msg.userId)
-        agentPool?.remove(msg.userId)
+        removeAgent(msg.userId)
         await bot!.reply(msg, '已清空当前对话上下文。')
         return
       }
@@ -369,76 +296,46 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
       await bot!.sendTyping(msg.userId)
 
       try {
-        const pool = agentPool!
         const userMode = userModes.get(msg.userId)
-        const skillPrompt = await loadSkillPrompt()
-        // 普通模式：ilink_system_prompt + note_tools_prompt + skills；学习模式有独立工具指引，不拼 note_tools_prompt
-        const noteToolsPrompt = getSettingValue<string>('note_tools_prompt', '')
-        const basePrompt = userMode?.mode === 'learning'
-          ? getLearningPrompt(userMode.learningTopic)
-          : [config.system_prompt, noteToolsPrompt].filter(Boolean).join('\n\n')
-        const memoryPrompt = buildMemoryPrompt(msg.userId)
-        const effectivePrompt = basePrompt + (skillPrompt ? '\n\n' + skillPrompt : '') + (memoryPrompt ? '\n\n' + memoryPrompt : '')
-
-        const agent = pool.getOrCreate(msg.userId, () => {
-          const dbHistory = getMessageHistory(msg.userId)
-          return convertMessages(dbHistory as ChatMessage[])
+        // 提示词拼装交回 ai/prompt.ts：普通对话 / 学习模式各自的组合规则只在那里定义
+        const systemPrompt = await buildSystemPrompt({
+          kind: userMode?.mode === 'learning' ? 'learning' : 'bot-chat',
+          topic: userMode?.learningTopic,
+          memoryPrompt: buildMemoryPrompt(msg.userId)
         })
 
-        // 每次消息动态加载工具，确保管理页的启停即时生效
-        agent.state.tools = loadToolsFromDb()
-        // system prompt 写入 state.systemPrompt（pi-agent 真正生效的 system 位置；传入 message 会被过滤）
-        agent.state.systemPrompt = effectivePrompt
         const timestamp = formatBeijingTime()
-        const userMsg: ChatMessage = { role: 'user', content: `${timestamp} ${msg.text}` }
+        const userText = `${timestamp} ${msg.text}`
 
-        const unsub = agent.subscribe(async (event, _signal) => {
-
+        // 事件只用于日志监控；最终回复由回合接缝返回（唯一定义）
+        const onEvent = (event: AgentEvent): void => {
           switch (event.type) {
-            case 'tool_execution_start':
-              readToolExecutionStart(event)
-              break;
-            case 'tool_execution_end':
-              readToolExecutionEnd(event)
-              break;
-            case 'message_start':
-              readMessageStart(event)
-              break;
-            case 'message_end':
-              readMessageEnd(event)
-              break;
-            case 'agent_start':
-              readAgentStart();
-              break;
-            case 'agent_end':
-              readAgentEnd(event);
-              // 事件驱动：agent 完成时发送最终回复并落库
-              try {
-                const replyContent = extractAssistantText(event.messages)
-                await bot!.reply(msg, replyContent || '抱歉，没有生成回复。')
-                addMessageToHistory(msg.userId, 'user', `${timestamp} ${msg.text}`)
-                addMessageToHistory(msg.userId, 'assistant', replyContent)
-                messagesProcessed++
-                lastMessageAt = new Date().toISOString()
-                lastError = null
-              } catch (replyErr) {
-                console.error('[ilink] 发送回复失败:', replyErr)
-                lastError = replyErr instanceof Error ? replyErr.message : String(replyErr)
-              }
-              break;
-            case 'turn_start':
-              readTurnStart();
-              break;
-            case 'turn_end':
-              readTrunEnd(event);
-              break;
+            case 'tool_execution_start': readToolExecutionStart(event); break
+            case 'tool_execution_end': readToolExecutionEnd(event); break
+            case 'message_start': readMessageStart(event); break
+            case 'message_end': readMessageEnd(event); break
+            case 'agent_start': readAgentStart(); break
+            case 'agent_end': readAgentEnd(event); break
+            case 'turn_start': readTurnStart(); break
+            case 'turn_end': readTrunEnd(event); break
           }
+        }
 
+        const replyContent = await runAgentTurn({
+          agentId: msg.userId,
+          systemPrompt,
+          userContent: userText,
+          history: () => historyLoader(msg.userId),
+          onEvent,
+          ...getILinkModel()
         })
-        await agent.prompt(convertMessages([userMsg]))
-        await agent.waitForIdle()
 
-        unsub()
+        await bot!.reply(msg, replyContent || '抱歉，没有生成回复。')
+        addMessageToHistory(msg.userId, 'user', userText)
+        addMessageToHistory(msg.userId, 'assistant', replyContent)
+        messagesProcessed++
+        lastMessageAt = new Date().toISOString()
+        lastError = null
       } catch (error) {
         const errMsg = (error as Error).message || 'Unknown error'
         console.error(`[ilink] 处理消息失败:`, errMsg)
@@ -529,8 +426,7 @@ export function stopILinkBot(): { success: boolean; error?: string } {
     stopAllSubsystems()
 
     // WeChatBot 没有 stop 方法，直接清理状态
-    agentPool?.shutdown()
-    agentPool = null
+    shutdownAgents()
 
     bot = null
     botRunning = false

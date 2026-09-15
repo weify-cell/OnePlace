@@ -2,8 +2,11 @@ import { connectDatabase } from '../../database/index.js'
 import { getSettingValue } from '../settings.service.js'
 import { getReportWindow, queryChatRecords, buildTranscript } from './report.service.js'
 import { getWeChatUsers } from './users.service.js'
+import { getILinkModel } from './model.js'
 import type { SubsystemJob } from './scheduler.js'
-import { DEFAULT_MEMORY_SYSTEM_PROMPT, DEFAULT_MEMORY_USER_TEMPLATE } from '../prompt-defaults.js'
+import { runAgentTurn } from '../ai/agent-turn.js'
+import { buildMemoryUserContent, buildSystemPrompt } from '../ai/prompt.js'
+import { formatBeijingTime } from '../../utils/time.js'
 import { embedText } from '../ai/embedding-client.js'
 import { upsertChunks, searchChunks } from '../vector/vector.service.js'
 import { getBeijingDate, toBeijingDate } from '../../utils/time.js'
@@ -171,14 +174,6 @@ export async function searchMemoryVectors(
 /** 内存级 in-flight 锁：同一用户同时只允许一个整理在跑。 */
 const inflightMemories = new Set<string>()
 
-/** 渲染用户消息模板：把 {key} 占位符替换为实际值（用 split/join 避免 replace 的 $ 特殊字符问题）。 */
-function renderMemoryTemplate(template: string, vars: Record<string, string>): string {
-  return Object.entries(vars).reduce(
-    (acc, [key, value]) => acc.split(`{${key}}`).join(value),
-    template
-  )
-}
-
 /** 整理某用户昨天对话：抽取记忆→由 agent 逐条调用 add_memory 工具写入。静默执行，不发送微信消息。 */
 export async function consolidateDayMemory(userId: string): Promise<{ saved: number }> {
   const now = new Date()
@@ -196,11 +191,9 @@ export async function consolidateDayMemory(userId: string): Promise<{ saved: num
   }
 
   const recentMemories = queryMemories(userId, { days: 30, limit: 500 })
-  const { runAgentTurn, formatBeijingTime } = await import('./ilink-bot.service.js')
-  // 提示词与用户消息模板均可配置（微信 Bot 设置页「记忆整理」tab），缺失时回退默认值
-  const systemPrompt = getSettingValue<string>('ilink_memory_system_prompt', DEFAULT_MEMORY_SYSTEM_PROMPT)
-  const template = getSettingValue<string>('ilink_memory_user_template', DEFAULT_MEMORY_USER_TEMPLATE)
-  const userContent = renderMemoryTemplate(template, {
+  // 提示词与用户消息模板均由 ai/prompt.ts 统一解析（设置优先，回退唯一默认值）
+  const systemPrompt = await buildSystemPrompt({ kind: 'memory' })
+  const userContent = buildMemoryUserContent({
     beijingTime: formatBeijingTime(),
     userId,
     memoryDate,
@@ -214,12 +207,11 @@ export async function consolidateDayMemory(userId: string): Promise<{ saved: num
   // 写库由 agent 在 loop 内调用 add_memory 工具完成；saved 用 (user, memory_date) 行数差值统计
   const before = countMemories(userId, memoryDate)
   await runAgentTurn({
-    userId,
     agentId: `memory:consolidate:${userId}`,
     systemPrompt,
     userContent,
-    removeAfterRun: true,
-    loadHistory: false
+    ephemeral: true,
+    ...getILinkModel(),
   })
   const saved = countMemories(userId, memoryDate) - before
   console.log(`[memory] consolidated ${userId}: saved=${saved}`)

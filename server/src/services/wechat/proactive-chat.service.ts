@@ -2,11 +2,13 @@ import { WeChatBot } from '@wechatbot/wechatbot'
 import { getSettingValue } from '../settings.service.js'
 import { connectDatabase } from '../../database/index.js'
 import { addMessageToHistory, isUserInLearningMode } from './ilink-bot.service.js'
-import { loadSkillPrompt } from '../ai/agent-pool.js'
 import { DEFAULT_PROACTIVE_SYSTEM_PROMPT, DEFAULT_PROACTIVE_USER_MESSAGE } from '../prompt-defaults.js'
-import { getBeijingHour } from '../../utils/time.js'
+import { formatBeijingTime, getBeijingHour } from '../../utils/time.js'
 import { getWeChatUsers, getUserLastActiveTime } from './users.service.js'
 import { isJobRunning, restartJob, type SubsystemJob } from './scheduler.js'
+import { runAgentTurn } from '../ai/agent-turn.js'
+import { buildSystemPrompt } from '../ai/prompt.js'
+import { getILinkModel } from './model.js'
 
 let bot: WeChatBot | null = null
 
@@ -106,28 +108,22 @@ function hasMinIntervalPassed(userId: string, minIntervalMinutes: number): boole
 }
 
 async function generateProactiveMessage(userId: string): Promise<string> {
-  // 主动聊天人设
-  const systemPrompt = getSettingValue<string>('ilink_proactive_chat_system_prompt', DEFAULT_PROACTIVE_SYSTEM_PROMPT)
-
-  // 工具使用指引 + skills（与 bot 普通对话的 system 组装方式保持一致）
-  const noteToolsPrompt = getSettingValue<string>('note_tools_prompt', '')
-  const skillPrompt = await loadSkillPrompt()
-  const effectivePrompt = [systemPrompt, noteToolsPrompt].filter(Boolean).join('\n\n') + (skillPrompt ? '\n\n' + skillPrompt : '')
+  // 人设 + 工具指引 + 技能由 ai/prompt.ts 统一拼装
+  const systemPrompt = await buildSystemPrompt({ kind: 'proactive' })
 
   // 触发指令，附加北京时间戳
   const userMessage = getSettingValue<string>('ilink_proactive_chat_user_message', DEFAULT_PROACTIVE_USER_MESSAGE)
 
   try {
-    const { formatBeijingTime, runAgentTurn } = await import('./ilink-bot.service.js')
     const timestamp = formatBeijingTime()
-    // 走完整 agent loop（与 bot 同构：共享 pool、动态工具加载、多轮工具调用）
-    // 独立 agent id 避免污染 bot 的对话上下文；removeAfterRun 保证每次从 DB 历史重建
+    // 走完整 agent loop（与 bot 同构：共享回合接缝、动态工具加载、多轮工具调用）
+    // 独立 agent id 避免污染 bot 的对话上下文；ephemeral 保证每次从 DB 历史重建
     const content = await runAgentTurn({
-      userId,
       agentId: `proactive:${userId}`,
-      systemPrompt: effectivePrompt,
+      systemPrompt,
       userContent: `${timestamp} ${userMessage}`,
-      removeAfterRun: true,
+      ephemeral: true,
+      ...getILinkModel(),
     })
     return content || pickDefaultMessage()
   } catch (error) {

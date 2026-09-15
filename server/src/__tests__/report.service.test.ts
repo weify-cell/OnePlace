@@ -27,16 +27,21 @@ vi.mock('../database/index.js', async () => {
       content TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     );
+    -- 回合接缝按设置解析模型（ilink_provider / ilink_model），因此需要 settings 表
+    CREATE TABLE settings (
+      key TEXT PRIMARY KEY NOT NULL,
+      value TEXT NOT NULL DEFAULT '',
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      description TEXT NOT NULL DEFAULT ''
+    );
   `)
   return { connectDatabase: () => db }
 })
 
-// Task 4：mock ilink-bot 的动态 import（runAgentTurn / formatBeijingTime）。
-// vi.doMock 不提升，但 generateReport 内部对该模块是运行时 await import()，
-// 只要本调用先于用例执行即生效；若时序出问题可改为顶层 vi.mock。
-vi.doMock('../services/wechat/ilink-bot.service.js', () => ({
-  runAgentTurn: vi.fn(async () => '【日报】今天聊了项目A…'),
-  formatBeijingTime: vi.fn(() => '[2026-08-02 23:30:00 星期日 北京时间]')
+// 回合接缝（ai/agent-turn）现在是静态依赖，用顶层 vi.mock；实现由用例按需覆盖。
+// 不再需要解释「doMock 何时生效」——这正是把接缝从 bot 模块搬出来换来的。
+vi.mock('../services/ai/agent-turn.js', () => ({
+  runAgentTurn: vi.fn(async () => '【日报】今天聊了项目A…')
 }))
 
 import { queryChatRecords, saveReport, listReports, getReportById, updateReportContent, deleteReport } from '../services/wechat/report.service.js'
@@ -197,14 +202,12 @@ describe('generateReport', () => {
     expect(result.window.start).toMatch(/Z$/)
 
     // doMock 不提升，须在用例内动态 import 才拿到 mock 实例
-    const { runAgentTurn } = await import('../services/wechat/ilink-bot.service.js')
+    const { runAgentTurn } = await import('../services/ai/agent-turn.js')
     expect(runAgentTurn).toHaveBeenCalledWith(expect.objectContaining({
-      userId: 'u1',
       agentId: 'report:daily:u1',
-      loadHistory: false,
-      removeAfterRun: true,
       systemPrompt: expect.stringContaining('日报'),
-      userContent: expect.stringContaining('本次共 0 条')
+      userContent: expect.stringContaining('本次共 0 条'),
+      ephemeral: true
     }))
   })
 })
@@ -265,7 +268,7 @@ describe('sendAndPersist', () => {
     db.prepare('DELETE FROM wechat_reports').run()
 
     // 让 runAgentTurn 变慢，确保第一次生成未完成时就发起第二次调用
-    const { runAgentTurn } = await import('../services/wechat/ilink-bot.service.js')
+    const { runAgentTurn } = await import('../services/ai/agent-turn.js')
     runAgentTurn.mockImplementationOnce(() => new Promise((resolve) => setTimeout(() => resolve('【日报】慢生成'), 20)))
 
     const send = vi.fn().mockResolvedValue(undefined)

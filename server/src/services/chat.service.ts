@@ -1,27 +1,9 @@
 ﻿import { Response } from 'express'
 import { connectDatabase } from '../database/index.js'
-import { AgentPool, loadToolsFromDb, loadSkillPrompt } from './ai/agent-pool.js'
-import { createStreamFn, createModel, convertMessages, extractApiKey, type ChatMessage } from './ai/pi-ai.adapter.js'
+import { runAgentTurn } from './ai/agent-turn.js'
+import { buildSystemPrompt } from './ai/prompt.js'
 import { getSettingValue } from './settings.service.js'
-import { DEFAULT_NOTE_TOOLS_PROMPT, DEFAULT_CHAT_SYSTEM_PROMPT } from './prompt-defaults.js'
-
-const chatPools = new Map<string, AgentPool>()
-
-function getChatPool(provider: string, modelId: string): AgentPool {
-  const key = `${provider}:${modelId}`
-  let pool = chatPools.get(key)
-  if (!pool) {
-    const model = createModel(provider, modelId)
-    const tools = loadToolsFromDb()
-    pool = new AgentPool(
-      createStreamFn(), tools, model,
-      (p) => extractApiKey(p),
-      ''
-    )
-    chatPools.set(key, pool)
-  }
-  return pool
-}
+import type { ChatMessage } from './ai/pi-ai.adapter.js'
 
 interface ConversationRow {
   id: number
@@ -172,36 +154,20 @@ export async function streamChat(
       'SELECT role, content FROM messages WHERE conversation_id = ? AND is_error = 0 ORDER BY created_at ASC'
     ).all(conversationId) as { role: string; content: string }[]
 
-    const pool = getChatPool(conversation.provider, conversation.model)
-    const convKey = `conv:${conversationId}`
-
-    const skillPrompt = await loadSkillPrompt()
-    const systemPrompt = ((conversation.kb_enabled || conversation.tools_enabled)
-      ? getSettingValue<string>('note_tools_prompt', DEFAULT_NOTE_TOOLS_PROMPT)
-      : DEFAULT_CHAT_SYSTEM_PROMPT) + (skillPrompt ? '\n\n' + skillPrompt : '')
-
-    const userMsg: ChatMessage = { role: 'user', content: userContent }
-    let assistantContent = ''
-    const agent = pool.getOrCreate(convKey, () =>
-      convertMessages(dbMessages as ChatMessage[])
-    )
-
-    agent.state.tools = loadToolsFromDb()
-    // system prompt 写入 state.systemPrompt（pi-agent 真正生效的 system 位置；传入 message 会被过滤）
-    agent.state.systemPrompt = systemPrompt
-    const unsub = agent.subscribe((event, _signal) => {
-      if (event.type !== 'turn_end') return
-      const msg = event.message
-      if (msg.role === 'assistant' && Array.isArray(msg.content)) {
-        assistantContent = msg.content
-          .filter(c => (c as { type: string }).type === 'text')
-          .map(c => (c as { text: string }).text).join('')
-      }
+    // 提示词拼装与回合执行都走 ai/ 的共享接缝（与微信层同构）
+    const systemPrompt = await buildSystemPrompt({
+      kind: 'web-chat',
+      toolsEnabled: conversation.kb_enabled || conversation.tools_enabled
     })
 
-    await agent.prompt(convertMessages([userMsg]))
-    await agent.waitForIdle()
-    unsub()
+    const assistantContent = await runAgentTurn({
+      agentId: `conv:${conversationId}`,
+      systemPrompt,
+      userContent,
+      history: () => dbMessages as ChatMessage[],
+      provider: conversation.provider,
+      model: conversation.model
+    })
 
     const assistantMsgResult = db.prepare(
       'INSERT INTO messages (conversation_id, role, content) VALUES (?, ?, ?)'

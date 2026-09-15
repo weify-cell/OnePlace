@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../database/index.js', async () => {
   const { default: Database } = await import('better-sqlite3')
@@ -29,16 +29,11 @@ vi.mock('../database/index.js', async () => {
   return { connectDatabase: () => db }
 })
 
-// Task 4：mock ilink-bot 的动态 import（consolidateDayMemory 内部运行时 await import()）
-// 模拟真实 agent 行为：整理时对每条抽取结果调用一次 add_memory 工具写入
-vi.doMock('../services/wechat/ilink-bot.service.js', () => ({
-  runAgentTurn: vi.fn(async (opts: any) => {
-    const md = getMemoryDate(new Date(Date.now() - 86400000)) // 昨天
-    await addMemory(opts.userId, '用户喜欢喝美式', md)
-    await addMemory(opts.userId, '项目A正在开发', md)
-    return ''
-  }),
-  formatBeijingTime: vi.fn(() => '[2026-08-02 00:30:00 星期日 北京时间]')
+// 回合接缝（ai/agent-turn）现在是静态依赖，用顶层 vi.mock。
+// 模拟真实 agent 行为：整理时对每条抽取结果调用一次 add_memory 工具写入。
+// 因 vi.mock 被提升，工厂内不引用外部导入；实现放在 beforeEach 里（见下）。
+vi.mock('../services/ai/agent-turn.js', () => ({
+  runAgentTurn: vi.fn(async () => '')
 }))
 
 vi.mock('../services/ai/embedding-client.js', () => ({
@@ -180,6 +175,18 @@ describe('buildMemoryPrompt', () => {
 import { consolidateDayMemory, searchMemoryVectors } from '../services/wechat/memory.service.js'
 
 describe('consolidateDayMemory', () => {
+  // 模拟整理 agent：对每条抽取结果调一次 add_memory（userId 从 agentId 取）
+  beforeEach(async () => {
+    const { runAgentTurn } = await import('../services/ai/agent-turn.js')
+    vi.mocked(runAgentTurn).mockImplementation(async (opts: any) => {
+      const userId = String(opts.agentId).replace('memory:consolidate:', '')
+      const memoryDate = getMemoryDate(new Date(Date.now() - 86400000)) // 昨天
+      await addMemory(userId, '用户喜欢喝美式', memoryDate)
+      await addMemory(userId, '项目A正在开发', memoryDate)
+      return ''
+    })
+  })
+
   it('抽取→落库→向量入库，二次整理同内容去重', async () => {
     const db = connectDatabase()
     db.prepare('DELETE FROM wechat_messages').run()
@@ -217,7 +224,7 @@ describe('consolidateDayMemory', () => {
     db.prepare("INSERT INTO wechat_messages (user_id, role, content, created_at) VALUES ('u1','user','今天的事',?)")
       .run(new Date().toISOString())
 
-    const { runAgentTurn } = await import('../services/wechat/ilink-bot.service.js')
+    const { runAgentTurn } = await import('../services/ai/agent-turn.js')
     runAgentTurn.mockClear() // 清掉上个用例的调用记录，仅验证本次没有调用 LLM
     const res = await consolidateDayMemory('u1')
     expect(res.saved).toBe(0)
