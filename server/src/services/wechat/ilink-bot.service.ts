@@ -198,14 +198,22 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
   // 不读启用意图：意图只决定服务启动时要不要自动拉起（那件事由 bootstrap.ts 负责判断），
   // 它不是功能总开关——手动启动在任何意图下都必须可用。
   try {
-    // 创建 Bot 实例
-    bot = new WeChatBot({
+    // 创建 Bot 实例。
+    // 下面所有监听器都闭包捕获 instance 而不是读模块级 bot：SDK 在会话过期后
+    // 会自己强制重登并可能补发事件，只读模块级变量的话，一个早就被换掉的旧实例
+    // 能把当前实例打死、并把它标成已过期。
+    const instance = new WeChatBot({
       storage: 'file',
       logLevel: 'info'
     })
+    bot = instance
+
+    /** 该事件是否来自当前实例（旧实例的迟到事件一律忽略） */
+    const isCurrent = (): boolean => bot === instance
 
     // 监听事件
-    bot.on('login', (creds: any) => {
+    instance.on('login', (creds: any) => {
+      if (!isCurrent()) return
       console.log('[ilink] ================================')
       console.log('[ilink] 登录成功!', creds.accountId)
       console.log('[ilink] ================================')
@@ -216,7 +224,8 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
       lastError = null
     })
 
-    bot.on('session:expired', () => {
+    instance.on('session:expired', () => {
+      if (!isCurrent()) return
       console.log('[ilink] 会话已过期')
       lastError = 'Session expired'
       loginStatus = 'expired'
@@ -224,17 +233,20 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
       // SDK 会自己清凭证并强制重登，但那条路径不传二维码回调（登录二维码拿不到），
       // 于是它会一直空转等一个没人能看到的扫码。这里把死实例的轮询停掉，
       // 否则用户在设置页点「启动 Bot」重建时，两个轮询器会抢同一个游标文件。
-      bot?.stop()
+      instance.stop()
+      bot = null
+      botStartTime = null
     })
 
-    bot.on('error', (err: unknown) => {
+    instance.on('error', (err: unknown) => {
+      if (!isCurrent()) return
       const error = err instanceof Error ? err : new Error(String(err))
       console.error('[ilink] Bot 错误:', err)
       lastError = error.message
     })
 
     // 消息处理
-    bot.onMessage(async (msg: any) => {
+    instance.onMessage(async (msg: any) => {
       console.log(`[ilink] 收到消息 ${msg.userId}: ${msg.text?.slice(0, 50)}`)
 
       // 保存用户 ID（用于提醒服务）

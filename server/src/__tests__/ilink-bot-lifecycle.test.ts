@@ -7,21 +7,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@wechatbot/wechatbot', async () => await import('./helpers/fake-wechat-sdk.js'))
 
-vi.mock('../database/index.js', async () => {
-  const { default: Database } = await import('better-sqlite3')
-  const db = new Database(':memory:')
-  return { connectDatabase: () => db }
-})
+// 数据库是系统边界：换掉的是「连接」，给的是真库（内存 SQLite + 真迁移）
+vi.mock('../database/index.js', async () => await import('./helpers/test-db.js'))
 
-import { connectDatabase } from '../database/index.js'
-import { runMigrations } from '../database/migrate.js'
 import { lastInstance, resetInstances } from './helpers/fake-wechat-sdk.js'
-import { setSetting } from '../services/settings.service.js'
+import { restoreSchema } from './helpers/test-db.js'
+import { setEnabled } from './helpers/intent.js'
 import { getILinkBotStatus, startILinkBot, stopILinkBot } from '../services/wechat/ilink-bot.service.js'
-/** 设置当前的启用意图（走应用自己的设置接口） */
-function setEnabled(enabled: boolean): void {
-  setSetting('ilink_enabled', enabled)
-}
 
 /** 启动并跑完内部的异步登录与延迟 */
 async function startAndSettle(): Promise<{ success: boolean; error?: string }> {
@@ -34,15 +26,8 @@ beforeEach(() => {
   vi.useFakeTimers()
   // 冻结在一个「没有任何后台作业到期」的时刻：北京 10:00
   vi.setSystemTime(new Date('2026-09-15T02:00:00.000Z'))
-  const db = connectDatabase()
-  runMigrations(db)
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS settings (
-      key TEXT PRIMARY KEY NOT NULL,
-      value TEXT NOT NULL DEFAULT '',
-      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-    );
-  `)
+  // 若上一个用例破坏过 schema，让真迁移把它重建回来（不手写 DDL）
+  restoreSchema()
   resetInstances()
 })
 
@@ -103,5 +88,39 @@ describe('startILinkBot', () => {
     expect(second).not.toBe(first)
     expect(first.isRunning).toBe(false)
     expect(getILinkBotStatus().running).toBe(true)
+  })
+
+  it('旧实例迟到的过期事件，不会打死当前实例', async () => {
+    setEnabled(true)
+    await startAndSettle()
+    const stale = lastInstance()!
+
+    stopILinkBot()
+    await startAndSettle()
+    const current = lastInstance()!
+    expect(current.isRunning).toBe(true)
+
+    // 旧实例的 SDK 内部还会自己强制重登，失败时可能补发一个迟到的 session:expired
+    stale.emit('session:expired')
+
+    expect(current.isRunning).toBe(true)
+    expect(getILinkBotStatus().running).toBe(true)
+    expect(getILinkBotStatus().login.status).toBe('confirmed')
+  })
+
+  // 防线测试（非红→绿驱动）：靠变异验证——一旦拿掉 login 上的陈旧判定，它会变红。
+  // 场景：旧实例被换掉后，它自己那次强制重登才晚晚地成功，补发一个迟到的 login 事件。
+  it('旧实例迟到的登录成功事件，不会把状态说成运行中', async () => {
+    setEnabled(true)
+    await startAndSettle()
+    const stale = lastInstance()!
+
+    stopILinkBot()
+    expect(getILinkBotStatus().running).toBe(false)
+
+    stale.emit('login', { accountId: 'acc' })
+
+    expect(getILinkBotStatus().running).toBe(false)
+    expect(getILinkBotStatus().login.status).not.toBe('confirmed')
   })
 })

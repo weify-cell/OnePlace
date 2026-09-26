@@ -13,8 +13,9 @@ const activeTab = ref('basic')
 // 提示词默认值由后端 /api/ilink/config 提供（唯一来源在 server 的 prompt-defaults.ts），
 // 前端不再自带副本，避免两边漂移。初始值为空，load 时由后端返回值覆盖。
 const ilinkConfig = ref({
-  // 启用意图：服务启动时是否自动拉起（与「启动/停止 Bot」是两层，见 docs/adr/0001）
-  enabled: true,
+  // 启用意图：服务启动时是否自动拉起（与「启动/停止 Bot」是两层，见 docs/adr/0001）。
+  // 默认 false 与迁移里写入的默认值一致，不谎报「已开」
+  enabled: false,
   provider: 'qwen',
   model: 'qwen-turbo',
   system_prompt: '',
@@ -54,7 +55,7 @@ onMounted(async () => {
 
   if (ilinkStore.config) {
     ilinkConfig.value = {
-      enabled: ilinkStore.config.enabled ?? true,
+      enabled: ilinkStore.config.enabled ?? false,
       provider: ilinkStore.config.provider ?? 'qwen',
       model: ilinkStore.config.model ?? 'qwen-turbo',
       system_prompt: ilinkStore.config.system_prompt ?? '',
@@ -181,7 +182,7 @@ const botState = computed(() =>
         </div>
         <div class="settings-card__body">
           <div class="settings-field">
-            <label class="settings-field__label">启用微信机器人</label>
+            <label class="settings-field__label">服务启动时自动拉起</label>
             <div class="ilink-enabled">
               <n-switch
                 v-model:value="ilinkConfig.enabled"
@@ -253,7 +254,8 @@ const botState = computed(() =>
               </div>
               <div v-else-if="ilinkStore.status?.login.status === 'expired'">
                 <div class="status-dot status-dot--error" />
-                <span>会话已过期，需重新扫码——请点上方「启动 Bot」</span>
+                <!-- 过期文案只从 botState 出一份，避免同一状态两套说法分叉 -->
+                <span>{{ botState.label }}——{{ botState.hint }}</span>
               </div>
               <div v-else>
                 <div class="status-dot status-dot--stopped" />
