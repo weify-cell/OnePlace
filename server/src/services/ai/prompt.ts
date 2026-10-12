@@ -34,7 +34,7 @@ export interface SystemPromptRequest {
   topic?: string
   /** report：报告类型标签（日报 / 周报 / 月报） */
   reportType?: string
-  /** bot-chat / learning：该用户近 30 天记忆提示词（由 memory 模块按 userId 生成） */
+  /** bot-chat / learning：该用户当前状态摘要（由 memory 模块按 userId 生成，只含状态型记忆的最新值） */
   memoryPrompt?: string
 }
 

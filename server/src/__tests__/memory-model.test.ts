@@ -17,8 +17,10 @@ vi.mock('../services/vector/vector.service.js', () => ({
 }))
 
 import { connectDatabase } from '../database/index.js'
+import { setSetting } from '../services/settings.service.js'
 import {
   addMemory,
+  buildMemoryPrompt,
   queryMemories,
   searchMemories,
   searchMemoryVectors,
@@ -76,7 +78,9 @@ function seed(row: {
 }
 
 beforeEach(() => {
-  connectDatabase().prepare('DELETE FROM wechat_memories').run()
+  const db = connectDatabase()
+  db.prepare('DELETE FROM wechat_memories').run()
+  db.prepare('DELETE FROM settings').run()
 })
 
 describe('写入：类型与主题', () => {
@@ -178,6 +182,72 @@ describe('检索：归档的不再出现', () => {
 
     const results = await searchMemoryVectors('跑步', { userId: USER })
     expect(results.map(r => r.memory_id)).toEqual([live])
+  })
+})
+
+describe('注入段：只带状态型的最新值', () => {
+  it('状态型记忆进注入，并带上主题键', async () => {
+    await addMemory(USER, '用户《习惯的力量》阅读进度 85%', dateDaysAgo(0), {
+      kind: 'state', topic: '阅读进度:习惯的力量'
+    })
+    const prompt = buildMemoryPrompt(USER)
+    expect(prompt).toContain('## 记忆（当前状态）')
+    expect(prompt).toContain('阅读进度:习惯的力量')
+    expect(prompt).toContain('阅读进度 85%')
+  })
+
+  it('事件型不进注入（它们按需检索，不常驻提示词）', async () => {
+    await addMemory(USER, '用户 10-11 去体检了', dateDaysAgo(1), { kind: 'event' })
+    expect(buildMemoryPrompt(USER)).toBe('')
+  })
+
+  it('未分类的历史记忆不进注入（但仍可被检索）', async () => {
+    seed({ content: '用户家里有一台单车机', createdAt: isoDaysAgo(5) })
+    expect(queryMemories(USER, { days: 30 })).toHaveLength(1)
+    expect(buildMemoryPrompt(USER)).toBe('')
+  })
+
+  it('被取代的旧值不进注入', async () => {
+    await addMemory(USER, '阅读进度 75%', dateDaysAgo(2), { kind: 'state', topic: '阅读进度:习惯的力量' })
+    await addMemory(USER, '阅读进度 85%', dateDaysAgo(0), { kind: 'state', topic: '阅读进度:习惯的力量' })
+    const prompt = buildMemoryPrompt(USER)
+    expect(prompt).toContain('阅读进度 85%')
+    expect(prompt).not.toContain('阅读进度 75%')
+  })
+
+  it('量级：两百条未分类噪声也不影响注入，注入只含那几条状态型', async () => {
+    for (let i = 0; i < 200; i++) {
+      seed({ content: `历史噪声 ${i}`, createdAt: isoDaysAgo(i % 20) })
+    }
+    await addMemory(USER, '阅读进度 85%', dateDaysAgo(0), { kind: 'state', topic: '阅读进度:习惯的力量' })
+    await addMemory(USER, '冥想固定在每天 12:50', dateDaysAgo(0), { kind: 'state', topic: '习惯:冥想时间' })
+
+    const lines = buildMemoryPrompt(USER).split('\n').filter(l => l.startsWith('- '))
+    expect(lines).toHaveLength(2)
+  })
+
+  it('没有状态型记忆时不产生注入段', () => {
+    expect(buildMemoryPrompt(USER)).toBe('')
+  })
+
+  it('每条带主题键与记录日期（状态可能已经旧了，模型要看得出来）', async () => {
+    await addMemory(USER, '用户《习惯的力量》阅读进度 85%', '2026-06-01', {
+      kind: 'state', topic: '阅读进度:习惯的力量'
+    })
+    const prompt = buildMemoryPrompt(USER)
+    expect(prompt).toContain('阅读进度:习惯的力量')
+    expect(prompt).toContain('（2026-06-01）')
+  })
+
+  it('超过条目上限时告知模型还有未列出的（否则它会以为没列出来就不存在）', async () => {
+    setSetting('ilink_memory_prompt_max_items', 2)
+    await addMemory(USER, '进度 A', dateDaysAgo(3), { kind: 'state', topic: 'T:A' })
+    await addMemory(USER, '进度 B', dateDaysAgo(2), { kind: 'state', topic: 'T:B' })
+    await addMemory(USER, '进度 C', dateDaysAgo(1), { kind: 'state', topic: 'T:C' })
+
+    const prompt = buildMemoryPrompt(USER)
+    expect(prompt.split('\n').filter(l => l.startsWith('- '))).toHaveLength(2)
+    expect(prompt).toContain('另有 1 条')
   })
 })
 

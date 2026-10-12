@@ -149,17 +149,47 @@ function countMemories(userId: string, memoryDate: string): number {
   return row.c
 }
 
-/** 近30天记忆附记段（system prompt 用）；无记忆返回 ''。 */
-export function buildMemoryPrompt(userId: string): string {
+/**
+ * 注入用的状态型记忆：只取未被归档的。
+ *
+ * 同一主题的旧值在写入时已被取代并归档，因此这里天然只剩「每个主题的当前值」，
+ * 不需要再按主题去重。同时回报总数：达到条目上限时要能告诉模型「还有没列出的」，
+ * 否则它会以为没列出来就不存在、也就不会去检索。
+ */
+function queryCurrentStateMemories(userId: string): { items: MemoryRow[]; total: number } {
+  const db = connectDatabase()
   const maxItems = getSettingValue<number>('ilink_memory_prompt_max_items', 0)
   const limit = maxItems > 0 ? maxItems : 100000
-  const items = queryMemories(userId, { days: 30, limit })
+  const items = db.prepare(
+    `SELECT * FROM wechat_memories
+     WHERE user_id = ? AND kind = 'state' AND archived_at IS NULL
+     ORDER BY memory_date DESC, id DESC
+     LIMIT ?`
+  ).all(userId, limit) as MemoryRow[]
+  const { c: total } = db.prepare(
+    `SELECT COUNT(*) c FROM wechat_memories WHERE user_id = ? AND kind = 'state' AND archived_at IS NULL`
+  ).get(userId) as { c: number }
+  return { items, total }
+}
+
+/**
+ * 当前状态摘要段（system prompt 用）；无状态型记忆返回 ''。
+ *
+ * 只放状态型记忆的最新值（实测改造前是「近 30 天全部」，一次 169 条 / 12,897 字符）：
+ * 事件型与未分类的历史数据都不常驻提示词，需要翻旧账时由模型自己调检索工具——
+ * 该不该捞那条旧记忆，本来就该由模型决定，不该每轮替它做（见 ADR-0002）。
+ * 每条带主题键（模型下次要改这条时会用同一个键）与记录日期（状态可能已经旧了）。
+ */
+export function buildMemoryPrompt(userId: string): string {
+  const { items, total } = queryCurrentStateMemories(userId)
   if (items.length === 0) return ''
-  const lines = items.map(m => `- ${m.memory_date.slice(5)}: ${m.content}`)
+  const lines = items.map(m => `- ${m.topic ? `${m.topic}：` : ''}${m.content}（${m.memory_date}）`)
+  const omitted = total - items.length
   return [
-    '## 记忆（近30天）',
+    '## 记忆（当前状态）',
     ...lines,
-    '检索旧记忆时调用 search_memory / search_memory_vectors 工具即可，不需要传用户 ID。'
+    ...(omitted > 0 ? [`（另有 ${omitted} 条更早的状态记忆未列出，需要时用 search_memory 检索）`] : []),
+    '需要回忆更早的事时，调用 search_memory（关键词）或 search_memory_vectors（语义）工具检索即可，不需要传用户 ID。'
   ].join('\n')
 }
 

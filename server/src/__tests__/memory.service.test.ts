@@ -137,13 +137,22 @@ describe('addMemory', () => {
 })
 
 describe('buildMemoryPrompt', () => {
-  it('近30天附记包含记忆；不再注入用户ID（归属由服务端注入）；无记忆返回空串', () => {
+  // 注入段只放状态型记忆的最新值（工单 04）；事件型与未分类的历史数据不再常驻提示词
+  it('注入状态型记忆（带主题键）；未分类与事件型不进注入；无状态型时返回空串', async () => {
     const db = connectDatabase()
     db.prepare('DELETE FROM wechat_memories').run()
-    saveMemory('u1', '用户喝美式', getMemoryDate(new Date()))
+    saveMemory('u1', '用户喝美式', getMemoryDate(new Date())) // 未分类（历史数据形态）
+    await addMemory('u1', '用户《习惯的力量》阅读进度 85%', getMemoryDate(new Date()), {
+      kind: 'state', topic: '阅读进度:习惯的力量'
+    })
+    await addMemory('u1', '用户 10-11 去体检了', getMemoryDate(new Date()), { kind: 'event' })
+
     const p = buildMemoryPrompt('u1')
-    expect(p).toContain('## 记忆（近30天）')
-    expect(p).toContain('用户喝美式')
+    expect(p).toContain('## 记忆（当前状态）')
+    expect(p).toContain('阅读进度:习惯的力量')
+    expect(p).toContain('阅读进度 85%')
+    expect(p).not.toContain('用户喝美式')
+    expect(p).not.toContain('去体检了')
     expect(p).not.toContain('当前用户微信ID')
     expect(buildMemoryPrompt('u2')).toBe('')
   })
