@@ -409,9 +409,14 @@ export function getBuiltinToolMap(ctx: ToolContext = {}): Map<string, AgentTool>
         const stored = stripUserIds(content.trim(), userId)
         // 只在真的取代了旧值时提一句（没取代却宣称取代，会让模型以为主题键对上了）
         const supersedeNote = res.superseded > 0 ? `（已取代同主题旧值 ${res.superseded} 条）` : ''
+        // 写入日期比同主题现有值更旧时（例如整理补跑），那条不会成为当前值——不能只说「已记住」
+        const staleNote = res.becameCurrent ? '' : '（同主题已有更新的值，本条未成为当前状态）'
+        if (res.status === 'updated') {
+          return textResult(`已给已有记忆补上类型与主题：${stored}${supersedeNote}${staleNote}`)
+        }
         return textResult(res.vectorOk
-          ? `已记住：${stored}${supersedeNote}`
-          : `已记住：${stored}${supersedeNote}（向量库写入失败，仅存入数据库）`)
+          ? `已记住：${stored}${supersedeNote}${staleNote}`
+          : `已记住：${stored}${supersedeNote}${staleNote}（向量库写入失败，仅存入数据库）`)
       }
     }
   ] as unknown as AgentTool[]

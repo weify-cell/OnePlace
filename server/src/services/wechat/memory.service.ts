@@ -258,17 +258,44 @@ async function archiveMemories(ids: number[], supersededBy: number | null = null
 }
 
 /**
- * 同一用户同一主题的新状态值写入 → 旧值归档并记下被谁取代。
+ * 让某主题只剩最新的那条活跃状态值：较旧的全部归档（不删行）并清掉向量。
  *
- * 归档不物理删行（退场语义见 CONTEXT.md），但要清掉旧值的向量。
- * 只认 kind='state' 的行：事件型不参与取代，未分类的历史数据也不参与。
+ * 正常写入与「给历史记忆补类型」都走这里——于是「一个主题一个当前值」这条不变式只有一处定义。
+ * 保留的是**按 (memory_date, id) 最新的那条**，而不是「刚写进来的那条」：
+ * 补标注时进来的那条往往很旧，不能因为它刚被认领就把更新的当前值挤下去。
  */
-async function supersedePrevious(userId: string, topic: string, newId: number): Promise<number> {
-  const oldIds = (connectDatabase().prepare(
+async function keepNewestStateFor(userId: string, topic: string): Promise<number> {
+  const rows = connectDatabase().prepare(
     `SELECT id FROM wechat_memories
-     WHERE user_id = ? AND topic = ? AND kind = 'state' AND archived_at IS NULL AND id <> ?`
-  ).all(userId, topic, newId) as Array<{ id: number }>).map(r => r.id)
-  return archiveMemories(oldIds, newId)
+     WHERE user_id = ? AND topic = ? AND kind = 'state' AND archived_at IS NULL
+     ORDER BY memory_date DESC, id DESC`
+  ).all(userId, topic) as Array<{ id: number }>
+  if (rows.length <= 1) return 0
+  return archiveMemories(rows.slice(1).map(r => r.id), rows[0].id)
+}
+
+/**
+ * 同一内容已存在、且现有那条还没有类型时，就地把类型与主题补上（同内容的历史记忆补标注）。
+ *
+ * 没有这一步，「未归档的同内容行」永远拿不到类型：写入命中 UNIQUE 后返回 duplicate，
+ * 而复活只会顺手处理**已归档**的行。补的是元数据不是事实，因此不动 memory_date/created_at。
+ * 返回被补写的那条 id；不需要补时返回 0。
+ */
+function upgradeMemoryMetadata(
+  userId: string,
+  content: string,
+  opts: { kind?: MemoryKind; topic?: string }
+): number {
+  if (!opts.kind) return 0
+  const db = connectDatabase()
+  const row = db.prepare(
+    `SELECT id, kind FROM wechat_memories
+     WHERE user_id = ? AND content = ? AND archived_at IS NULL`
+  ).get(userId, content) as { id: number; kind: MemoryKind | null } | undefined
+  if (!row || row.kind) return 0
+  db.prepare('UPDATE wechat_memories SET kind = ?, topic = ? WHERE id = ?')
+    .run(opts.kind, opts.topic ?? null, row.id)
+  return row.id
 }
 
 /**
@@ -316,39 +343,57 @@ export async function addMemory(
   content: string,
   memoryDate: string,
   opts: MemoryWriteOptions = {}
-): Promise<{ status: 'new' | 'duplicate' | 'invalid'; vectorOk: boolean; memoryId: number; superseded: number }> {
+): Promise<{
+  /** new=新写入（含复活/补标注后成为当前值）；updated=给已有行补上类型与主题；duplicate=同内容已存在且无需改动；invalid=内容不合格 */
+  status: 'new' | 'updated' | 'duplicate' | 'invalid'
+  /** 向量是否写成功；`updated` 也会真的写一次（内容虽未变，但会顺便确认向量存在） */
+  vectorOk: boolean
+  memoryId: number
+  /** 本次归档了几条同主题的旧值 */
+  superseded: number
+  /** 本条是否成了该主题的当前值；false 表示它已如实归档（同主题已有更新的值） */
+  becameCurrent: boolean
+}> {
   const cleaned = stripUserIds((content || '').trim(), userId)
   if (cleaned.length < MIN_CONTENT_LENGTH) {
-    return { status: 'invalid', vectorOk: false, memoryId: 0, superseded: 0 }
+    return { status: 'invalid', vectorOk: false, memoryId: 0, superseded: 0, becameCurrent: false }
   }
   const { kind, topic } = normalizeWriteOptions(opts)
 
   const id = saveMemory(userId, cleaned, memoryDate, { kind, topic })
-  if (id === 0) {
-    const revivedId = reviveMemory(userId, cleaned, { kind, topic, memoryDate })
-    if (revivedId === 0) return { status: 'duplicate', vectorOk: false, memoryId: 0, superseded: 0 }
-    const after = await ensureCurrent(userId, revivedId, cleaned, memoryDate, kind, topic)
-    return { status: 'new', memoryId: revivedId, ...after }
+  if (id > 0) {
+    const after = await ensureCurrent(userId, id, cleaned, memoryDate)
+    return { status: 'new', memoryId: id, ...after }
   }
 
-  // 顺序很重要：先把新值的向量写好，再归档旧值（旧值归档时会删掉它自己的向量）。
-  // 反过来的话，新向量写失败就会让这个主题一个可用向量都不剩。
-  const after = await ensureCurrent(userId, id, cleaned, memoryDate, kind, topic)
-  return { status: 'new', memoryId: id, ...after }
+  // 同内容已存在：先看能不能补类型（历史记忆补标注），已归档的才走复活，两者都不是则重复
+  const upgradedId = upgradeMemoryMetadata(userId, cleaned, { kind, topic })
+  if (upgradedId > 0) {
+    const after = await ensureCurrent(userId, upgradedId, cleaned, memoryDate)
+    return { status: 'updated', memoryId: upgradedId, ...after }
+  }
+  const revivedId = reviveMemory(userId, cleaned, { kind, topic, memoryDate })
+  if (revivedId === 0) {
+    return { status: 'duplicate', vectorOk: false, memoryId: 0, superseded: 0, becameCurrent: true }
+  }
+  const after = await ensureCurrent(userId, revivedId, cleaned, memoryDate)
+  return { status: 'new', memoryId: revivedId, ...after }
 }
 
 /**
- * 让某条记忆成为当前值：写它的向量，同主题的状态型旧值让位。
- * 归档是尽最大努力的后台清理（失败只记日志），不因它让写入报错。
+ * 让某条记忆就位：写它的向量，并按库里**实际存着的**类型与主题把
+ * 「一个主题只留一个当前值（按 memory_date 最新的那条）」这条不变式执行一遍。
+ *
+ * 从库里读而不是用调用方传的值：复活与补标注路径会保留行上原有的类型，
+ * 按调用方参数判断就会漏掉「复活一条旧状态型行」那种情况，留下两个当前值。
+ * 写入与归档的顺序也在这里定下：先写新向量，再归档旧值（旧值归档时会删它自己的向量）。
  */
 async function ensureCurrent(
   userId: string,
   memoryId: number,
   content: string,
-  memoryDate: string,
-  kind?: MemoryKind,
-  topic?: string
-): Promise<{ vectorOk: boolean; superseded: number }> {
+  memoryDate: string
+): Promise<{ vectorOk: boolean; superseded: number; becameCurrent: boolean }> {
   let vectorOk = true
   try {
     await upsertMemoryVector(userId, memoryId, content, memoryDate)
@@ -357,15 +402,25 @@ async function ensureCurrent(
     console.error(`[memory] vector upsert failed for memory #${memoryId}:`, err)
   }
 
-  let superseded = 0
-  if (kind === 'state' && topic) {
-    try {
-      superseded = await supersedePrevious(userId, topic, memoryId)
-    } catch (err) {
-      console.error(`[memory] supersede failed for topic「${topic}」:`, err)
-    }
+  const db = connectDatabase()
+  const row = db.prepare('SELECT kind, topic FROM wechat_memories WHERE id = ?')
+    .get(memoryId) as { kind: MemoryKind | null; topic: string | null } | undefined
+  if (row?.kind !== 'state' || !row.topic) return { vectorOk, superseded: 0, becameCurrent: true }
+
+  const superseded = await safeKeepNewest(userId, row.topic)
+  const still = db.prepare('SELECT archived_at FROM wechat_memories WHERE id = ?')
+    .get(memoryId) as { archived_at: string | null } | undefined
+  return { vectorOk, superseded, becameCurrent: !still?.archived_at }
+}
+
+/** 归档业务是尽最大努力的后台清理（失败只记日志），不因它让写入报错。 */
+async function safeKeepNewest(userId: string, topic: string): Promise<number> {
+  try {
+    return await keepNewestStateFor(userId, topic)
+  } catch (err) {
+    console.error(`[memory] supersede failed for topic「${topic}」:`, err)
+    return 0
   }
-  return { vectorOk, superseded }
 }
 
 /** 语义检索记忆向量库；失败返回空数组（不阻断对话）。已归档的记忆不返回。 */

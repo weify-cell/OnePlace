@@ -205,6 +205,13 @@ describe('记忆整理的提示词：去噪规则与归属', () => {
     expect(p).toContain('取代')
     expect(p).toContain('没有变化')
   })
+
+  it('系统提示词给出「给未分类记忆补标注」这条唯一允许重复声明的路径', async () => {
+    // 没有这句，补标注能力在产品里永远不会被调用（提示词只说「请勿重复抽取」）
+    const p = await buildSystemPrompt({ kind: 'memory' })
+    expect(p).toContain('未分类')
+    expect(p).toContain('一字不改')
+  })
 })
 
 describe('buildMemoryUserContent', () => {

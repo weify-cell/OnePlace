@@ -133,6 +133,37 @@ describe('记忆工具的归属由服务端注入', () => {
     expect(second).toContain('取代')
   })
 
+  it('给未分类的历史记忆补类型：不新增行，答复说明这是补标注', async () => {
+    saveWeChatUser('u1')
+    connectDatabase().prepare(
+      "INSERT INTO wechat_memories (user_id, content, memory_date) VALUES ('u1', '阅读进度 75%', '2026-10-01')"
+    ).run()
+    const tool = getBuiltinToolMap({ memoryUserId: 'u1' }).get('add_memory')!
+
+    const text = resultText(await tool.execute('call-1', {
+      content: '阅读进度 75%', kind: 'state', topic: '阅读进度:习惯的力量'
+    }))
+
+    const rows = connectDatabase().prepare('SELECT kind, topic FROM wechat_memories').all() as Array<{ kind: string; topic: string }>
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ kind: 'state', topic: '阅读进度:习惯的力量' })
+    expect(text).toContain('补上')
+  })
+
+  it('写入日期比同主题现有值更旧时，答复要说明它没成为当前状态', async () => {
+    saveWeChatUser('u1')
+    const tool = getBuiltinToolMap({ memoryUserId: 'u1' }).get('add_memory')!
+
+    await tool.execute('call-1', {
+      content: '阅读进度 85%', kind: 'state', topic: '阅读进度:习惯的力量', memory_date: '2026-10-11'
+    })
+    const text = resultText(await tool.execute('call-2', {
+      content: '阅读进度 75%', kind: 'state', topic: '阅读进度:习惯的力量', memory_date: '2026-10-05'
+    }))
+
+    expect(text).toContain('未成为当前状态')
+  })
+
   it('search_memory 只检索本回合用户，不跨用户', async () => {
     const today = getMemoryDate(new Date())
     saveMemory('u1', '用户喜欢美式咖啡', today)

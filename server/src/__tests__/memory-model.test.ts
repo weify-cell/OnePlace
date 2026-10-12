@@ -152,6 +152,79 @@ describe('写入：类型与主题', () => {
   })
 })
 
+describe('补标注：给历史记忆补上类型与主题', () => {
+  it('同内容已存在且现有那条还没类型时，补写元数据而不是当成重复丢掉', async () => {
+    const legacy = seed({ content: '用户《习惯的力量》阅读进度 75%', createdAt: isoDaysAgo(10) })
+
+    const res = await addMemory(USER, '用户《习惯的力量》阅读进度 75%', dateDaysAgo(10), {
+      kind: 'state', topic: '阅读进度:习惯的力量'
+    })
+
+    expect(res.status).toBe('updated')
+    expect(res.memoryId).toBe(legacy)
+    expect(rowById(legacy)).toMatchObject({ kind: 'state', topic: '阅读进度:习惯的力量' })
+    expect(allRows()).toHaveLength(1) // 不新增行：补的是元数据，不是事实
+  })
+
+  it('已有类型与主题的同内容写入仍然是 duplicate（不覆盖已有的分类）', async () => {
+    await addMemory(USER, '阅读进度 85%', dateDaysAgo(1), { kind: 'event' })
+    const res = await addMemory(USER, '阅读进度 85%', dateDaysAgo(0), {
+      kind: 'state', topic: '阅读进度:习惯的力量'
+    })
+    expect(res.status).toBe('duplicate')
+    expect(allRows()).toEqual([expect.objectContaining({ kind: 'event', topic: null })])
+  })
+
+  it('补上主题后，同主题里更新的那条仍然是当前值（不能把旧的复活成当前）', async () => {
+    const older = seed({ content: '阅读进度 75%', createdAt: isoDaysAgo(10) })
+    await addMemory(USER, '阅读进度 85%', dateDaysAgo(1), {
+      kind: 'state', topic: '阅读进度:习惯的力量'
+    })
+
+    await addMemory(USER, '阅读进度 75%', dateDaysAgo(10), {
+      kind: 'state', topic: '阅读进度:习惯的力量'
+    })
+
+    expect(rowById(older).archived_at).not.toBeNull() // 旧的那条退位
+    expect(buildMemoryPrompt(USER)).toContain('阅读进度 85%')
+    expect(buildMemoryPrompt(USER)).not.toContain('阅读进度 75%')
+  })
+
+  it('复活一条旧的状态型记忆时，同主题仍然只留一个当前值', async () => {
+    // 不带 kind 的重复写入会走复活路径，行上原有的类型与主题被保留——
+    // 不变式必须按库里实际存着的类型执行，不能只看调用方有没有传 kind
+    const older = await addMemory(USER, '阅读进度 75%', dateDaysAgo(5), {
+      kind: 'state', topic: '阅读进度:习惯的力量'
+    })
+    await addMemory(USER, '阅读进度 85%', dateDaysAgo(1), {
+      kind: 'state', topic: '阅读进度:习惯的力量'
+    })
+    expect(rowById(older.memoryId).archived_at).not.toBeNull()
+
+    const revived = await addMemory(USER, '阅读进度 75%', dateDaysAgo(0))
+
+    expect(revived.status).toBe('new')
+    const live = allRows().filter(r => r.topic === '阅读进度:习惯的力量' && r.archived_at === null)
+    expect(live).toHaveLength(1)
+  })
+
+  it('写入日期比同主题现有值更旧时，如实告知它没有成为当前值', async () => {
+    const newer = await addMemory(USER, '阅读进度 85%', dateDaysAgo(1), {
+      kind: 'state', topic: '阅读进度:习惯的力量'
+    })
+
+    // 整理补跑会写到过去的日期：那条不应把更新的当前值挤掉，但也不能假装它生效了
+    const backdated = await addMemory(USER, '阅读进度 75%', dateDaysAgo(5), {
+      kind: 'state', topic: '阅读进度:习惯的力量'
+    })
+
+    expect(backdated.status).toBe('new')
+    expect(backdated.becameCurrent).toBe(false)
+    expect(rowById(backdated.memoryId).archived_at).not.toBeNull()
+    expect(rowById(newer.memoryId).archived_at).toBeNull()
+  })
+})
+
 describe('检索：归档的不再出现', () => {
   it('queryMemories 与 searchMemories 都不返回被取代的记忆', async () => {
     await addMemory(USER, '阅读进度 75%', dateDaysAgo(2), { kind: 'state', topic: '阅读进度:习惯的力量' })
