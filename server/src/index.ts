@@ -21,6 +21,7 @@ import { autoStartWeChatBot } from './services/wechat/bootstrap.js'
 import { toolConfigRouter } from './routes/tool-config.routes.js'
 import { skillConfigRouter } from './routes/skill-config.routes.js'
 import { toolCategoryRouter } from './routes/tool-category.routes.js'
+import { memoryRouter } from './routes/memory.routes.js'
 import { skillCategoryRouter } from './routes/skill-category.routes.js'
 
 // Load .env from project root (2 levels up from server/src/)
@@ -59,6 +60,7 @@ app.use('/api/settings', settingsRouter)
 app.use('/api/folders', foldersRouter)
 app.use('/api/upload', uploadRouter)
 app.use('/api/knowledge-base', kbRouter)
+app.use('/api/memory', memoryRouter)
 app.use('/api/ilink', ilinkRouter)
 app.use('/api/tool-config', toolConfigRouter)
 app.use('/api/skill-config', skillConfigRouter)

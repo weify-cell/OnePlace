@@ -21,6 +21,7 @@ import { setSetting } from '../services/settings.service.js'
 import {
   addMemory,
   buildMemoryPrompt,
+  listMemories,
   queryMemories,
   searchMemories,
   searchMemoryVectors,
@@ -321,6 +322,55 @@ describe('注入段：只带状态型的最新值', () => {
     const prompt = buildMemoryPrompt(USER)
     expect(prompt.split('\n').filter(l => l.startsWith('- '))).toHaveLength(2)
     expect(prompt).toContain('另有 1 条')
+  })
+})
+
+describe('列表（只读，供管理页看）', () => {
+  async function seedMixed(): Promise<void> {
+    await addMemory(USER, '阅读进度 85%', dateDaysAgo(0), { kind: 'state', topic: '阅读进度:习惯的力量' })
+    await addMemory(USER, '阅读进度 75%', dateDaysAgo(3), { kind: 'state', topic: '阅读进度:习惯的力量' }) // → 被取代
+    await addMemory(USER, '用户 10-11 去体检了', dateDaysAgo(1), { kind: 'event' })
+    seed({ content: '用户家里有一台单车机', createdAt: isoDaysAgo(9) }) // 未分类
+    await addMemory('u2', '别人的状态', dateDaysAgo(0), { kind: 'state', topic: '别人的' })
+  }
+
+  it('全部 = 生效中的全部（状态型 + 事件型 + 未分类），不含已归档', async () => {
+    await seedMixed()
+    const res = listMemories({ userId: USER })
+    expect(res.total).toBe(3)
+    expect(res.items.map(i => i.content)).toContain('用户家里有一台单车机')
+    expect(res.items.every(i => i.archived_at === null)).toBe(true)
+    expect(res.items.every(i => i.user_id === USER)).toBe(true)
+  })
+
+  it('按类型过滤：状态型 / 事件型', async () => {
+    await seedMixed()
+    expect(listMemories({ userId: USER, filter: 'state' }).items.map(i => i.content)).toEqual(['阅读进度 85%'])
+    expect(listMemories({ userId: USER, filter: 'event' }).items.map(i => i.content)).toEqual(['用户 10-11 去体检了'])
+  })
+
+  it('已归档单独一档，按归档时间倒序', async () => {
+    await seedMixed()
+    const res = listMemories({ userId: USER, filter: 'archived' })
+    expect(res.total).toBe(1)
+    expect(res.items[0].content).toBe('阅读进度 75%')
+    expect(res.items[0].archived_at).toEqual(expect.any(String))
+  })
+
+  it('分页：total 是过滤后的总数，翻页取到剩下的', async () => {
+    await seedMixed()
+    const first = listMemories({ userId: USER, page: 1, pageSize: 2 })
+    const second = listMemories({ userId: USER, page: 2, pageSize: 2 })
+    expect(first.total).toBe(3)
+    expect(first.items).toHaveLength(2)
+    expect(second.items).toHaveLength(1)
+    expect([...first.items, ...second.items].map(i => i.id)).toHaveLength(3)
+  })
+
+  it('生效中的按记忆日期倒序（最近的在前）', async () => {
+    await seedMixed()
+    const dates = listMemories({ userId: USER }).items.map(i => i.memory_date)
+    expect([...dates].sort().reverse()).toEqual(dates)
   })
 })
 

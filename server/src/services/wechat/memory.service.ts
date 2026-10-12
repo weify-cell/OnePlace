@@ -93,6 +93,48 @@ export function queryMemories(
   ).all(userId, since, limit) as MemoryRow[]
 }
 
+/** 列表过滤维度。 */
+export type MemoryListFilter = 'all' | 'state' | 'event' | 'archived'
+
+/**
+ * 记忆列表（只读，供管理页看）。
+ *
+ * - `all` 是**生效中的全部**（状态型 + 事件型 + 未分类），已归档单独一档；
+ * - 生效中的按记忆日期倒序，已归档的按归档时间倒序（最近退场的在上面）；
+ * - 还没接的是每条的「被命中次数」与汇总比率——那些需要检索事件表（工单 02）。
+ */
+export function listMemories(opts: {
+  userId: string
+  filter?: MemoryListFilter
+  page?: number
+  pageSize?: number
+}): { items: MemoryRow[]; total: number; page: number; pageSize: number } {
+  const db = connectDatabase()
+  const filter = opts.filter ?? 'all'
+  const page = Math.max(opts.page ?? 1, 1)
+  const pageSize = Math.min(Math.max(opts.pageSize ?? 20, 1), 100)
+
+  const conditions: string[] = ['user_id = ?']
+  const values: string[] = [opts.userId]
+  if (filter === 'archived') {
+    conditions.push('archived_at IS NOT NULL')
+  } else {
+    conditions.push('archived_at IS NULL')
+    if (filter === 'state') conditions.push("kind = 'state'")
+    if (filter === 'event') conditions.push("kind = 'event'")
+  }
+  const where = conditions.join(' AND ')
+
+  const { c: total } = db.prepare(`SELECT COUNT(*) c FROM wechat_memories WHERE ${where}`)
+    .get(...values) as { c: number }
+  const order = filter === 'archived' ? 'archived_at DESC, id DESC' : 'memory_date DESC, id DESC'
+  const items = db.prepare(
+    `SELECT * FROM wechat_memories WHERE ${where} ORDER BY ${order} LIMIT ? OFFSET ?`
+  ).all(...values, pageSize, (page - 1) * pageSize) as MemoryRow[]
+
+  return { items, total, page, pageSize }
+}
+
 /** 关键词检索（数据库）。已归档的不再返回。 */
 export function searchMemories(
   query: string,
