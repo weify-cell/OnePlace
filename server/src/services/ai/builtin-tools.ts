@@ -4,14 +4,32 @@ import { getNotes, searchNoteLines, getNoteLines } from '../notes.service.js'
 import { getTodos, getTodoById, createTodo, updateTodo, updateTodoProgress, getTodoProgressLogs, deleteTodo } from '../todos.service.js'
 import { getFolders } from '../folders.service.js'
 import { searchKnowledgeBase } from '../knowledge-base.service.js'
-import { searchMemories, searchMemoryVectors, addMemory, resolvePrimaryMemoryUser, getMemoryDate } from '../wechat/memory.service.js'
+import { searchMemories, searchMemoryVectors, addMemory, resolvePrimaryMemoryUser, stripUserIds, getMemoryDate } from '../wechat/memory.service.js'
 import { formatBeijingTime, getBeijingDateTimeSec } from '../../utils/time.js'
 
 function textResult(text: string): AgentToolResult<undefined> {
   return { content: [{ type: 'text' as const, text }], details: undefined }
 }
 
-export function getBuiltinToolMap(): Map<string, AgentTool> {
+/**
+ * 本回合的工具上下文。
+ *
+ * 工具的 execute 看不到 agentId 之类的回合信息，凡「这次对话属于谁」这类事实
+ * 都必须由调用方显式传进来——不能让模型自己填（记忆归属曾因模型抄错用户 ID
+ * 而落到幽灵用户名下）。
+ */
+export interface ToolContext {
+  /** 本回合对话所属的微信用户（记忆读写的归属） */
+  memoryUserId?: string
+}
+
+export function getBuiltinToolMap(ctx: ToolContext = {}): Map<string, AgentTool> {
+  /**
+   * 记忆归属：本回合对话的用户优先；单用户部署（Web 对话侧没有微信用户）回退唯一已注册用户。
+   * 两者都没有时返回 null——调用方必须拒绝，绝不能退化成「不过滤用户」。
+   */
+  const resolveMemoryUser = (): string | null => ctx.memoryUserId || resolvePrimaryMemoryUser()
+
   const tools = [
     // ── 1. 列出笔记 ──
     {
@@ -336,11 +354,12 @@ export function getBuiltinToolMap(): Map<string, AgentTool> {
       description: '在微信 Bot 的长期记忆库中按关键词检索，返回相关的记忆条目。用于回忆过往对话中提到的事实、偏好或事件。',
       parameters: Type.Object({
         query: Type.String({ description: '搜索关键词' }),
-        limit: Type.Optional(Type.Number({ description: '返回数量，默认 10', default: 10 })),
-        user_id: Type.Optional(Type.String({ description: '微信用户 ID（Bot 对话中通常提供）' }))
+        limit: Type.Optional(Type.Number({ description: '返回数量，默认 10', default: 10 }))
       }),
-      execute: async (_toolCallId: string, params: { query: string; limit?: number; user_id?: string }) => {
-        const rows = searchMemories(params.query, { userId: params.user_id, limit: params.limit })
+      execute: async (_toolCallId: string, params: { query: string; limit?: number }) => {
+        const userId = resolveMemoryUser()
+        if (!userId) return textResult('无法确定当前用户，暂时无法检索记忆。')
+        const rows = searchMemories(params.query, { userId, limit: params.limit })
         if (rows.length === 0) return textResult('未找到相关记忆')
         return textResult(rows.map(r => `- ${r.memory_date.slice(5)}: ${r.content}`).join('\n'))
       }
@@ -353,11 +372,12 @@ export function getBuiltinToolMap(): Map<string, AgentTool> {
       description: '在微信 Bot 的长期记忆向量库中按语义相似度检索，返回相关的记忆条目。用于模糊回忆、语义相关的历史信息。',
       parameters: Type.Object({
         query: Type.String({ description: '搜索关键词或描述' }),
-        limit: Type.Optional(Type.Number({ description: '返回数量，默认 5', default: 5 })),
-        user_id: Type.Optional(Type.String({ description: '微信用户 ID（Bot 对话中通常提供）' }))
+        limit: Type.Optional(Type.Number({ description: '返回数量，默认 5', default: 5 }))
       }),
-      execute: async (_toolCallId: string, params: { query: string; limit?: number; user_id?: string }) => {
-        const results = await searchMemoryVectors(params.query, { userId: params.user_id, limit: params.limit })
+      execute: async (_toolCallId: string, params: { query: string; limit?: number }) => {
+        const userId = resolveMemoryUser()
+        if (!userId) return textResult('无法确定当前用户，暂时无法检索记忆。')
+        const results = await searchMemoryVectors(params.query, { userId, limit: params.limit })
         if (results.length === 0) return textResult('未找到相关记忆')
         return textResult(results.map((r, i) => `[${i + 1}] (相关度: ${(r.score * 100).toFixed(0)}%)\n- ${r.memory_date.slice(5)}: ${r.content}`).join('\n\n---\n\n'))
       }
@@ -370,18 +390,19 @@ export function getBuiltinToolMap(): Map<string, AgentTool> {
       description: '记住一条长期记忆：把一句事实、偏好或承诺写入记忆库（含语义向量），重复内容自动忽略。用于需要长期记住的信息。',
       parameters: Type.Object({
         content: Type.String({ description: '要记住的内容，一句完整、独立、可检索的话' }),
-        user_id: Type.Optional(Type.String({ description: '微信用户 ID，不传则使用唯一用户' })),
         memory_date: Type.Optional(Type.String({ description: '记忆归属的北京日期 YYYY-MM-DD，不传则默认今天' }))
       }),
-      execute: async (_toolCallId: string, params: { content: string; user_id?: string; memory_date?: string }) => {
-        const content = (params.content || '').trim()
-        if (content.length < 2) return textResult('记忆内容过短或为空，请提供一句完整的话。')
-        const userId = params.user_id || resolvePrimaryMemoryUser()
-        if (!userId) return textResult('无法确定用户 ID，请传入 user_id。')
+      execute: async (_toolCallId: string, params: { content: string; memory_date?: string }) => {
+        // 内容校验只在 addMemory 一处（两条写入路径共用）；这里只把结果翻译成给模型看的话
+        const userId = resolveMemoryUser()
+        if (!userId) return textResult('无法确定当前用户，暂时无法写入记忆。')
         const memoryDate = params.memory_date || getMemoryDate(new Date())
+        const content = params.content || ''
         const res = await addMemory(userId, content, memoryDate)
-        if (res.status === 'duplicate') return textResult(`已存在同内容记忆，未重复添加：${content}`)
-        return textResult(res.vectorOk ? `已记住：${content}` : `已记住：${content}（向量库写入失败，仅存入数据库）`)
+        if (res.status === 'invalid') return textResult('记忆内容过短或为空，请提供一句完整的话。')
+        if (res.status === 'duplicate') return textResult(`已存在同内容记忆，未重复添加：${content.trim()}`)
+        const stored = stripUserIds(content.trim(), userId)
+        return textResult(res.vectorOk ? `已记住：${stored}` : `已记住：${stored}（向量库写入失败，仅存入数据库）`)
       }
     }
   ] as unknown as AgentTool[]

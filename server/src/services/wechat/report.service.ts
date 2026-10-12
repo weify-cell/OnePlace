@@ -193,6 +193,7 @@ export async function generateReport(
     agentId: wechatTaskAgentId('report', `${type}:${userId}`),
     systemPrompt,
     userContent,
+    memoryUserId: userId,
     ephemeral: true,
     ...getILinkModel(),
   })

@@ -53,9 +53,34 @@ export function getBeijingDateAfter(days: number, now: Date = new Date()): strin
   return shifted.toISOString().slice(0, 10)
 }
 
+/**
+ * 北京日期字符串向后偏移 days 天（YYYY-MM-DD 进、YYYY-MM-DD 出）。
+ *
+ * 与上面的区别：输入已经是日期字符串（比如库里存的整理进度），不需要先变成 Date。
+ */
+export function shiftBeijingDate(date: string, days: number): string {
+  const [year, month, day] = date.split('-').map(Number)
+  return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10)
+}
+
 /** 北京小时（0-23），用于免打扰时段等判断 */
 export function getBeijingHour(now: Date = new Date()): number {
   return toBeijingDate(now).getUTCHours()
+}
+
+/**
+ * 北京某一天的时间窗口 `[当天 00:00, 次日 00:00)`，以 UTC ISO 字符串返回。
+ *
+ * 库里 `created_at` 存 UTC，按天取数时不能拿当日 00:00 直接比较——先在这里
+ * 把「北京日界」换算成 UTC 时刻，调用处就不必再自己减 8 小时。
+ */
+export function getBeijingDayWindow(date: string): { start: string; end: string } {
+  const [year, month, day] = date.split('-').map(Number)
+  const startMs = Date.UTC(year, month - 1, day) - BEIJING_OFFSET_MS
+  return {
+    start: new Date(startMs).toISOString(),
+    end: new Date(startMs + 86400000).toISOString()
+  }
 }
 
 /** 人类可读北京时间：[YYYY/MM/DD HH:mm:ss 星期X 北京时间]，用于注入对话/报告的上下文 */

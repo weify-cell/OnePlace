@@ -2,7 +2,7 @@ import type { StreamFn, AgentTool, AgentMessage } from '@earendil-works/pi-agent
 import type { Model, Message } from '@earendil-works/pi-ai'
 import { listTools } from '../tool-config.service.js'
 import { getEnabledSkills } from '../skill-config.service.js'
-import { getBuiltinToolMap } from './builtin-tools.js'
+import { getBuiltinToolMap, type ToolContext } from './builtin-tools.js'
 import { Agent } from '@earendil-works/pi-agent-core'
 
 /**
@@ -65,8 +65,8 @@ export class AgentPool {
 }
 
 /** 从 DB 加载启用的工具，匹配内置 execute 函数 */
-export function loadToolsFromDb(): AgentTool[] {
-  const builtinMap = getBuiltinToolMap()
+export function loadToolsFromDb(ctx: ToolContext = {}): AgentTool[] {
+  const builtinMap = getBuiltinToolMap(ctx)
   const dbTools = listTools().filter(t => t.enabled)
   const result: AgentTool[] = []
 

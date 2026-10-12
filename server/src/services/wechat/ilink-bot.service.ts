@@ -343,6 +343,7 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
           agentId: wechatAgentId(msg.userId),
           systemPrompt,
           userContent: userText,
+          memoryUserId: msg.userId,
           history: () => historyLoader(msg.userId),
           onEvent,
           ...getILinkModel()

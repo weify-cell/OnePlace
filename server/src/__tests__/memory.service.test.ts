@@ -161,14 +161,14 @@ describe('addMemory', () => {
 })
 
 describe('buildMemoryPrompt', () => {
-  it('近30天附记包含记忆与用户ID；无记忆返回空串', () => {
+  it('近30天附记包含记忆；不再注入用户ID（归属由服务端注入）；无记忆返回空串', () => {
     const db = connectDatabase()
     db.prepare('DELETE FROM wechat_memories').run()
     saveMemory('u1', '用户喝美式', getMemoryDate(new Date()))
     const p = buildMemoryPrompt('u1')
     expect(p).toContain('## 记忆（近30天）')
-    expect(p).toContain('当前用户微信ID：u1')
     expect(p).toContain('用户喝美式')
+    expect(p).not.toContain('当前用户微信ID')
     expect(buildMemoryPrompt('u2')).toBe('')
   })
 })

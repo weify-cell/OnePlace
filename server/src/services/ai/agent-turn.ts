@@ -22,6 +22,8 @@ export interface AgentTurnRequest {
   userContent: string
   /** 历史消息加载器；仅在 agent 首次创建时调用 */
   history?: () => ChatMessage[]
+  /** 本回合对话所属的微信用户；记忆读写靠它定位归属（Web 对话层不传，单用户部署回退唯一用户） */
+  memoryUserId?: string
   /** 回合结束后销毁该 agent（一次性任务型回合用） */
   ephemeral?: boolean
   /** 模型覆盖；省略则取默认提供商/模型设置 */
@@ -111,7 +113,7 @@ export async function runAgentTurn(req: AgentTurnRequest): Promise<string> {
   const agent = pool.getOrCreate(req.agentId, () => convertMessages(req.history?.() ?? []))
 
   // 每个回合都重新装载工具与提示词，管理页的启停/编辑即时生效
-  agent.state.tools = loadToolsFromDb()
+  agent.state.tools = loadToolsFromDb({ memoryUserId: req.memoryUserId })
   agent.state.systemPrompt = req.systemPrompt
 
   let reply = ''

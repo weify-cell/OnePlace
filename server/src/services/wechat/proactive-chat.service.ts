@@ -102,6 +102,7 @@ async function generateProactiveMessage(userId: string): Promise<string> {
       agentId: wechatTaskAgentId('proactive', userId),
       systemPrompt,
       userContent: `${timestamp} ${userMessage}`,
+      memoryUserId: userId,
       ephemeral: true,
       ...getILinkModel(),
     })

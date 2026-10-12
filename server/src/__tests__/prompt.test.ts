@@ -171,6 +171,34 @@ describe('resolvePromptSettings — 设置页与运行时同源（不变式）',
   })
 })
 
+describe('记忆整理的提示词：去噪规则与归属', () => {
+  it('系统提示词写明三类不该进记忆的内容', async () => {
+    const p = await buildSystemPrompt({ kind: 'memory' })
+    // 实测噪声的来源：助手自身行为、待办状态变更、正文里嵌用户 ID（184/210 条中招）
+    expect(p).toContain('助手自己')
+    expect(p).toContain('待办')
+    expect(p).toContain('微信 ID')
+  })
+
+  it('系统提示词不再让模型传 user_id（归属改由服务端注入）', async () => {
+    await expect(buildSystemPrompt({ kind: 'memory' })).resolves.not.toContain('user_id')
+  })
+
+  it('默认用户消息模板不再要求传 user_id，也不再提供用户 ID 变量', () => {
+    const c = buildMemoryUserContent({
+      beijingTime: '[2026/10/12 00:30:00 星期一 北京时间]',
+      userId: 'u1',
+      memoryDate: '2026-10-11',
+      recordCount: '1',
+      transcript: '用户: 你好'
+    })
+    expect(c).not.toContain('user_id')
+    expect(c).not.toContain('u1')
+    expect(c).toContain('2026-10-11')
+    expect(c).toContain('用户: 你好')
+  })
+})
+
 describe('buildMemoryUserContent', () => {
   it('注入全部变量', () => {
     const content = buildMemoryUserContent({
@@ -181,8 +209,8 @@ describe('buildMemoryUserContent', () => {
       transcript: '用户: 你好',
       recentMemories: ''
     })
-    expect(content).toContain('u1')
     expect(content).toContain('2026-09-10')
+    expect(content).toContain('3')
     expect(content).toContain('用户: 你好')
     expect(content).not.toContain('{')
   })
@@ -193,7 +221,7 @@ describe('buildMemoryUserContent', () => {
   })
 
   it('默认模板来自唯一来源（prompt-defaults）', () => {
-    expect(DEFAULT_MEMORY_USER_TEMPLATE).toContain('{userId}')
+    expect(DEFAULT_MEMORY_USER_TEMPLATE).toContain('{memoryDate}')
     expect(DEFAULT_MEMORY_USER_TEMPLATE).toContain('{recordCount}')
   })
 })

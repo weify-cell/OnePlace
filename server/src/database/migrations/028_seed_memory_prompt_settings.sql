@@ -1,6 +1,11 @@
 -- v2.4 seed-memory-prompt-settings
--- 记忆整理可配置项：system prompt 与用户消息模板（微信 Bot 设置页「记忆整理」tab 可编辑）
-INSERT OR IGNORE INTO settings (key, value, description) VALUES
-('ilink_memory_system_prompt', '"你是一个记忆整理助手。请从对话中抽取值得长期记住的信息，包括：用户的个人信息、偏好、正在进行的项目/任务、做出的承诺、重要事件等。\n\n## 写入方式\n- 对每一条抽取出的记忆，调用一次 add_memory 工具写入。\n- add_memory 参数：content（一条记忆内容）、user_id（当前用户微信ID）、memory_date（本次整理日期）。\n- 逐条调用：一条记忆一次调用，不要合并、不要省略。\n- 只基于对话内容抽取，不得编造或推断。\n- 如果对话中没有值得长期记住的内容，不调用 add_memory。\n- 不要以文本形式输出记忆列表，所有记忆一律通过 add_memory 工具写入。"', '记忆整理 agent 的系统提示词（每晚整理对话时使用）'),
-('ilink_memory_user_template', '"{beijingTime}\n当前用户微信ID：{userId}。本次整理日期（昨天）：{memoryDate}。\n请整理昨日（{memoryDate}）的对话记忆，逐条调用 add_memory 工具写入（content、user_id、memory_date 三个参数都要传）。\n昨日共 {recordCount} 条聊天记录：\n{transcript}\n{recentMemories}"', '记忆整理的用户消息模板，占位符：{beijingTime} {userId} {memoryDate} {recordCount} {transcript} {recentMemories}');
+-- 记忆整理的两份提示词（system prompt 与用户消息模板）**不再种进 settings**。
+--
+-- 原文件把两份提示词用 JSON 字面量种进 settings，而 settings 值会遮蔽代码默认值
+-- （`prompt.ts` 走 setting(key, DEFAULT_…)）。后果是：提示词改进只在 prompt-defaults.ts
+-- 里做的话，对新装环境完全生效不了——模型运行的仍是这里种下的旧文本。
+-- 代码默认值 `DEFAULT_MEMORY_SYSTEM_PROMPT` / `DEFAULT_MEMORY_USER_TEMPLATE` 是唯一出处；
+-- 设置页需要用户自定义时会把值写回 settings，届时才产生覆盖。
+--
+-- 本文件保留为迁移记录（已应用到既有库），对既有库不再有任何作用。
 SELECT '028_seed_memory_prompt_settings done' as status;

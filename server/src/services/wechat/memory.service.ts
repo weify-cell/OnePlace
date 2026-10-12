@@ -1,13 +1,13 @@
 import { connectDatabase } from '../../database/index.js'
 import { getSettingValue } from '../settings.service.js'
-import { getReportWindow, queryChatRecords, buildTranscript } from './report.service.js'
-import { getWeChatUsers } from './users.service.js'
+import { queryChatRecords, buildTranscript } from './report.service.js'
+import { getWeChatUsers, getMemoryConsolidatedDate, setMemoryConsolidatedDate } from './users.service.js'
 import { getILinkModel } from './model.js'
 import { withInflight } from '../../utils/inflight.js'
 import type { SubsystemJob } from './scheduler.js'
-import { runAgentTurn, wechatTaskAgentId } from '../ai/agent-turn.js'
+import { runAgentTurn, wechatTaskAgentId, type AgentTurnRequest } from '../ai/agent-turn.js'
 import { buildMemoryUserContent, buildSystemPrompt } from '../ai/prompt.js'
-import { formatBeijingTime, getBeijingDate, toBeijingDate } from '../../utils/time.js'
+import { formatBeijingTime, getBeijingDate, getBeijingDateAfter, getBeijingDayWindow, shiftBeijingDate, toBeijingDate } from '../../utils/time.js'
 import { embedText } from '../ai/embedding-client.js'
 import { upsertChunks, searchChunks } from '../vector/vector.service.js'
 
@@ -80,6 +80,30 @@ export function resolvePrimaryMemoryUser(): string | null {
   return users.length === 1 ? users[0] : null
 }
 
+/**
+ * 去掉正文里的用户 ID 痕迹。
+ *
+ * 模型会把提示词里的「当前用户微信ID」写进记忆正文，而且写成 `（o9cq80...）`
+ * 这种缩写形式（全库 184/210 条中招）。提示词已不再把 ID 交给模型，
+ * 这里再做一道服务端清理，保证落库的正文干净、检索与注入不被噪声污染。
+ */
+export function stripUserIds(content: string, userId: string): string {
+  const bare = userId.includes('@') ? userId.slice(0, userId.indexOf('@')) : userId
+  /** 括号里的内容是不是这个用户（或其可辨识前缀，允许省略号收尾） */
+  const looksLikeId = (inner: string): boolean => {
+    const t = inner.replace(/[.．。…\s]+$/g, '').trim()
+    if (t.length < 4) return false
+    return userId.startsWith(t) || bare.startsWith(t) || t === userId || t === bare
+  }
+  let out = content.replace(/（([^（）]*)）|\(([^()]*)\)/g, (match, full: string, ascii: string) =>
+    looksLikeId(full ?? ascii ?? '') ? '' : match
+  )
+  for (const id of [userId, bare]) {
+    if (id) out = out.split(id).join('')
+  }
+  return out.replace(/[ \t]{2,}/g, ' ').trim()
+}
+
 /** 统计某用户某日已落库条数（用于整理后 saved 差值）。 */
 function countMemories(userId: string, memoryDate: string): number {
   const db = connectDatabase()
@@ -98,9 +122,8 @@ export function buildMemoryPrompt(userId: string): string {
   const lines = items.map(m => `- ${m.memory_date.slice(5)}: ${m.content}`)
   return [
     '## 记忆（近30天）',
-    `当前用户微信ID：${userId}`,
     ...lines,
-    '检索记忆时请使用 search_memory / search_memory_vectors 工具并传入当前用户微信ID。'
+    '检索旧记忆时调用 search_memory / search_memory_vectors 工具即可，不需要传用户 ID。'
   ].join('\n')
 }
 
@@ -125,17 +148,28 @@ async function upsertMemoryVector(userId: string, memoryId: number, content: str
   if (!result.success) throw new Error(result.error || 'memory vector upsert failed')
 }
 
-/** 单条记忆写入口（add_memory 工具调用）：落库→新增才写向量。重复内容返回 duplicate 不写向量。 */
+/** 内容最短长度：低于此长度的内容不是「一句完整、独立、可检索的话」 */
+const MIN_CONTENT_LENGTH = 2
+
+/**
+ * 单条记忆写入口（add_memory 工具调用）：落库→新增才写向量。
+ *
+ * 对话中的即时写入与每晚整理都走这里——校验、归一化、去重只此一处，
+ * 不在工具层再抄一份（抄两份就会有一份先腐）。
+ * 返回 `invalid` 表示内容不合格（空白、过短，或去掉 ID 痕迹后所剩无几）。
+ */
 export async function addMemory(
   userId: string,
   content: string,
   memoryDate: string
-): Promise<{ status: 'new' | 'duplicate'; vectorOk: boolean; memoryId: number }> {
-  const id = saveMemory(userId, content, memoryDate)
+): Promise<{ status: 'new' | 'duplicate' | 'invalid'; vectorOk: boolean; memoryId: number }> {
+  const cleaned = stripUserIds((content || '').trim(), userId)
+  if (cleaned.length < MIN_CONTENT_LENGTH) return { status: 'invalid', vectorOk: false, memoryId: 0 }
+  const id = saveMemory(userId, cleaned, memoryDate)
   if (id === 0) return { status: 'duplicate', vectorOk: false, memoryId: 0 }
   let vectorOk = true
   try {
-    await upsertMemoryVector(userId, id, content, memoryDate)
+    await upsertMemoryVector(userId, id, cleaned, memoryDate)
   } catch (err) {
     vectorOk = false
     console.error(`[memory] vector upsert failed for memory #${id}:`, err)
@@ -173,19 +207,42 @@ export async function searchMemoryVectors(
 
 /** 并发去重：同一用户同时只允许一个整理在跑（由 delivery 的 withInflight 实现）。 */
 
-/** 整理某用户昨天对话：抽取记忆→由 agent 逐条调用 add_memory 工具写入。静默执行，不发送微信消息。 */
-export async function consolidateDayMemory(userId: string): Promise<{ saved: number }> {
-  const now = new Date()
-  // 00:30 整理的是刚结束的「昨天」全天：[昨天北京 00:00, 今天北京 00:00)，memory_date 标为昨天。
-  const todayStart = getReportWindow('daily', now).start // 今天北京 00:00（UTC）
-  const window = {
-    start: new Date(new Date(todayStart).getTime() - 86400000).toISOString(), // 昨天北京 00:00
-    end: todayStart
+/** 整理一轮的内容由调用方注入：LLM 是系统边界，测试可换掉而不必 mock 自家模块。 */
+export type MemoryTurnRunner = (req: AgentTurnRequest) => Promise<string>
+
+/**
+ * 该补哪几天的整理：从「上次成功的次日」到昨天，逐日一天。
+ *
+ * 整理窗口只有 [00:30, 00:31] 两分钟，服务当时没跑就会漏掉那天；
+ * 有了这个函数，错过的那天会在下一次成功到点时补上，而不是永久丢失。
+ * 从未成功过时只补昨天——不回溯全部历史（早期的日子不属于「漏掉」，
+ * 且一次性回溯几十天会突然拉满模型用量）。
+ */
+export function pendingConsolidationDates(lastConsolidated: string | null, now: Date): string[] {
+  const yesterday = getBeijingDateAfter(-1, now)
+  const dates: string[] = []
+  let cursor = lastConsolidated ? shiftBeijingDate(lastConsolidated, 1) : yesterday
+  while (cursor <= yesterday) {
+    dates.push(cursor)
+    cursor = shiftBeijingDate(cursor, 1)
   }
-  const memoryDate = getMemoryDate(new Date(now.getTime() - 86400000)) // 昨天
-  const records = queryChatRecords(userId, window)
+  return dates
+}
+
+/**
+ * 整理某用户某一日的对话：抽取记忆→由 agent 逐条调用 add_memory 工具写入。
+ *
+ * 默认整理「昨天」（00:30 到点时的常规目标）；补跑时由调用方显式指定目标日。
+ * 静默执行，不发送微信消息。
+ */
+export async function consolidateDayMemory(
+  userId: string,
+  memoryDate: string = getBeijingDateAfter(-1, new Date()),
+  runTurn: MemoryTurnRunner = runAgentTurn
+): Promise<{ saved: number }> {
+  const records = queryChatRecords(userId, getBeijingDayWindow(memoryDate))
   if (records.length === 0) {
-    console.log(`[memory] no messages yesterday for ${userId}, skip`)
+    console.log(`[memory] no messages on ${memoryDate} for ${userId}, skip`)
     return { saved: 0 }
   }
 
@@ -205,16 +262,39 @@ export async function consolidateDayMemory(userId: string): Promise<{ saved: num
 
   // 写库由 agent 在 loop 内调用 add_memory 工具完成；saved 用 (user, memory_date) 行数差值统计
   const before = countMemories(userId, memoryDate)
-  await runAgentTurn({
+  await runTurn({
     agentId: wechatTaskAgentId('memory', `consolidate:${userId}`),
     systemPrompt,
     userContent,
+    memoryUserId: userId,
     ephemeral: true,
     ...getILinkModel(),
   })
   const saved = countMemories(userId, memoryDate) - before
-  console.log(`[memory] consolidated ${userId}: saved=${saved}`)
+  console.log(`[memory] consolidated ${userId} ${memoryDate}: saved=${saved}`)
   return { saved }
+}
+
+/**
+ * 把欠下的整理一次性补齐（通常只有昨天一天）。
+ *
+ * 每一天处理完才记账：中途抛错不记账，于是下次运行仍会重试那天——
+ * 「已整理」这个事实只由成功来写成。
+ */
+export async function consolidatePendingMemories(
+  userId: string,
+  runTurn: MemoryTurnRunner = runAgentTurn
+): Promise<{ days: number; saved: number }> {
+  const dates = pendingConsolidationDates(getMemoryConsolidatedDate(userId), new Date())
+  if (dates.length > 1) {
+    console.log(`[memory] catching up ${dates.length} days for ${userId}: ${dates[0]}..${dates[dates.length - 1]}`)
+  }
+  let saved = 0
+  for (const date of dates) {
+    saved += (await consolidateDayMemory(userId, date, runTurn)).saved
+    setMemoryConsolidatedDate(userId, date)
+  }
+  return { days: dates.length, saved }
 }
 
 // ── 调度 ──────────────────────────────────────────────────
@@ -236,7 +316,7 @@ export async function checkAndConsolidateMemories(): Promise<void> {
   for (const userId of getWeChatUsers()) {
     try {
       // 已有同 key 任务在跑时 withInflight 返回 undefined（跳过本轮）
-      await withInflight(`memory:${userId}`, () => consolidateDayMemory(userId))
+      await withInflight(`memory:${userId}`, () => consolidatePendingMemories(userId))
     } catch (err) {
       console.error(`[memory] consolidate failed for ${userId}:`, err)
     }
