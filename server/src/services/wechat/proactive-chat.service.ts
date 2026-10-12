@@ -1,13 +1,14 @@
 import { getSettingValue } from '../settings.service.js'
-import { addMessageToHistory, isUserInLearningMode } from './ilink-bot.service.js'
+import { addMessageToHistory, getMessageHistory, isUserInLearningMode } from './ilink-bot.service.js'
 import { DEFAULT_PROACTIVE_USER_MESSAGE } from '../prompt-defaults.js'
 import { formatBeijingTime, getBeijingHour } from '../../utils/time.js'
 import { getWeChatUsers, getUserLastActiveTime } from './users.service.js'
 import { isJobRunning, restartJob, type SubsystemJob } from './scheduler.js'
-import { runAgentTurn, wechatTaskAgentId } from '../ai/agent-turn.js'
+import { runAgentTurn, wechatTaskAgentId, type AgentTurnRequest } from '../ai/agent-turn.js'
 import { buildSystemPrompt } from '../ai/prompt.js'
 import { getILinkModel } from './model.js'
 import { getLastSentAt, isDeliveryReady, markSentAt, sendToUser } from './delivery.js'
+import type { ChatMessage } from '../ai/pi-ai.adapter.js'
 
 /**
  * 主动聊天子系统作业描述。
@@ -87,25 +88,33 @@ function hasMinIntervalPassed(userId: string, minIntervalMinutes: number): boole
   return (Date.now() - lastSent) >= minIntervalMinutes * 60 * 1000
 }
 
-async function generateProactiveMessage(userId: string): Promise<string> {
+/**
+ * 主动聊天这一轮要发出去的内容。
+ *
+ * 与 bot 对话同构：共享回合接缝、动态加载工具、多轮工具调用——**并且带同一份聊天历史**。
+ * 以前不带历史（只有系统提示词 + 触发指令），于是它每次都得靠 `search_memory` 去捞
+ * 才知遒最近聊过什么；带的代价是它会把上一轮的内容当真上下文，而那正是想要的。
+ * 独立 agent id 避免污染 bot 的对话上下文（`ephemeral` 保证每次从 DB 历史重建）。
+ */
+export async function buildProactiveTurn(userId: string): Promise<AgentTurnRequest> {
   // 人设 + 工具指引 + 技能由 ai/prompt.ts 统一拼装
   const systemPrompt = await buildSystemPrompt({ kind: 'proactive' })
-
   // 触发指令，附加北京时间戳
   const userMessage = getSettingValue<string>('ilink_proactive_chat_user_message', DEFAULT_PROACTIVE_USER_MESSAGE)
+  return {
+    agentId: wechatTaskAgentId('proactive', userId),
+    systemPrompt,
+    userContent: `${formatBeijingTime()} ${userMessage}`,
+    history: () => getMessageHistory(userId) as ChatMessage[],
+    memoryUserId: userId,
+    ephemeral: true,
+    ...getILinkModel(),
+  }
+}
 
+async function generateProactiveMessage(userId: string): Promise<string> {
   try {
-    const timestamp = formatBeijingTime()
-    // 走完整 agent loop（与 bot 同构：共享回合接缝、动态工具加载、多轮工具调用）
-    // 独立 agent id 避免污染 bot 的对话上下文；ephemeral 保证每次从 DB 历史重建
-    const content = await runAgentTurn({
-      agentId: wechatTaskAgentId('proactive', userId),
-      systemPrompt,
-      userContent: `${timestamp} ${userMessage}`,
-      memoryUserId: userId,
-      ephemeral: true,
-      ...getILinkModel(),
-    })
+    const content = await runAgentTurn(await buildProactiveTurn(userId))
     return content || pickDefaultMessage()
   } catch (error) {
     console.error('[proactive] failed to generate message:', error)
