@@ -4,7 +4,7 @@ import { getNotes, searchNoteLines, getNoteLines } from '../notes.service.js'
 import { getTodos, getTodoById, createTodo, updateTodo, updateTodoProgress, getTodoProgressLogs, deleteTodo } from '../todos.service.js'
 import { getFolders } from '../folders.service.js'
 import { searchKnowledgeBase } from '../knowledge-base.service.js'
-import { searchMemories, searchMemoryVectors, addMemory, resolvePrimaryMemoryUser, stripUserIds, getMemoryDate } from '../wechat/memory.service.js'
+import { searchMemories, searchMemoryVectors, addMemory, resolvePrimaryMemoryUser, stripUserIds, isMemoryKind, getMemoryDate } from '../wechat/memory.service.js'
 import { formatBeijingTime, getBeijingDateTimeSec } from '../../utils/time.js'
 
 function textResult(text: string): AgentToolResult<undefined> {
@@ -387,22 +387,31 @@ export function getBuiltinToolMap(ctx: ToolContext = {}): Map<string, AgentTool>
     {
       name: 'add_memory',
       label: '记住记忆',
-      description: '记住一条长期记忆：把一句事实、偏好或承诺写入记忆库（含语义向量），重复内容自动忽略。用于需要长期记住的信息。',
+      description: '记住一条长期记忆（含语义向量），重复内容自动忽略。写入时要声明记忆类型：状态型(state)=会被新值取代的当前状态（进度、约定、偏好），必须给主题键 topic；事件型(event)=某天发生了什么，只随时间退场。',
       parameters: Type.Object({
         content: Type.String({ description: '要记住的内容，一句完整、独立、可检索的话' }),
+        kind: Type.Optional(Type.String({ description: '记忆类型: state=状态型（会被同主题新值取代）/ event=事件型（随时间退场）' })),
+        topic: Type.Optional(Type.String({ description: '状态型的主题键，如「阅读进度:习惯的力量」「习惯:冥想时间」；同键新值会取代旧值。事件型不需要' })),
         memory_date: Type.Optional(Type.String({ description: '记忆归属的北京日期 YYYY-MM-DD，不传则默认今天' }))
       }),
-      execute: async (_toolCallId: string, params: { content: string; memory_date?: string }) => {
+      execute: async (_toolCallId: string, params: { content: string; kind?: string; topic?: string; memory_date?: string }) => {
         // 内容校验只在 addMemory 一处（两条写入路径共用）；这里只把结果翻译成给模型看的话
         const userId = resolveMemoryUser()
         if (!userId) return textResult('无法确定当前用户，暂时无法写入记忆。')
         const memoryDate = params.memory_date || getMemoryDate(new Date())
         const content = params.content || ''
-        const res = await addMemory(userId, content, memoryDate)
+        const res = await addMemory(userId, content, memoryDate, {
+          kind: isMemoryKind(params.kind) ? params.kind : undefined,
+          topic: params.topic
+        })
         if (res.status === 'invalid') return textResult('记忆内容过短或为空，请提供一句完整的话。')
         if (res.status === 'duplicate') return textResult(`已存在同内容记忆，未重复添加：${content.trim()}`)
         const stored = stripUserIds(content.trim(), userId)
-        return textResult(res.vectorOk ? `已记住：${stored}` : `已记住：${stored}（向量库写入失败，仅存入数据库）`)
+        // 只在真的取代了旧值时提一句（没取代却宣称取代，会让模型以为主题键对上了）
+        const supersedeNote = res.superseded > 0 ? `（已取代同主题旧值 ${res.superseded} 条）` : ''
+        return textResult(res.vectorOk
+          ? `已记住：${stored}${supersedeNote}`
+          : `已记住：${stored}${supersedeNote}（向量库写入失败，仅存入数据库）`)
       }
     }
   ] as unknown as AgentTool[]

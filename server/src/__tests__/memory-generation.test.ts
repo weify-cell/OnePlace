@@ -182,4 +182,18 @@ describe('整理补跑', () => {
     expect(res.days).toBe(1)
     expect(getMemoryConsolidatedDate(USER)).toBe('2026-10-11')
   })
+
+  it('已有记忆带上类型与主题键——否则模型每晚都会发明新拼法，取代永远不触发', async () => {
+    insertMessage('10-11 聊阅读进度', '2026-10-11T04:00:00.000Z')
+    setMemoryConsolidatedDate(USER, '2026-10-10')
+    await addMemory(USER, '阅读进度 75%', '2026-10-10', { kind: 'state', topic: '阅读进度:习惯的力量' })
+    await addMemory(USER, '用户 10-01 去过医院', '2026-10-01', { kind: 'event' })
+
+    const captured: string[] = []
+    await consolidatePendingMemories(USER, fakeTurn(captured))
+
+    const input = captured.join('\n')
+    expect(input).toContain('[状态型|阅读进度:习惯的力量]') // 主题键原样出现在已有记忆列表里
+    expect(input).toContain('[事件型]')
+  })
 })

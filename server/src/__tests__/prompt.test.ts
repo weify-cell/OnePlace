@@ -197,6 +197,14 @@ describe('记忆整理的提示词：去噪规则与归属', () => {
     expect(c).toContain('2026-10-11')
     expect(c).toContain('用户: 你好')
   })
+
+  it('系统提示词写明类型与主题键：状态型必须带主题、状态归并且不重复叙述', async () => {
+    const p = await buildSystemPrompt({ kind: 'memory' })
+    expect(p).toContain('kind')
+    expect(p).toContain('topic')
+    expect(p).toContain('取代')
+    expect(p).toContain('没有变化')
+  })
 })
 
 describe('buildMemoryUserContent', () => {

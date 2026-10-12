@@ -88,6 +88,51 @@ describe('记忆工具的归属由服务端注入', () => {
     expect(text).toContain('过短')
   })
 
+  it('参数表里有类型与主题（供模型声明状态型/事件型）', () => {
+    const schema = getBuiltinToolMap().get('add_memory')!.parameters as { properties: Record<string, unknown> }
+    expect(Object.keys(schema.properties)).toEqual(expect.arrayContaining(['kind', 'topic']))
+  })
+
+  it('状态型：带主题写入，同主题新值取代旧值', async () => {
+    saveWeChatUser('u1')
+    const tool = getBuiltinToolMap({ memoryUserId: 'u1' }).get('add_memory')!
+
+    await tool.execute('call-1', { content: '阅读进度 75%', kind: 'state', topic: '阅读进度:习惯的力量' })
+    await tool.execute('call-2', { content: '阅读进度 85%', kind: 'state', topic: '阅读进度:习惯的力量' })
+
+    const rows = connectDatabase()
+      .prepare('SELECT content, kind, topic, archived_at FROM wechat_memories ORDER BY id')
+      .all() as Array<{ content: string; kind: string; topic: string; archived_at: string | null }>
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toMatchObject({ kind: 'state', topic: '阅读进度:习惯的力量', archived_at: expect.any(String) })
+    expect(rows[1]).toMatchObject({ content: '阅读进度 85%', archived_at: null })
+  })
+
+  it('未知的类型值被忽略，不阻断写入', async () => {
+    saveWeChatUser('u1')
+    const tool = getBuiltinToolMap({ memoryUserId: 'u1' }).get('add_memory')!
+
+    await tool.execute('call-1', { content: '用户睡前跑五公里', kind: '不知道什么型' })
+
+    const row = connectDatabase().prepare('SELECT kind FROM wechat_memories').get() as { kind: string | null }
+    expect(row.kind).toBeNull()
+  })
+
+  it('只有真的取代了旧值时才在答复里说取代（否则会误导模型以为主题键对上了）', async () => {
+    saveWeChatUser('u1')
+    const tool = getBuiltinToolMap({ memoryUserId: 'u1' }).get('add_memory')!
+
+    const first = resultText(await tool.execute('call-1', {
+      content: '阅读进度 75%', kind: 'state', topic: '阅读进度:习惯的力量'
+    }))
+    const second = resultText(await tool.execute('call-2', {
+      content: '阅读进度 85%', kind: 'state', topic: '阅读进度:习惯的力量'
+    }))
+
+    expect(first).not.toContain('取代')
+    expect(second).toContain('取代')
+  })
+
   it('search_memory 只检索本回合用户，不跨用户', async () => {
     const today = getMemoryDate(new Date())
     saveMemory('u1', '用户喜欢美式咖啡', today)

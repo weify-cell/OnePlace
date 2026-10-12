@@ -9,7 +9,7 @@ import { runAgentTurn, wechatTaskAgentId, type AgentTurnRequest } from '../ai/ag
 import { buildMemoryUserContent, buildSystemPrompt } from '../ai/prompt.js'
 import { formatBeijingTime, getBeijingDate, getBeijingDateAfter, getBeijingDayWindow, shiftBeijingDate, toBeijingDate } from '../../utils/time.js'
 import { embedText } from '../ai/embedding-client.js'
-import { upsertChunks, searchChunks } from '../vector/vector.service.js'
+import { upsertChunks, searchChunks, deleteChunks } from '../vector/vector.service.js'
 
 /** 北京日期 YYYY-MM-DD。 */
 export function getMemoryDate(now: Date): string {
@@ -28,19 +28,55 @@ export interface MemoryRow {
   content: string
   memory_date: string
   created_at: string
+  /** state=状态型（会被新值取代）/ event=事件型（随时间退场）/ null=未分类（历史数据） */
+  kind: MemoryKind | null
+  topic: string | null
+  superseded_by: number | null
+  last_hit_at: string | null
+  archived_at: string | null
+}
+
+/** 写入时可选的记忆模型信息（由模型在 add_memory 时提供）。 */
+export interface MemoryWriteOptions {
+  /** 状态型=会被同主题的新值取代；事件型=只随时间退场 */
+  kind?: MemoryKind
+  /** 状态型的主题键（如「阅读进度:习惯的力量」） */
+  topic?: string
+}
+
+/** 记忆类型：状态型会被同主题新值取代，事件型只随时间退场。 */
+export type MemoryKind = 'state' | 'event'
+
+/** 值是不是合法的记忆类型（模型给的值不可信，要先窄化再落库）。 */
+export function isMemoryKind(value: unknown): value is MemoryKind {
+  return value === 'state' || value === 'event'
+}
+
+/** 归一化写入选项：未知 kind 丢弃；状态型缺主题则告警（它不会参与取代）。 */
+function normalizeWriteOptions(opts: MemoryWriteOptions): MemoryWriteOptions {
+  const kind = isMemoryKind(opts.kind) ? opts.kind : undefined
+  if (opts.kind && !kind) console.warn(`[memory] 未知的 kind「${opts.kind}」已忽略`)
+  const topic = (opts.topic || '').trim() || undefined
+  if (kind === 'state' && !topic) console.warn('[memory] 状态型记忆缺少主题键，将不参与取代')
+  return { kind, topic }
 }
 
 /** 落一条记忆；UNIQUE(user_id, content) 去重。返回新插入的 id，重复返回 0。 */
-export function saveMemory(userId: string, content: string, memoryDate: string): number {
+export function saveMemory(
+  userId: string,
+  content: string,
+  memoryDate: string,
+  opts: MemoryWriteOptions = {}
+): number {
   const db = connectDatabase()
   const result = db.prepare(
-    `INSERT OR IGNORE INTO wechat_memories (user_id, content, memory_date) VALUES (?, ?, ?)`
-  ).run(userId, content, memoryDate)
+    `INSERT OR IGNORE INTO wechat_memories (user_id, content, memory_date, kind, topic) VALUES (?, ?, ?, ?, ?)`
+  ).run(userId, content, memoryDate, opts.kind ?? null, opts.topic ?? null)
   // INSERT OR IGNORE 冲突时 changes=0 而 lastInsertRowid 停留在上次值，必须用 changes 判重
   return result.changes === 0 ? 0 : Number(result.lastInsertRowid)
 }
 
-/** 查询某用户记忆。days=近 N 天（含当天），按 memory_date DESC, id DESC。 */
+/** 查询某用户记忆。days=近 N 天（含当天），按 memory_date DESC, id DESC。已归档的不再返回。 */
 export function queryMemories(
   userId: string,
   opts?: { days?: number; limit?: number }
@@ -51,20 +87,20 @@ export function queryMemories(
   const since = getMemoryDate(new Date(Date.now() - (days - 1) * 86400000))
   return db.prepare(
     `SELECT * FROM wechat_memories
-     WHERE user_id = ? AND memory_date >= ?
+     WHERE user_id = ? AND memory_date >= ? AND archived_at IS NULL
      ORDER BY memory_date DESC, id DESC
      LIMIT ?`
   ).all(userId, since, limit) as MemoryRow[]
 }
 
-/** 关键词检索（数据库）。 */
+/** 关键词检索（数据库）。已归档的不再返回。 */
 export function searchMemories(
   query: string,
   opts?: { userId?: string; limit?: number }
 ): MemoryRow[] {
   const db = connectDatabase()
   const limit = opts?.limit ?? 10
-  const conditions: string[] = ['instr(content, ?) > 0']
+  const conditions: string[] = ['instr(content, ?) > 0', 'archived_at IS NULL']
   const values: Array<string | number> = [query]
   if (opts?.userId) { conditions.push('user_id = ?'); values.push(opts.userId) }
   values.push(limit)
@@ -134,18 +170,105 @@ function getMemoryCollection(): string {
   return getSettingValue<string>('qdrant_memory_collection', 'oneplace_memory')
 }
 
+/**
+ * 记忆点在向量库里的 id。
+ *
+ * 写入与删除必须同源：两边各写一遍格式，删的时候就会删不掉（那是这套代码里
+ * 已经出现过两次的缺陷类型——写入端只增不删）。
+ */
+function memoryPointId(memoryId: number): string {
+  return `mem${memoryId}`
+}
+
+/** 清掉若干条记忆的向量。失败只记日志：归档已经落库，不该被向量库拖住。 */
+async function deleteMemoryVectors(memoryIds: number[]): Promise<void> {
+  if (memoryIds.length === 0) return
+  try {
+    await deleteChunks(memoryIds.map(memoryPointId), getMemoryCollection())
+  } catch (err) {
+    console.error('[memory] vector delete failed:', err)
+  }
+}
+
+/** 归档/清向量时每批处理多少条 */
+const ARCHIVE_BATCH = 500
+
 /** 给单条记忆条目 embedding 并写入记忆向量库。 */
 async function upsertMemoryVector(userId: string, memoryId: number, content: string, memoryDate: string): Promise<void> {
   const provider = getSettingValue<string>('embedding_provider', 'qwen')
   const model = getSettingValue<string>('embedding_model', 'text-embedding-v4')
   const vector = await embedText(content, provider, model)
   const result = await upsertChunks([{
-    id: `mem${memoryId}`,
+    id: memoryPointId(memoryId),
     vector,
     content,
     metadata: { memory_id: memoryId, user_id: userId, memory_date: memoryDate }
   }], getMemoryCollection())
   if (!result.success) throw new Error(result.error || 'memory vector upsert failed')
+}
+
+/**
+ * 归档若干条记忆（不物理删行）并清掉它们的向量。取代与退场共用这一个原语。
+ * `supersededBy` 非空表示「这组记忆是被那条新记忆取代的」，空表示按年龄退场。
+ * 分批处理：一次拼接上万个 id 既撑请求体，也逼近 SQLite 的绑定变量上限。
+ */
+async function archiveMemories(ids: number[], supersededBy: number | null = null): Promise<number> {
+  if (ids.length === 0) return 0
+  const db = connectDatabase()
+  const archivedAt = new Date().toISOString()
+  for (let i = 0; i < ids.length; i += ARCHIVE_BATCH) {
+    const batch = ids.slice(i, i + ARCHIVE_BATCH)
+    db.prepare(
+      `UPDATE wechat_memories SET archived_at = ?, superseded_by = ?
+       WHERE id IN (${batch.map(() => '?').join(',')})`
+    ).run(archivedAt, supersededBy, ...batch)
+    await deleteMemoryVectors(batch)
+  }
+  return ids.length
+}
+
+/**
+ * 同一用户同一主题的新状态值写入 → 旧值归档并记下被谁取代。
+ *
+ * 归档不物理删行（退场语义见 CONTEXT.md），但要清掉旧值的向量。
+ * 只认 kind='state' 的行：事件型不参与取代，未分类的历史数据也不参与。
+ */
+async function supersedePrevious(userId: string, topic: string, newId: number): Promise<number> {
+  const oldIds = (connectDatabase().prepare(
+    `SELECT id FROM wechat_memories
+     WHERE user_id = ? AND topic = ? AND kind = 'state' AND archived_at IS NULL AND id <> ?`
+  ).all(userId, topic, newId) as Array<{ id: number }>).map(r => r.id)
+  return archiveMemories(oldIds, newId)
+}
+
+/**
+ * 同一内容的历史记忆已被归档（被取代或已退场）时，让它重新成为当前记忆。
+ *
+ * 没有这一步，`UNIQUE(user_id, content)` 会把这条重新出现的事实静默吞掉：
+ * 写入返回 duplicate，而库里那条早已归档、检索也不可见。
+ * kind/topic 作为一对更新（给了 kind 就用新的那对，没给就两个都保持原样，
+ * 否则会出现 kind='event' 却留着状态型旧主题的鬼记录）；
+ * created_at 与 last_hit_at 一起重置为「重新计龄」——否则它会被旧命中时间立即再退场一次。
+ */
+function reviveMemory(
+  userId: string,
+  content: string,
+  opts: { kind?: MemoryKind; topic?: string; memoryDate: string }
+): number {
+  const db = connectDatabase()
+  const row = db.prepare(
+    `SELECT id, kind, topic FROM wechat_memories WHERE user_id = ? AND content = ? AND archived_at IS NOT NULL`
+  ).get(userId, content) as { id: number; kind: MemoryKind | null; topic: string | null } | undefined
+  if (!row) return 0
+  const kind = opts.kind ?? row.kind
+  const topic = opts.kind ? (opts.topic ?? null) : row.topic
+  db.prepare(
+    `UPDATE wechat_memories
+     SET archived_at = NULL, superseded_by = NULL, memory_date = ?, created_at = ?, last_hit_at = NULL,
+         kind = ?, topic = ?
+     WHERE id = ?`
+  ).run(opts.memoryDate, new Date().toISOString(), kind, topic, row.id)
+  return row.id
 }
 
 /** 内容最短长度：低于此长度的内容不是「一句完整、独立、可检索的话」 */
@@ -154,30 +277,68 @@ const MIN_CONTENT_LENGTH = 2
 /**
  * 单条记忆写入口（add_memory 工具调用）：落库→新增才写向量。
  *
- * 对话中的即时写入与每晚整理都走这里——校验、归一化、去重只此一处，
+ * 对话中的即时写入与每晚整理都走这里——校验、归一化、去重、取代只此一处，
  * 不在工具层再抄一份（抄两份就会有一份先腐）。
  * 返回 `invalid` 表示内容不合格（空白、过短，或去掉 ID 痕迹后所剩无几）。
  */
 export async function addMemory(
   userId: string,
   content: string,
-  memoryDate: string
-): Promise<{ status: 'new' | 'duplicate' | 'invalid'; vectorOk: boolean; memoryId: number }> {
+  memoryDate: string,
+  opts: MemoryWriteOptions = {}
+): Promise<{ status: 'new' | 'duplicate' | 'invalid'; vectorOk: boolean; memoryId: number; superseded: number }> {
   const cleaned = stripUserIds((content || '').trim(), userId)
-  if (cleaned.length < MIN_CONTENT_LENGTH) return { status: 'invalid', vectorOk: false, memoryId: 0 }
-  const id = saveMemory(userId, cleaned, memoryDate)
-  if (id === 0) return { status: 'duplicate', vectorOk: false, memoryId: 0 }
-  let vectorOk = true
-  try {
-    await upsertMemoryVector(userId, id, cleaned, memoryDate)
-  } catch (err) {
-    vectorOk = false
-    console.error(`[memory] vector upsert failed for memory #${id}:`, err)
+  if (cleaned.length < MIN_CONTENT_LENGTH) {
+    return { status: 'invalid', vectorOk: false, memoryId: 0, superseded: 0 }
   }
-  return { status: 'new', vectorOk, memoryId: id }
+  const { kind, topic } = normalizeWriteOptions(opts)
+
+  const id = saveMemory(userId, cleaned, memoryDate, { kind, topic })
+  if (id === 0) {
+    const revivedId = reviveMemory(userId, cleaned, { kind, topic, memoryDate })
+    if (revivedId === 0) return { status: 'duplicate', vectorOk: false, memoryId: 0, superseded: 0 }
+    const after = await ensureCurrent(userId, revivedId, cleaned, memoryDate, kind, topic)
+    return { status: 'new', memoryId: revivedId, ...after }
+  }
+
+  // 顺序很重要：先把新值的向量写好，再归档旧值（旧值归档时会删掉它自己的向量）。
+  // 反过来的话，新向量写失败就会让这个主题一个可用向量都不剩。
+  const after = await ensureCurrent(userId, id, cleaned, memoryDate, kind, topic)
+  return { status: 'new', memoryId: id, ...after }
 }
 
-/** 语义检索记忆向量库；失败返回空数组（不阻断对话）。 */
+/**
+ * 让某条记忆成为当前值：写它的向量，同主题的状态型旧值让位。
+ * 归档是尽最大努力的后台清理（失败只记日志），不因它让写入报错。
+ */
+async function ensureCurrent(
+  userId: string,
+  memoryId: number,
+  content: string,
+  memoryDate: string,
+  kind?: MemoryKind,
+  topic?: string
+): Promise<{ vectorOk: boolean; superseded: number }> {
+  let vectorOk = true
+  try {
+    await upsertMemoryVector(userId, memoryId, content, memoryDate)
+  } catch (err) {
+    vectorOk = false
+    console.error(`[memory] vector upsert failed for memory #${memoryId}:`, err)
+  }
+
+  let superseded = 0
+  if (kind === 'state' && topic) {
+    try {
+      superseded = await supersedePrevious(userId, topic, memoryId)
+    } catch (err) {
+      console.error(`[memory] supersede failed for topic「${topic}」:`, err)
+    }
+  }
+  return { vectorOk, superseded }
+}
+
+/** 语义检索记忆向量库；失败返回空数组（不阻断对话）。已归档的记忆不返回。 */
 export async function searchMemoryVectors(
   query: string,
   opts?: { userId?: string; limit?: number }
@@ -188,7 +349,7 @@ export async function searchMemoryVectors(
     const queryVector = await embedText(query, provider, model)
     const filter = opts?.userId ? { must: [{ key: 'user_id', match: { value: opts.userId } }] } : undefined
     const results = await searchChunks(queryVector, opts?.limit ?? 5, { collection: getMemoryCollection(), filter })
-    return results.map(r => {
+    const mapped = results.map(r => {
       const p = r.payload as { memory_id?: number; content?: string; memory_date?: string }
       return {
         memory_id: p.memory_id ?? 0,
@@ -197,10 +358,51 @@ export async function searchMemoryVectors(
         score: r.score
       }
     })
+    // 兜底：向量可能还没被清掉（清向量失败、或历史遗留），按库中真实状态过滤一次，
+    // 否则已归档的记忆会继续被搜出来——这正是笔记那边发生过的孤儿向量问题。
+    const live = liveMemoryIds(mapped.map(r => r.memory_id))
+    return mapped.filter(r => live.has(r.memory_id))
   } catch (err) {
     console.error('[memory] vector search failed:', err)
     return []
   }
+}
+
+/** 给出的记忆 id 里，哪些还在生效（未被归档）。 */
+function liveMemoryIds(ids: number[]): Set<number> {
+  const wanted = ids.filter(id => Number.isInteger(id) && id > 0)
+  if (wanted.length === 0) return new Set()
+  const rows = connectDatabase().prepare(
+    `SELECT id FROM wechat_memories WHERE archived_at IS NULL AND id IN (${wanted.map(() => '?').join(',')})`
+  ).all(...wanted) as Array<{ id: number }>
+  return new Set(rows.map(r => r.id))
+}
+
+// ── 退场（长期未被命中的事件型记忆） ──────────────────────
+
+/** 事件型记忆的退场年龄：超过这些天没被命中过就归档。 */
+export const RETIRE_AFTER_DAYS = 180
+
+/**
+ * 退场：长期未被命中的事件型记忆归档（不物理删行），并清掉它们的向量。
+ *
+ * 认龄时间取 `coalesce(last_hit_at, created_at)`：没有命中记录就等于「从未被命中」，
+ * 因此不需要先有命中统计（工单 02）才能做这件事——02 落地后本规则自动升级成
+ *「最近一次命中已过去 180 天」，这里不必再改。
+ *
+ * 不参与退场的两类：状态型（它们靠被同主题新值取代退场）、未分类的历史数据。
+ */
+export async function retireExpiredMemories(now: Date = new Date()): Promise<{ retired: number }> {
+  const db = connectDatabase()
+  const cutoff = new Date(now.getTime() - RETIRE_AFTER_DAYS * 86400000).toISOString()
+  // 先查再归档：向量删除需要 id，而归档本身走 archiveMemories（内含分批）
+  const ids = (db.prepare(
+    `SELECT id FROM wechat_memories
+     WHERE kind = 'event' AND archived_at IS NULL AND coalesce(last_hit_at, created_at) < ?`
+  ).all(cutoff) as Array<{ id: number }>).map(r => r.id)
+  const retired = await archiveMemories(ids)
+  if (retired > 0) console.log(`[memory] retired ${retired} expired event memories`)
+  return { retired }
 }
 
 // ── 每晚整理 ──────────────────────────────────────────────
@@ -247,6 +449,12 @@ export async function consolidateDayMemory(
   }
 
   const recentMemories = queryMemories(userId, { days: 30, limit: 500 })
+  // 已有记忆要带上类型与主题键：模型得看到同主题键的原写法，否则每晚都会发明新拼法，
+  // 取代就永远触发不了（同一个主题会被当成两个）
+  const recentLines = recentMemories.map(m => {
+    const label = m.kind === 'state' && m.topic ? `[状态型|${m.topic}]` : m.kind === 'event' ? '[事件型]' : '[未分类]'
+    return `- ${label} ${m.content}`
+  })
   // 提示词与用户消息模板均由 ai/prompt.ts 统一解析（设置优先，回退唯一默认值）
   const systemPrompt = await buildSystemPrompt({ kind: 'memory' })
   const userContent = buildMemoryUserContent({
@@ -255,8 +463,8 @@ export async function consolidateDayMemory(
     memoryDate,
     recordCount: String(records.length),
     transcript: buildTranscript(records),
-    recentMemories: recentMemories.length > 0
-      ? `\n以下为已有记忆，请勿重复抽取：\n${recentMemories.map(m => `- ${m.content}`).join('\n')}`
+    recentMemories: recentLines.length > 0
+      ? `\n以下为已有记忆（含类型与主题键），请勿重复抽取；状态型请沿用同一主题键：\n${recentLines.join('\n')}`
       : ''
   })
 
@@ -310,7 +518,7 @@ export const memoryJob: SubsystemJob = {
   initDelayMs: 30_000,
 }
 
-/** 心跳：到点则遍历用户逐人整理（in-flight 锁防并发）。 */
+/** 心跳：到点则遍历用户逐人整理（in-flight 锁防并发），末尾做一次全局退场。 */
 export async function checkAndConsolidateMemories(): Promise<void> {
   if (!isMemoryDue(new Date())) return
   for (const userId of getWeChatUsers()) {
@@ -320,5 +528,11 @@ export async function checkAndConsolidateMemories(): Promise<void> {
     } catch (err) {
       console.error(`[memory] consolidate failed for ${userId}:`, err)
     }
+  }
+  // 退场与用户无关（一条记忆只有一条归属），一轮跑一次即可
+  try {
+    await retireExpiredMemories()
+  } catch (err) {
+    console.error('[memory] retire failed:', err)
   }
 }

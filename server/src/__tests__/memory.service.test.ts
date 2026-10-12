@@ -1,32 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../database/index.js', async () => {
-  const { default: Database } = await import('better-sqlite3')
-  const db = new Database(':memory:')
-  db.exec(`
-    CREATE TABLE wechat_memories (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id TEXT NOT NULL,
-      content TEXT NOT NULL,
-      memory_date TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-      UNIQUE(user_id, content)
-    );
-    CREATE TABLE wechat_messages (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id TEXT NOT NULL,
-      role TEXT NOT NULL CHECK(role IN ('user','assistant')),
-      content TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-    );
-    CREATE TABLE settings (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL,
-      description TEXT NOT NULL DEFAULT '',
-      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-    );
-  `)
-  return { connectDatabase: () => db }
+  const { connectDatabase } = await import('./helpers/test-db.js')
+  return { connectDatabase }
 })
 
 // 回合接缝（ai/agent-turn）现在是静态依赖，用顶层 vi.mock。
@@ -234,12 +210,16 @@ describe('consolidateDayMemory', () => {
 })
 
 describe('searchMemoryVectors', () => {
-  it('映射 Qdrant payload', async () => {
+  it('映射 Qdrant payload（只返回仍在生效的记忆）', async () => {
+    const db = connectDatabase()
+    db.prepare('DELETE FROM wechat_memories').run()
+    const liveId = saveMemory('u1', '用户喝美式', '2026-08-01')
+
     const { searchChunks } = await import('../services/vector/vector.service.js')
     ;(searchChunks as any).mockResolvedValueOnce([
-      { id: 'mem1', score: 0.9, payload: { memory_id: 1, content: '用户喝美式', memory_date: '2026-08-01', user_id: 'u1' } }
+      { id: `mem${liveId}`, score: 0.9, payload: { memory_id: liveId, content: '用户喝美式', memory_date: '2026-08-01', user_id: 'u1' } }
     ])
     const res = await searchMemoryVectors('美式', { userId: 'u1' })
-    expect(res[0]).toMatchObject({ memory_id: 1, content: '用户喝美式', memory_date: '2026-08-01', score: 0.9 })
+    expect(res[0]).toMatchObject({ memory_id: liveId, content: '用户喝美式', memory_date: '2026-08-01', score: 0.9 })
   })
 })

@@ -135,11 +135,17 @@ export async function searchChunks(
   }
 }
 
-export async function deleteChunks(ids: string[]): Promise<void> {
+/**
+ * 删除若干个点。
+ *
+ * collection 省略时删笔记知识库（历史调用语义）；记忆向量库是另一个集合，
+ * 必须显式传入——不传就会去笔记库里找记忆的点。
+ */
+export async function deleteChunks(ids: string[], collection?: string): Promise<void> {
   if (ids.length === 0) return
-  const collection = getCollectionName()
+  const name = collection ?? getCollectionName()
   const normalized = ids.map(id => /^\d+$/.test(id) ? Number(id) : id)
-  await request('POST', `/collections/${collection}/points/delete`, { points: normalized })
+  await request('POST', `/collections/${name}/points/delete`, { points: normalized })
 }
 
 export async function deleteChunksByNoteId(noteId: number): Promise<void> {
