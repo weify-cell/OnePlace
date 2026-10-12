@@ -194,14 +194,15 @@ function countMemories(userId: string, memoryDate: string): number {
 /**
  * 注入用的状态型记忆：只取未被归档的。
  *
- * 同一主题的旧值在写入时已被取代并归档，因此这里天然只剩「每个主题的当前值」，
- * 不需要再按主题去重。同时回报总数：达到条目上限时要能告诉模型「还有没列出的」，
- * 否则它会以为没列出来就不存在、也就不会去检索。
+ * 同一主题的旧值在写入时会被取代并归档；但**取代靠主题键完全相等**，而主题键由模型产出、
+ * 实测并不稳定（同一件事会落在不同拼法的键上）——所以这里不能假设「每个主题只剩一条」。
+ * 大小靠下面这个默认上界兜住：与键质量无关。
+ * 同时回报总数：被截断时要能告诉模型「还有没列出的」，否则它会以为没列出来就不存在。
  */
 function queryCurrentStateMemories(userId: string): { items: MemoryRow[]; total: number } {
   const db = connectDatabase()
   const maxItems = getSettingValue<number>('ilink_memory_prompt_max_items', 0)
-  const limit = maxItems > 0 ? maxItems : 100000
+  const limit = maxItems > 0 ? maxItems : DEFAULT_DIGEST_LIMIT
   const items = db.prepare(
     `SELECT * FROM wechat_memories
      WHERE user_id = ? AND kind = 'state' AND archived_at IS NULL
@@ -372,6 +373,15 @@ function reviveMemory(
 
 /** 内容最短长度：低于此长度的内容不是「一句完整、独立、可检索的话」 */
 const MIN_CONTENT_LENGTH = 2
+
+/**
+ * 摘要的默认上界（条）。
+ *
+ * 意义在于：摘要大小与「模型产出的主题键是否稳定」这件事**脱钩**——
+ * 取代靠键完全相等，拼法不一致就不会收敛，于是必须有另一道硬性上界。
+ * 设置里给了正数就用设置值；给 0 或未设置则用这个默认上界（而不是不限）。
+ */
+export const DEFAULT_DIGEST_LIMIT = 10
 
 /**
  * 单条记忆写入口（add_memory 工具调用）：落库→新增才写向量。

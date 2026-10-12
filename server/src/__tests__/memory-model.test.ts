@@ -323,6 +323,21 @@ describe('注入段：只带状态型的最新值', () => {
     expect(prompt.split('\n').filter(l => l.startsWith('- '))).toHaveLength(2)
     expect(prompt).toContain('另有 1 条')
   })
+
+  it('未设上限时也有确定上界：主题键再碎（25 个不同主题）也不会无限长', async () => {
+    // 取代靠主题键完全相等，而模型产出的键实测不稳定——因此摘要的大小不能靠"键都对上"来保证
+    for (let i = 0; i < 25; i++) {
+      await addMemory(USER, `状态 ${i}`, dateDaysAgo(i), { kind: 'state', topic: `主题:${i}` })
+    }
+
+    const prompt = buildMemoryPrompt(USER)
+    const lines = prompt.split('\n').filter(l => l.startsWith('- '))
+    expect(lines.length).toBeLessThanOrEqual(10)
+    expect(prompt).toContain('另有 15 条')
+    // 上界内保留的是最新的那些
+    expect(lines[0]).toContain('状态 0')
+    expect(prompt).not.toContain('状态 24')
+  })
 })
 
 describe('列表（只读，供管理页看）', () => {
