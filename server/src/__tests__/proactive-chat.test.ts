@@ -11,7 +11,7 @@ vi.mock('../database/index.js', async () => await import('./helpers/test-db.js')
 
 import { connectDatabase } from '../database/index.js'
 import { addMessageToHistory } from '../services/wechat/ilink-bot.service.js'
-import { buildProactiveTurn } from '../services/wechat/proactive-chat.service.js'
+import { buildProactiveTurn, proactiveTriggerWeight } from '../services/wechat/proactive-chat.service.js'
 
 const USER = 'o9cq80-test-user'
 const OTHER = 'other-user'
@@ -67,5 +67,24 @@ describe('主动聊天这一轮要发出去的内容', () => {
     const req = await buildProactiveTurn(USER)
 
     expect(req.history?.().map(m => m.content)).toEqual(['第一句', '第二句', '第三句'])
+  })
+})
+
+describe('触发概率（距上次互动多久）', () => {
+  it('刚互动过也不完全不动（死区 0.1，不是 0）', () => {
+    expect(proactiveTriggerWeight(0)).toBe(0.1)
+    expect(proactiveTriggerWeight(0.5)).toBe(0.1)
+    expect(proactiveTriggerWeight(0.99)).toBe(0.1)
+  })
+
+  it('超过一小时逐渐升高', () => {
+    expect(proactiveTriggerWeight(1)).toBe(0.3)
+    expect(proactiveTriggerWeight(3)).toBe(0.5)
+    expect(proactiveTriggerWeight(6)).toBe(0.7)
+    expect(proactiveTriggerWeight(10)).toBe(0.9)
+  })
+
+  it('从未互动过时给中间值', () => {
+    expect(proactiveTriggerWeight(null)).toBe(0.5)
   })
 })

@@ -72,10 +72,16 @@ function getUserLastInteractionTime(userId: string): number | null {
   return Math.max(userMsgTime ?? 0, sentTime ?? 0) || null
 }
 
-function calculateTriggerWeight(lastInteractionTime: number | null): number {
-  if (!lastInteractionTime) return 0.5
-  const hoursSince = (Date.now() - lastInteractionTime) / (1000 * 60 * 60)
-  if (hoursSince < 1) return 0
+/**
+ * 触发概率：距上次互动越久越可能触发（每次检查掷一次）。
+ *
+ * 第一档刻意不是 0：那意味着「刚互动过就完全不打扰」，而两次发送的间隔
+ * 也就不可能短于小时级。现在死区为 0.1，配每 2 分钟一检 + 最小间隔 15 分钟，
+ * 实际间隔落到分钟级（平均约 35 分钟，中位约 28 分钟）。
+ */
+export function proactiveTriggerWeight(hoursSince: number | null): number {
+  if (hoursSince === null) return 0.5
+  if (hoursSince < 1) return 0.1
   if (hoursSince < 2) return 0.3
   if (hoursSince < 4) return 0.5
   if (hoursSince < 8) return 0.7
@@ -184,7 +190,8 @@ async function checkAndSendProactiveMessages(): Promise<void> {
     }
     if (!hasMinIntervalPassed(userId, config.minInterval)) continue
     const lastInteraction = getUserLastInteractionTime(userId)
-    const weight = calculateTriggerWeight(lastInteraction)
+    const hoursSince = lastInteraction === null ? null : (Date.now() - lastInteraction) / (1000 * 60 * 60)
+    const weight = proactiveTriggerWeight(hoursSince)
     if (Math.random() < weight) {
       console.log(`[proactive] triggered for user ${userId} (weight: ${weight})`)
       await sendProactiveMessage(userId)
