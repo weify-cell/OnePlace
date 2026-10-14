@@ -1,5 +1,6 @@
 import { Request, Response } from 'express'
-import { MAX_POINTS_PER_BATCH, ingestLocations } from '../services/phone/location.service.js'
+import { MAX_POINTS_PER_BATCH } from '../services/phone/location.service.js'
+import { ingestAndProcessLocations } from '../services/phone/track.service.js'
 
 /**
  * 接收一批轨迹点。
@@ -18,5 +19,5 @@ export function postLocations(req: Request, res: Response): void {
   }
 
   const deviceId = typeof body.device_id === 'string' ? body.device_id : ''
-  res.json(ingestLocations(body.points as never[], { deviceId }))
+  res.json(ingestAndProcessLocations(body.points as never[], { deviceId }))
 }

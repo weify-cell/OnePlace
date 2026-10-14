@@ -5,7 +5,16 @@ import { getTodos, getTodoById, createTodo, updateTodo, updateTodoProgress, getT
 import { getFolders } from '../folders.service.js'
 import { searchKnowledgeBase } from '../knowledge-base.service.js'
 import { searchMemories, searchMemoryVectors, addMemory, resolvePrimaryMemoryUser, stripUserIds, isMemoryKind, getMemoryDate } from '../wechat/memory.service.js'
-import { formatBeijingTime, getBeijingDateTimeSec } from '../../utils/time.js'
+import { listStays, listTrips, resolveRecentDeviceId } from '../phone/track.service.js'
+import { formatBeijingTime, getBeijingDate, getBeijingDateAfter, getBeijingDateTime, getBeijingDayWindow, getBeijingDateTimeSec } from '../../utils/time.js'
+import type { StoredStay, StoredTrip } from '../phone/track.service.js'
+
+/** 设备侧时刻（UTC ISO）转成北京钟点 HH:mm，便于机器人转述 */
+function beijingClock(iso: string): string {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return iso
+  return new Date(date.getTime() + 8 * 60 * 60 * 1000).toISOString().slice(11, 16)
+}
 
 function textResult(text: string): AgentToolResult<undefined> {
   return { content: [{ type: 'text' as const, text }], details: undefined }
@@ -417,6 +426,54 @@ export function getBuiltinToolMap(ctx: ToolContext = {}): Map<string, AgentTool>
         return textResult(res.vectorOk
           ? `已记住：${stored}${supersedeNote}${staleNote}`
           : `已记住：${stored}${supersedeNote}${staleNote}（向量库写入失败，仅存入数据库）`)
+      }
+    },
+
+    // ── 17. 查询位置轨迹（手机上报后由服务端切分出的结论）──
+    {
+      name: 'get_location_history',
+      label: '查询位置轨迹',
+      description: '读取用户手机轨迹加工后的结论：某段时间内的停留（在哪、待了多久）与行程（起止时刻、里程、时长）。这是用户手机的真实记录，不是推测。',
+      parameters: Type.Object({
+        date: Type.Optional(Type.String({ description: '北京日期 YYYY-MM-DD，默认今天' })),
+        days: Type.Optional(Type.Number({ description: '从该日往前看几天，默认 1（即只看该日）' }))
+      }),
+      execute: async (_toolCallId: string, params: { date?: string; days?: number }) => {
+        const deviceId = resolveRecentDeviceId()
+        if (!deviceId) return textResult('还没有任何手机轨迹数据（手机端可能没在采集）。')
+
+        const days = Math.min(Math.max(params.days ?? 1, 1), 30)
+        const endDate = params.date || getBeijingDate()
+        const startDate = getBeijingDateAfter(-(days - 1), new Date(`${endDate}T00:00:00Z`))
+        const from = getBeijingDayWindow(startDate).start
+        const to = getBeijingDayWindow(endDate).end
+
+        const stays = listStays(deviceId, { from, to })
+        const trips = listTrips(deviceId, { from, to })
+        if (stays.length === 0 && trips.length === 0) {
+          return textResult(`${startDate} 至 ${endDate} 没有轨迹结论（要么这段时间没出门，要么手机没在采集）。`)
+        }
+
+        const range = startDate === endDate ? startDate : `${startDate} 至 ${endDate}`
+        const lines: string[] = [`${range}（北京时间）的轨迹结论：`, '']
+        if (stays.length > 0) {
+          lines.push('停留：')
+          for (const s of stays) {
+            const minutes = Math.round((Date.parse(s.ended_at) - Date.parse(s.started_at)) / 60000)
+            lines.push(`- ${beijingClock(s.started_at)}–${beijingClock(s.ended_at)}（${minutes} 分钟）@ ${s.center_lat.toFixed(4)},${s.center_lon.toFixed(4)} 半径约 ${Math.round(s.radius_m)} m`)
+          }
+        }
+        if (trips.length > 0) {
+          lines.push('行程：')
+          for (const t of trips) {
+            const minutes = Math.round((Date.parse(t.ended_at) - Date.parse(t.started_at)) / 60000)
+            const km = (t.distance_m / 1000).toFixed(1)
+            lines.push(`- ${beijingClock(t.started_at)}–${beijingClock(t.ended_at)}（${minutes} 分钟）约 ${km} km`)
+          }
+        }
+        const totalKm = (trips.reduce((sum, t) => sum + t.distance_m, 0) / 1000).toFixed(1)
+        lines.push('', `合计：停留 ${stays.length} 处、行程 ${trips.length} 段、里程约 ${totalKm} km`)
+        return textResult(lines.join('\n'))
       }
     }
   ] as unknown as AgentTool[]
