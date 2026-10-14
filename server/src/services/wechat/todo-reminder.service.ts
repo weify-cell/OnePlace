@@ -4,6 +4,7 @@ import { getBeijingDate, getBeijingDateTime, getBeijingDateAfter } from '../../u
 import { getWeChatUsers } from './users.service.js'
 import { isJobRunning, type SubsystemJob } from './scheduler.js'
 import { isDeliveryReady, sendToUser } from './delivery.js'
+import { addMessageToHistory } from './ilink-bot.service.js'
 
 /**
  * 提醒子系统作业描述。
@@ -90,7 +91,12 @@ async function sendReminder(userId: string, todos: Array<{ id: number; title: st
   const message = `⏰ 待办任务提醒\n\n${todoList}\n\n请及时处理！`
 
   // 投递策略（token 过期→入队补发、并发去重）统一由 delivery 模块负责
-  return sendToUser(userId, message)
+  const delivered = await sendToUser(userId, message)
+  // 提醒也是「机器人说过的话」：写进历史，你回「已办」时主对话才知道你在回哪条。
+  // 只写 assistant 一条（不像主动搭话那样补一条合成 user 行）——那类合成行会被
+  // 每晚整理当成「用户说过的话」抽取成噪声记忆。
+  if (delivered) addMessageToHistory(userId, 'assistant', message)
+  return delivered
 }
 
 /**

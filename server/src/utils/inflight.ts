@@ -26,3 +26,23 @@ export async function withInflight<T>(key: string, fn: () => Promise<T>): Promis
 export function isInflight(key: string): boolean {
   return inflight.has(key)
 }
+
+/**
+ * 同 key 排队执行：后来的任务等前一个结束（与 `withInflight` 的「跳过」相反）。
+ *
+ * 用在「同一个 agent 不能被两个回合同时驱动」这类场景：聊天消息不能因为忙就被丢掉。
+ * 前一个抛错不会卡死队列（错误会正常抛给它的调用方，队列继续往下走）。
+ */
+const queues = new Map<string, Promise<unknown>>()
+
+export function withQueue<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const previous = queues.get(key) ?? Promise.resolve()
+  const run = previous.catch(() => undefined).then(() => fn())
+  const settled = run.catch(() => undefined)
+  queues.set(key, settled)
+  // 队列空了就把 key 清掉，不至于按 agent 无限积累
+  void settled.then(() => {
+    if (queues.get(key) === settled) queues.delete(key)
+  })
+  return run
+}

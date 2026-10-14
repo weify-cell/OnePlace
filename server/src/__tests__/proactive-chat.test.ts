@@ -15,6 +15,7 @@ import {
   buildProactiveTurn,
   decideProactiveSend,
   proactiveBackoffFactor,
+  nudgeIsStale,
   proactiveSendProbability,
   resolveUnrepliedCount
 } from '../services/wechat/proactive-chat.service.js'
@@ -57,11 +58,13 @@ describe('主动聊天这一轮要发出去的内容', () => {
     expect(req.userContent).toContain('北京时间')
   })
 
-  it('独立 agent id + 回合后销毁：不污染 bot 的对话上下文', async () => {
+  it('与主对话共用同一个 agent（它自己搭过的话必须在自己的上下文里）', async () => {
     const req = await buildProactiveTurn(USER)
 
-    expect(req.agentId).toBe(`wx:proactive:${USER}`)
-    expect(req.ephemeral).toBe(true)
+    // 不再用独立的 wx:proactive:<user>，也不再 ephemeral——
+    // 否则「你回答它刚问的那句话，它不知道你在答什么」
+    expect(req.agentId).toBe(`wx:${USER}`)
+    expect(req.ephemeral).toBeUndefined()
     expect(req.memoryUserId).toBe(USER)
   })
 
@@ -136,6 +139,23 @@ describe('是否发送的判定（纯函数，便于解释「为什么这次没�
     const d = decideProactiveSend({ ...base, unrepliedCount: 6 })
     expect(d.probability).toBeGreaterThan(0)
     expect(d.probability).toBeLessThan(0.001)
+  })
+})
+
+describe('发送前复查：生成期间你说话了就丢弃这条搭话', () => {
+  const decided = 1_000_000_000
+
+  it('最后一条消息没变 → 不算过时', () => {
+    expect(nudgeIsStale(decided, decided)).toBe(false)
+  })
+
+  it('你在这期间又说了话 → 过时，丢弃', () => {
+    expect(nudgeIsStale(decided, decided + 5_000)).toBe(true)
+  })
+
+  it('时间点缺失时不作废（宁可发，也别因为取不到时间就静默丢掉）', () => {
+    expect(nudgeIsStale(null, decided)).toBe(false)
+    expect(nudgeIsStale(decided, null)).toBe(false)
   })
 })
 

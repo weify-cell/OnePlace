@@ -4,7 +4,7 @@ import { DEFAULT_PROACTIVE_USER_MESSAGE } from '../prompt-defaults.js'
 import { formatBeijingTime, getBeijingHour } from '../../utils/time.js'
 import { getWeChatUsers, getUserLastActiveTime } from './users.service.js'
 import { isJobRunning, restartJob, type SubsystemJob } from './scheduler.js'
-import { runAgentTurn, wechatTaskAgentId, type AgentTurnRequest } from '../ai/agent-turn.js'
+import { runAgentTurn, wechatAgentId, type AgentTurnRequest } from '../ai/agent-turn.js'
 import { buildSystemPrompt } from '../ai/prompt.js'
 import { getILinkModel } from './model.js'
 import { getLastSentAt, isDeliveryReady, markSentAt, sendToUser } from './delivery.js'
@@ -101,6 +101,15 @@ export function proactiveBackoffFactor(unrepliedCount: number): number {
 }
 
 /**
+ * 这条搭话是不是已经过时了（生成期间你又说了话）。
+ * 两个时间点相同或更旧都算没过时；任一为空也不作废。
+ */
+export function nudgeIsStale(decidedForLastMessageAtMs: number | null, currentLastMessageAtMs: number | null): boolean {
+  if (decidedForLastMessageAtMs === null || currentLastMessageAtMs === null) return false
+  return currentLastMessageAtMs > decidedForLastMessageAtMs
+}
+
+/**
  * 这一轮要不要主动搭话。
  *
  * 抽成纯函数是为了两件事：（一）每种分支都能单独验；（二）你问「刚才为什么发了 / 为什么没发」
@@ -137,12 +146,13 @@ export async function buildProactiveTurn(userId: string): Promise<AgentTurnReque
   // 触发指令，附加北京时间戳
   const userMessage = getSettingValue<string>('ilink_proactive_chat_user_message', DEFAULT_PROACTIVE_USER_MESSAGE)
   return {
-    agentId: wechatTaskAgentId('proactive', userId),
+    // 与主对话**共用同一个 agent**：它自己搭过的话、你顺着它回的话，都在同一个上下文里
+    // （以前用独立的 ephemeral agent，导致"你回答它刚问的句话，它却不知道你在答什么"）
+    agentId: wechatAgentId(userId),
     systemPrompt,
     userContent: `${formatBeijingTime()} ${userMessage}`,
     history: () => getMessageHistory(userId) as ChatMessage[],
     memoryUserId: userId,
-    ephemeral: true,
     ...getILinkModel(),
   }
 }
@@ -169,7 +179,7 @@ function pickDefaultMessage(): string {
 }
 
 /** Send a proactive message. Only writes history after successful send. */
-async function sendProactiveMessage(userId: string): Promise<boolean> {
+async function sendProactiveMessage(userId: string, decidedForLastMessageAtMs: number | null): Promise<boolean> {
   if (!isDeliveryReady()) {
     console.error('[proactive] delivery not ready')
     return false
@@ -177,6 +187,14 @@ async function sendProactiveMessage(userId: string): Promise<boolean> {
 
   try {
     const message = await generateProactiveMessage(userId)
+
+    // 发送前复查：生成要花几秒，这期间你完全可能又说话了。
+    // 只要「最后一条消息」比判定时更新，就把这条作废——你开口了就不插话。
+    if (nudgeIsStale(decidedForLastMessageAtMs, getLastMessageTime(userId))) {
+      console.log(`[proactive] dropped stale nudge for ${userId} (user spoke during generation)`)
+      return false
+    }
+
     // token 过期时 sendToUser 会入队并返回 false（不算送达）
     const delivered = await sendToUser(userId, message)
     if (!delivered) return false
@@ -232,8 +250,9 @@ async function checkAndSendProactiveMessages(): Promise<void> {
       continue
     }
 
+    const decidedForLastMessageAtMs = getLastMessageTime(userId)
     console.log(`[proactive] triggered for ${userId} (p=${decision.probability.toFixed(3)}, unreplied=${unrepliedCount})`)
-    const sent = await sendProactiveMessage(userId)
+    const sent = await sendProactiveMessage(userId, decidedForLastMessageAtMs)
     // 只有真送出去了才累计退避次数（没送达不算「没回复」）
     if (sent) setUserUnrepliedProactiveCount(userId, unrepliedCount + 1)
   }

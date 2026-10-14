@@ -2,6 +2,7 @@ import type { AgentEvent, AgentMessage } from '@earendil-works/pi-agent-core'
 import { AgentPool, loadToolsFromDb } from './agent-pool.js'
 import { createModel, createStreamFn, convertMessages, extractApiKey, type ChatMessage } from './pi-ai.adapter.js'
 import { getSettingValue } from '../settings.service.js'
+import { withQueue } from '../../utils/inflight.js'
 
 /**
  * 回合（turn）接缝：跑一轮完整 agent loop 并返回最终 assistant 文本。
@@ -107,6 +108,12 @@ function resolveModel(req: AgentTurnRequest): { provider: string; model: string 
 
 /** 跑一轮完整 agent loop，返回最终 assistant 文本。 */
 export async function runAgentTurn(req: AgentTurnRequest): Promise<string> {
+  // 同一个 agent 不能被两个回合同时驱动：主动搭话的定时器可能和用户的消息撞上。
+  // 这里按 agentId 排队（不是跳过）——用户的消息不能因为「忙」就被丢掉。
+  return withQueue(`agent:${req.agentId}`, () => runAgentTurnExclusive(req))
+}
+
+async function runAgentTurnExclusive(req: AgentTurnRequest): Promise<string> {
   const { provider, model: modelId } = resolveModel(req)
   const pool = getPool(provider, modelId)
 
