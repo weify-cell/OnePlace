@@ -466,6 +466,19 @@ export function stopILinkBot(): { success: boolean; error?: string } {
 }
 
 /**
+ * 对话里最后一条消息的时间（毫秒）；没有任何消息返回 null。
+ *
+ * 不分角色：用户说的、助手回的、主动搭话写的，都算「一条消息」——
+ * 主动聊天的触发时机以它为准（任何一条消息都会重置最小间隔的钟）。
+ */
+export function getLastMessageTime(userId: string): number | null {
+  const row = connectDatabase()
+    .prepare('SELECT MAX(created_at) AS t FROM wechat_messages WHERE user_id = ?')
+    .get(userId) as { t: string | null }
+  return row?.t ? new Date(row.t).getTime() : null
+}
+
+/**
  * 获取消息历史（从数据库读取，最近100条）
  */
 export function getMessageHistory(userId: string): Array<{ role: 'user' | 'assistant'; content: string }> {

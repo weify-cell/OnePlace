@@ -1,5 +1,5 @@
-import { getSettingValue } from '../settings.service.js'
-import { addMessageToHistory, getMessageHistory, isUserInLearningMode } from './ilink-bot.service.js'
+import { getSettingValue, setSetting } from '../settings.service.js'
+import { addMessageToHistory, getLastMessageTime, getMessageHistory, isUserInLearningMode } from './ilink-bot.service.js'
 import { DEFAULT_PROACTIVE_USER_MESSAGE } from '../prompt-defaults.js'
 import { formatBeijingTime, getBeijingHour } from '../../utils/time.js'
 import { getWeChatUsers, getUserLastActiveTime } from './users.service.js'
@@ -54,44 +54,73 @@ function getLastProactiveSentAt(userId: string): number | null {
   return getLastSentAt('proactive', userId)
 }
 
+/** 连续未回复的主动搭话次数（持久化在 settings，随发送累加、随你回话归零）。 */
+function getUserUnrepliedProactiveCount(userId: string): number {
+  return getSettingValue<number>(`ilink_proactive_unreplied_${userId}`, 0)
+}
+
+function setUserUnrepliedProactiveCount(userId: string, count: number): void {
+  setSetting(`ilink_proactive_unreplied_${userId}`, count)
+}
+
 /**
- * 用户是否已回复上一条主动消息。
- * 没有主动消息记录视为"已回复"（可直接触发）；否则要求用户最近一条消息晚于上次主动发送时间。
+ * 连续未回复次数：用户在上次主动搭话之后说过话 → 归零（退避解除）；否则沿用累计值。
+ * 从未主动搭话过也算 0。
  */
-function hasUserRepliedSinceLastProactive(userId: string): boolean {
-  const lastSent = getLastProactiveSentAt(userId)
-  if (!lastSent) return true
-  const lastUserMsg = getUserLastActiveTime(userId)
-  return lastUserMsg !== null && lastUserMsg > lastSent
-}
-
-/** Read the user's last interaction time (user message or proactive send, whichever is later). */
-function getUserLastInteractionTime(userId: string): number | null {
-  const userMsgTime = getUserLastActiveTime(userId)
-  const sentTime = getLastProactiveSentAt(userId)
-  return Math.max(userMsgTime ?? 0, sentTime ?? 0) || null
+export function resolveUnrepliedCount(input: {
+  lastUserMessageAtMs: number | null
+  lastProactiveSentAtMs: number | null
+  storedCount: number
+}): number {
+  if (input.lastProactiveSentAtMs === null) return 0
+  const replied = input.lastUserMessageAtMs !== null && input.lastUserMessageAtMs > input.lastProactiveSentAtMs
+  return replied ? 0 : input.storedCount
 }
 
 /**
- * 触发概率：距上次互动越久越可能触发（每次检查掷一次）。
+ * 触发概率：按「距最后一条消息」多久分档（每 2 分钟掷一次）。
  *
- * 第一档刻意不是 0：那意味着「刚互动过就完全不打扰」，而两次发送的间隔
- * 也就不可能短于小时级。现在死区为 0.1，配每 2 分钟一检 + 最小间隔 15 分钟，
- * 实际间隔落到分钟级（平均约 35 分钟，中位约 28 分钟）。
+ * 不足 45 分钟的那一段由最小间隔硬闸拦住，走不到这里，因此第一档从 45 分钟起算。
  */
-export function proactiveTriggerWeight(hoursSince: number | null): number {
-  if (hoursSince === null) return 0.5
-  if (hoursSince < 1) return 0.1
-  if (hoursSince < 2) return 0.3
-  if (hoursSince < 4) return 0.5
-  if (hoursSince < 8) return 0.7
+export function proactiveSendProbability(minutesSinceLastMessage: number): number {
+  if (minutesSinceLastMessage < 60) return 0.1
+  if (minutesSinceLastMessage < 120) return 0.3
+  if (minutesSinceLastMessage < 240) return 0.5
+  if (minutesSinceLastMessage < 480) return 0.7
   return 0.9
 }
 
-function hasMinIntervalPassed(userId: string, minIntervalMinutes: number): boolean {
-  const lastSent = getLastProactiveSentAt(userId)
-  if (!lastSent) return true
-  return (Date.now() - lastSent) >= minIntervalMinutes * 60 * 1000
+/**
+ * 未回复退避：连续未被回复 n 次后，概率乘以 3⁻ⁿ。
+ *
+ * 没有硬截止——退避自己会把它压到接近静默（n=5 约每 9 小时才可能再试一次，
+ * n=8 则约十天一次），因此不需要额外加「当天上限」或「永久停掉」。
+ */
+export function proactiveBackoffFactor(unrepliedCount: number): number {
+  return 3 ** -Math.max(unrepliedCount, 0)
+}
+
+/**
+ * 这一轮要不要主动搭话。
+ *
+ * 抽成纯函数是为了两件事：（一）每种分支都能单独验；（二）你问「刚才为什么发了 / 为什么没发」
+ * 时能给出一个确定的原因，而不是只能答「掷骰子」。
+ * 基准是「对话里最后一条消息」（双方都算）——你说一句、它回一句、它搭话一句，都会重置最小间隔的钟。
+ */
+export function decideProactiveSend(input: {
+  nowMs: number
+  lastMessageAtMs: number | null
+  unrepliedCount: number
+  minIntervalMinutes: number
+  roll: number
+}): { send: boolean; probability: number; reason: 'ok' | 'no-message-yet' | 'min-interval' | 'not-lucky' } {
+  if (input.lastMessageAtMs === null) return { send: false, probability: 0, reason: 'no-message-yet' }
+  const minutes = (input.nowMs - input.lastMessageAtMs) / 60000
+  if (minutes < input.minIntervalMinutes) return { send: false, probability: 0, reason: 'min-interval' }
+  const probability = proactiveSendProbability(minutes) * proactiveBackoffFactor(input.unrepliedCount)
+  return input.roll < probability
+    ? { send: true, probability, reason: 'ok' }
+    : { send: false, probability, reason: 'not-lucky' }
 }
 
 /**
@@ -183,19 +212,30 @@ async function checkAndSendProactiveMessages(): Promise<void> {
       console.log(`[proactive] user ${userId} is in learning mode, skipping`)
       continue
     }
-    // 用户尚未回复上一条主动消息时，不发送新的主动消息
-    if (!hasUserRepliedSinceLastProactive(userId)) {
-      console.log(`[proactive] user ${userId} has not replied to last proactive message, skipping`)
+
+    // 连续未回复次数：你在上次搭话后说过话就归零（退避解除）
+    const unrepliedCount = resolveUnrepliedCount({
+      lastUserMessageAtMs: getUserLastActiveTime(userId),
+      lastProactiveSentAtMs: getLastProactiveSentAt(userId),
+      storedCount: getUserUnrepliedProactiveCount(userId)
+    })
+
+    const decision = decideProactiveSend({
+      nowMs: Date.now(),
+      lastMessageAtMs: getLastMessageTime(userId),
+      unrepliedCount,
+      minIntervalMinutes: config.minInterval,
+      roll: Math.random()
+    })
+    if (!decision.send) {
+      console.log(`[proactive] skip ${userId}: ${decision.reason}`)
       continue
     }
-    if (!hasMinIntervalPassed(userId, config.minInterval)) continue
-    const lastInteraction = getUserLastInteractionTime(userId)
-    const hoursSince = lastInteraction === null ? null : (Date.now() - lastInteraction) / (1000 * 60 * 60)
-    const weight = proactiveTriggerWeight(hoursSince)
-    if (Math.random() < weight) {
-      console.log(`[proactive] triggered for user ${userId} (weight: ${weight})`)
-      await sendProactiveMessage(userId)
-    }
+
+    console.log(`[proactive] triggered for ${userId} (p=${decision.probability.toFixed(3)}, unreplied=${unrepliedCount})`)
+    const sent = await sendProactiveMessage(userId)
+    // 只有真送出去了才累计退避次数（没送达不算「没回复」）
+    if (sent) setUserUnrepliedProactiveCount(userId, unrepliedCount + 1)
   }
 }
 
