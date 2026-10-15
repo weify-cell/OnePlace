@@ -1,6 +1,7 @@
 import { connectDatabase } from '../../database/index.js'
 import { ingestLocations, listLocationPoints, type IngestResult, type LocationPointInput } from './location.service.js'
-import { matchOrCreatePlace } from './place.service.js'
+import { emptyRegionState, reduceRegions, type RegionState, type RegionTransition } from './region-tracker.js'
+import { listRegions, matchOrCreatePlace } from './place.service.js'
 import { recordSegmentEvents } from './event.service.js'
 import {
   emptySegmenterState,
@@ -114,16 +115,27 @@ function insertTrip(deviceId: string, trip: TripSegment): { id: number; created:
  * 把某设备尚未加工过的轨迹点切分并入表。
  * 返回本次闭合的段数——便于上报接口记日志，也便于测试断言"增量只算新点"。
  */
-export function processNewLocations(deviceId: string): { stays: number; trips: number } {
+export function processNewLocations(deviceId: string): {
+  stays: number
+  trips: number
+  regionTransitions: RegionTransition[]
+} {
   const state = loadState(deviceId)
   const points: TrackPoint[] = listLocationPoints(deviceId, { from: state.lastPointAt ?? undefined })
     .filter(p => !state.lastPointAt || Date.parse(p.recorded_at) > Date.parse(state.lastPointAt))
     // 精度要一起喂给切分：里程是否计入这一步取决于"位移有没有超过定位误差"
-    .map(p => ({ recordedAt: p.recorded_at, lat: p.latitude, lon: p.longitude, accuracy: p.accuracy }))
+    .map(p => ({ recordedAt: p.recorded_at, lat: p.latitude, lon: p.longitude, accuracy: p.accuracy ?? undefined }))
 
-  if (points.length === 0) return { stays: 0, trips: 0 }
+  if (points.length === 0) return { stays: 0, trips: 0, regionTransitions: [] }
 
   const { state: nextState, closed } = reduceTrack(state, points)
+
+  // 区域判定看的是**所有新点**，不只是闭合的段：越界要在刚进门时就判出来，不能等停留成形
+  const { state: nextRegionState, transitions: regionTransitions } = reduceRegions(
+    loadRegionState(deviceId),
+    listRegions(deviceId),
+    points
+  )
 
   let stays = 0
   let trips = 0
@@ -156,12 +168,38 @@ export function processNewLocations(deviceId: string): { stays: number; trips: n
     }
     if (forEvents.length > 0) recordSegmentEvents({ deviceId, segments: forEvents })
     saveState(deviceId, nextState)
+    saveRegionState(deviceId, nextRegionState)
   })()
 
-  return { stays, trips }
+  return { stays, trips, regionTransitions }
 }
 
 /** 读单条停留（带地点名），推送描述事件时用。 */
+/**
+ * 区域状态与切分器状态同表不同 key：两者互不耦合，各自演进不会牵连对方。
+ * （`phone_track_state.device_id` 是主键，拼后缀即可当独立命名空间用；表结构不用动。）
+ */
+function loadRegionState(deviceId: string): RegionState {
+  const row = connectDatabase()
+    .prepare('SELECT state FROM phone_track_state WHERE device_id = ?')
+    .get(`${deviceId}#region`) as { state: string } | undefined
+  if (!row) return emptyRegionState()
+  try {
+    return JSON.parse(row.state) as RegionState
+  } catch {
+    console.error(`[phone] 区域状态无法解析，从空状态重算：device=${deviceId}`)
+    return emptyRegionState()
+  }
+}
+
+function saveRegionState(deviceId: string, state: RegionState): void {
+  connectDatabase().prepare(`
+    INSERT INTO phone_track_state (device_id, state, updated_at)
+    VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    ON CONFLICT(device_id) DO UPDATE SET state = excluded.state, updated_at = excluded.updated_at
+  `).run(`${deviceId}#region`, JSON.stringify(state))
+}
+
 export function getStay(deviceId: string, stayId: number): StoredStay | null {
   const row = connectDatabase().prepare(
     `SELECT s.id, s.device_id, s.started_at, s.ended_at, s.center_lat, s.center_lon,
@@ -235,9 +273,9 @@ export function resolveRecentDeviceId(): string | null {
 export function ingestAndProcessLocations(
   points: LocationPointInput[],
   opts?: { deviceId?: string }
-): IngestResult & { stays: number; trips: number } {
+): IngestResult & { stays: number; trips: number; regionTransitions: RegionTransition[] } {
   const result = ingestLocations(points, opts)
-  if (result.accepted === 0) return { ...result, stays: 0, trips: 0 }
+  if (result.accepted === 0) return { ...result, stays: 0, trips: 0, regionTransitions: [] }
 
   const devices = new Set<string>()
   for (const point of points) {
@@ -247,10 +285,12 @@ export function ingestAndProcessLocations(
 
   let stays = 0
   let trips = 0
+  const regionTransitions: RegionTransition[] = []
   for (const deviceId of devices) {
     const processed = processNewLocations(deviceId)
     stays += processed.stays
     trips += processed.trips
+    regionTransitions.push(...processed.regionTransitions)
   }
-  return { ...result, stays, trips }
+  return { ...result, stays, trips, regionTransitions }
 }

@@ -130,7 +130,7 @@ describe('轨迹事件', () => {
     connectDatabase().prepare('DELETE FROM phone_track_state').run()
     const replay = processNewLocations(DEVICE)
 
-    expect(replay).toEqual({ stays: 0, trips: 0 })
+    expect(replay).toEqual({ stays: 0, trips: 0, regionTransitions: [] })
     expect(count('phone_stays')).toBe(stays)
     expect(count('phone_events')).toBe(events)
     expect(listPlaces(DEVICE)[0].hit_count).toBe(hits)

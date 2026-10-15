@@ -1,4 +1,5 @@
 import { connectDatabase } from '../../database/index.js'
+import type { RegionDef } from './region-tracker.js'
 import { getBeijingDate } from '../../utils/time.js'
 import { haversineM } from './track-segmenter.js'
 
@@ -104,6 +105,16 @@ export function listPlaces(deviceId: string, opts?: { frequentOnly?: boolean }):
   const places = listDevicePlaces(deviceId)
   const filtered = opts?.frequentOnly ? places.filter(isFrequentPlace) : places
   return filtered.sort((a, b) => b.hit_count - a.hit_count || a.id - b.id)
+}
+
+/**
+ * 该设备的区域清单——**有手工名字的地点**（机器查来的名字存在 settings 里，不进 name）。
+ * 手动画定范围、命名，才算是"人认的地方"，用它做越界判定。
+ */
+export function listRegions(deviceId: string): RegionDef[] {
+  return listDevicePlaces(deviceId)
+    .filter(place => place.name !== null && place.name.trim() !== '')
+    .map(place => ({ id: place.id, name: place.name as string, lat: place.center_lat, lon: place.center_lon, radiusM: place.radius_m }))
 }
 
 /** 最近一次停留对应的地点（命名工具的默认目标）。 */
