@@ -71,3 +71,6 @@ skills-lock.json
 /android/.kotlin/
 /android/.idea/
 /android/local.properties
+
+# 采集端 APK（构建产物，用 gradle assembleDebug 重新生成；放在 uploads/ 只是为了让手机能下载）
+uploads/*.apk
