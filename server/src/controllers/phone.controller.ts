@@ -1,6 +1,7 @@
 import { Request, Response } from 'express'
 import { MAX_POINTS_PER_BATCH } from '../services/phone/location.service.js'
-import { ingestAndProcessLocations } from '../services/phone/track.service.js'
+import { ingestAndProcessLocations, resolveRecentDeviceId } from '../services/phone/track.service.js'
+import { createPlace, listPlacesForUi, updatePlace } from '../services/phone/place.service.js'
 import { geocodePendingPlaces } from '../services/phone/geocode.service.js'
 
 /**
@@ -26,5 +27,62 @@ export function postLocations(req: Request, res: Response): void {
   // 新地点顺手查一次地名：不阻塞响应（反查是网络调用），失败也不写缓存、下轮重试
   if (result.stays > 0) {
     void geocodePendingPlaces().catch(err => console.error('[geocode] 触发失败：', err))
+  }
+}
+
+/** 列出地点（含高德查到的地址），供地图页显示与划定区域。 */
+export function getPlaces(_req: Request, res: Response): void {
+  const deviceId = resolveRecentDeviceId()
+  if (!deviceId) {
+    res.json({ device_id: null, places: [] })
+    return
+  }
+  res.json({ device_id: deviceId, places: listPlacesForUi(deviceId) })
+}
+
+/** 改一处地点：名字（划定/取消区域）、半径、圆心。 */
+export function patchPlace(req: Request, res: Response): void {
+  const id = Number(req.params.id)
+  if (!Number.isInteger(id)) {
+    res.status(400).json({ error: '地点编号不合法' })
+    return
+  }
+  const body = (req.body ?? {}) as Record<string, unknown>
+  // 只认这几个字段，别的一律忽略（避免前端顺手把 hit_count 之类也传进来）
+  const patch: { name?: unknown; radiusM?: unknown; lat?: unknown; lon?: unknown } = {}
+  for (const key of ['name', 'radiusM', 'lat', 'lon'] as const) {
+    if (key in body) patch[key] = body[key]
+  }
+
+  try {
+    const place = updatePlace(id, patch as never)
+    if (!place) {
+      res.status(404).json({ error: '地点不存在' })
+      return
+    }
+    res.json(place)
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : '参数不合法' })
+  }
+}
+
+/** 手工新建区域（地图上点一下 + 起名）。 */
+export function postPlace(req: Request, res: Response): void {
+  const deviceId = resolveRecentDeviceId()
+  if (!deviceId) {
+    res.status(400).json({ error: '还没有任何手机轨迹数据，不知道属于哪个设备' })
+    return
+  }
+  const body = (req.body ?? {}) as Record<string, unknown>
+  try {
+    res.json(createPlace({
+      deviceId,
+      name: body.name as string,
+      lat: body.lat as number,
+      lon: body.lon as number,
+      radiusM: body.radiusM as number | undefined
+    }))
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : '参数不合法' })
   }
 }

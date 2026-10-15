@@ -2,6 +2,7 @@ import { connectDatabase } from '../../database/index.js'
 import type { RegionDef } from './region-tracker.js'
 import { getBeijingDate } from '../../utils/time.js'
 import { haversineM } from './track-segmenter.js'
+import { getPlaceGeo, type PlaceGeo } from './geocode.service.js'
 
 /**
  * 常去地点：把停留归到同一处，并允许用户命名。
@@ -13,6 +14,12 @@ import { haversineM } from './track-segmenter.js'
 /** 两处停留相距多少米以内算同一个地点 */
 export const PLACE_MATCH_RADIUS_M = 200
 /** 判定为「常去」的门槛 */
+/** 手工新建区域时的默认半径 */
+export const DEFAULT_PLACE_RADIUS_M = 200
+/** 半径上限：再大就不是"家/公司"而是"整个城区"了，越界判定会失去意义 */
+export const MAX_PLACE_RADIUS_M = 5000
+const MAX_PLACE_NAME_CHARS = 40
+
 export const FREQUENT_MIN_HITS = 3
 export const FREQUENT_MIN_DAYS = 3
 
@@ -115,6 +122,131 @@ export function listRegions(deviceId: string): RegionDef[] {
   return listDevicePlaces(deviceId)
     .filter(place => place.name !== null && place.name.trim() !== '')
     .map(place => ({ id: place.id, name: place.name as string, lat: place.center_lat, lon: place.center_lon, radiusM: place.radius_m }))
+}
+
+/** 界面上看到的一处地点（含高德查到的地址，机器名不冒充区域名） */
+export interface PlaceAdminView {
+  id: number
+  /** 手工名（= 区域名）；null 表示还不是区域 */
+  name: string | null
+  centerLat: number
+  centerLon: number
+  radiusM: number
+  hitCount: number
+  dayCount: number
+  lastSeenAt: string | null
+  /** 是否已被划定为区域 */
+  isRegion: boolean
+  geo: PlaceGeo | null
+}
+
+function toAdminView(place: StoredPlace): PlaceAdminView {
+  return {
+    id: place.id,
+    name: place.name,
+    centerLat: place.center_lat,
+    centerLon: place.center_lon,
+    radiusM: place.radius_m,
+    hitCount: place.hit_count,
+    dayCount: place.day_count,
+    lastSeenAt: place.last_seen_at,
+    isRegion: place.name !== null && place.name.trim() !== '',
+    geo: getPlaceGeo(place.id)
+  }
+}
+
+function assertName(name: unknown): string {
+  const trimmed = typeof name === 'string' ? name.trim() : ''
+  if (trimmed.length === 0) throw new Error('名字不能为空')
+  if (trimmed.length > MAX_PLACE_NAME_CHARS) throw new Error(`名字最多 ${MAX_PLACE_NAME_CHARS} 个字`)
+  return trimmed
+}
+
+function assertCoord(lat: unknown, lon: unknown): void {
+  if (typeof lat !== 'number' || typeof lon !== 'number' || !Number.isFinite(lat) || !Number.isFinite(lon)) {
+    throw new Error('坐标必须是数字')
+  }
+  if (Math.abs(lat) > 90 || Math.abs(lon) > 180) throw new Error('坐标超出有效范围')
+}
+
+function assertRadius(radiusM: unknown): number {
+  if (typeof radiusM !== 'number' || !Number.isFinite(radiusM)) throw new Error('半径必须是数字')
+  if (radiusM <= 0 || radiusM > MAX_PLACE_RADIUS_M) throw new Error(`半径要在 0 到 ${MAX_PLACE_RADIUS_M} 米之间`)
+  return radiusM
+}
+
+/** 给界面看的地点列表（含高德查到的区划/地址）。 */
+export function listPlacesForUi(deviceId: string): PlaceAdminView[] {
+  return listPlaces(deviceId).map(toAdminView)
+}
+
+/**
+ * 手工新建区域（地图上点一下 + 起名）。
+ *
+ * 附近已有地点（`PLACE_MATCH_RADIUS_M` 内）时**直接给它命名，不再建重复的**——
+ * 一个是轨迹数据里长出来的，一个是人手点的，本来就是同一处；
+ * 但圆心保留数据里那个（它来自真实停留点），只采纳人给的名字与范围。
+ */
+export function createPlace(input: {
+  deviceId: string
+  name: string
+  lat: number
+  lon: number
+  radiusM?: number
+}): { place: PlaceAdminView; merged: boolean } {
+  const name = assertName(input.name)
+  assertCoord(input.lat, input.lon)
+  const radiusM = input.radiusM === undefined ? DEFAULT_PLACE_RADIUS_M : assertRadius(input.radiusM)
+
+  const nearby = listDevicePlaces(input.deviceId).find(place =>
+    haversineM(input.lat, input.lon, place.center_lat, place.center_lon) <= PLACE_MATCH_RADIUS_M
+  )
+  if (nearby) {
+    connectDatabase().prepare('UPDATE phone_places SET name = ?, radius_m = ? WHERE id = ?').run(name, radiusM, nearby.id)
+    return { place: toAdminView(getPlace(nearby.id) as StoredPlace), merged: true }
+  }
+
+  const res = connectDatabase().prepare(`
+    INSERT INTO phone_places (device_id, center_lat, center_lon, radius_m, name, hit_count, day_count)
+    VALUES (?, ?, ?, ?, ?, 0, 0)
+  `).run(input.deviceId, input.lat, input.lon, radiusM, name)
+  return { place: toAdminView(getPlace(Number(res.lastInsertRowid)) as StoredPlace), merged: false }
+}
+
+/**
+ * 改一处地点：名字（改名 = 划定区域，清空 = 取消）、半径、圆心。
+ * 不存在的编号返回 null；参数非法抛错（由控制器转成 400）。
+ */
+export function updatePlace(
+  placeId: number,
+  patch: { name?: string | null; radiusM?: number; lat?: number; lon?: number }
+): PlaceAdminView | null {
+  const existing = getPlace(placeId)
+  if (!existing) return null
+
+  const sets: string[] = []
+  const values: unknown[] = []
+
+  if ('name' in patch) {
+    const raw = patch.name
+    const name = raw === null || (typeof raw === 'string' && raw.trim() === '') ? null : assertName(raw)
+    sets.push('name = ?')
+    values.push(name)
+  }
+  if (patch.radiusM !== undefined) {
+    sets.push('radius_m = ?')
+    values.push(assertRadius(patch.radiusM))
+  }
+  if (patch.lat !== undefined || patch.lon !== undefined) {
+    assertCoord(patch.lat, patch.lon)
+    sets.push('center_lat = ?', 'center_lon = ?')
+    values.push(patch.lat, patch.lon)
+  }
+
+  if (sets.length > 0) {
+    connectDatabase().prepare(`UPDATE phone_places SET ${sets.join(', ')} WHERE id = ?`).run(...values, placeId)
+  }
+  return toAdminView(getPlace(placeId) as StoredPlace)
 }
 
 /** 最近一次停留对应的地点（命名工具的默认目标）。 */
