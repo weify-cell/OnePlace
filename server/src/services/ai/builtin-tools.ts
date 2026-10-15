@@ -7,15 +7,9 @@ import { searchKnowledgeBase } from '../knowledge-base.service.js'
 import { searchMemories, searchMemoryVectors, addMemory, resolvePrimaryMemoryUser, stripUserIds, isMemoryKind, getMemoryDate } from '../wechat/memory.service.js'
 import { listStays, listTrips, resolveRecentDeviceId } from '../phone/track.service.js'
 import { getPlace, isFrequentPlace, mostRecentPlace, namePlace } from '../phone/place.service.js'
-import { formatBeijingTime, getBeijingDate, getBeijingDateAfter, getBeijingDateTime, getBeijingDayWindow, getBeijingDateTimeSec } from '../../utils/time.js'
+import { beijingClock, formatBeijingTime, getBeijingDate, getBeijingDateAfter, getBeijingDateTime, getBeijingDayWindow, getBeijingDateTimeSec } from '../../utils/time.js'
 import type { StoredStay, StoredTrip } from '../phone/track.service.js'
 
-/** 设备侧时刻（UTC ISO）转成北京钟点 HH:mm，便于机器人转述 */
-function beijingClock(iso: string): string {
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return iso
-  return new Date(date.getTime() + 8 * 60 * 60 * 1000).toISOString().slice(11, 16)
-}
 
 function textResult(text: string): AgentToolResult<undefined> {
   return { content: [{ type: 'text' as const, text }], details: undefined }

@@ -84,6 +84,17 @@ export function getBeijingDayWindow(date: string): { start: string; end: string 
 }
 
 /** 人类可读北京时间：[YYYY/MM/DD HH:mm:ss 星期X 北京时间]，用于注入对话/报告的上下文 */
+/**
+ * 把某个时刻转成北京钟点 `HH:mm`（用于向人或模型转述时间，如"09:12–09:58"）。
+ * 解析失败时原样返回，避免把非法值变成 `NaN:NaN`。
+ * 注意：这**不是** formatBeijingTime——那个给的是本地化长格式（带星期与"北京时间"后缀）。
+ */
+export function beijingClock(value: string | Date): string {
+  const ms = value instanceof Date ? value.getTime() : Date.parse(value)
+  if (!Number.isFinite(ms)) return typeof value === 'string' ? value : ''
+  return new Date(ms + BEIJING_OFFSET_MS).toISOString().slice(11, 16)
+}
+
 export function formatBeijingTime(now: Date = new Date()): string {
   const timestamp = now.toLocaleString('zh-CN', {
     timeZone: 'Asia/Shanghai',

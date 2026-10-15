@@ -115,9 +115,16 @@ export async function buildSystemPrompt(req: SystemPromptRequest): Promise<strin
   return composePrompt([basePromptFor(req), skills, memory])
 }
 
-/** 记忆整理的用户消息：取模板（设置优先）并注入变量。 */
-export function buildMemoryUserContent(vars: Record<string, string>): string {
-  return renderTemplate(setting('ilink_memory_user_template', DEFAULT_MEMORY_USER_TEMPLATE), vars)
+/**
+ * 记忆整理的用户消息：取模板（设置优先）并注入变量。
+ *
+ * 轨迹摘要**追加**在渲染结果之后，而不是加一个 `{trackSummary}` 变量：
+ * 模板存在 settings 里，老安装的模板没有那个变量，加了就会静默丢失这段素材。
+ */
+export function buildMemoryUserContent(vars: Record<string, string>, trackSummary = ''): string {
+  const rendered = renderTemplate(setting('ilink_memory_user_template', DEFAULT_MEMORY_USER_TEMPLATE), vars)
+  if (!trackSummary) return rendered
+  return `${rendered}\n\n【手机轨迹摘要（来自手机定位，不是对话内容）】\n${trackSummary}`
 }
 
 /**

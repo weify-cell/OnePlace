@@ -7,7 +7,7 @@ import { withInflight } from '../../utils/inflight.js'
 import { resolveRecentDeviceId, getStay, getTrip } from '../phone/track.service.js'
 import { consumeEvents, listUnconsumedEvents, type StoredEvent } from '../phone/event.service.js'
 import { isFrequentPlace } from '../phone/place.service.js'
-import { getBeijingDate, getBeijingHour, formatBeijingTime } from '../../utils/time.js'
+import { beijingClock, getBeijingDate, getBeijingHour, formatBeijingTime } from '../../utils/time.js'
 import { buildSystemPrompt } from '../ai/prompt.js'
 import { runAgentTurn, wechatAgentId, type AgentTurnRequest } from '../ai/agent-turn.js'
 import type { ChatMessage } from '../ai/pi-ai.adapter.js'
@@ -102,11 +102,9 @@ function incrementDailyPushCount(userId: string, date: string = getBeijingDate()
 
 /** 把事件说成人能看懂的一句（供模型改写，不喂原始坐标）。 */
 export function describeEvent(deviceId: string, event: StoredEvent): string {
-  const clock = (iso: string): string => new Date(Date.parse(iso) + 8 * 3600_000).toISOString().slice(11, 16)
-
   if (event.target_kind === 'stay') {
     const stay = getStay(deviceId, event.target_id)
-    if (!stay) return `在 ${clock(event.occurred_at)} 的停留`
+    if (!stay) return `在 ${beijingClock(event.occurred_at)} 的停留`
     const minutes = Math.round((Date.parse(stay.ended_at) - Date.parse(stay.started_at)) / 60000)
     const where = stay.place_name
       ? stay.place_name
@@ -115,14 +113,14 @@ export function describeEvent(deviceId: string, event: StoredEvent): string {
         ? '一个常去的地方（还没命名）'
         : '一个不常去的地方（还没命名）'
     return event.event_type === 'arrive'
-      ? `${clock(event.occurred_at)} 到达「${where}」，到 ${clock(stay.ended_at)} 离开（停留 ${minutes} 分钟）`
-      : `${clock(event.occurred_at)} 从「${where}」离开，此前停留 ${minutes} 分钟`
+      ? `${beijingClock(event.occurred_at)} 到达「${where}」，到 ${beijingClock(stay.ended_at)} 离开（停留 ${minutes} 分钟）`
+      : `${beijingClock(event.occurred_at)} 从「${where}」离开，此前停留 ${minutes} 分钟`
   }
 
   const trip = getTrip(deviceId, event.target_id)
-  if (!trip) return `在 ${clock(event.occurred_at)} 结束的一段行程`
+  if (!trip) return `在 ${beijingClock(event.occurred_at)} 结束的一段行程`
   const minutes = Math.round((Date.parse(trip.ended_at) - Date.parse(trip.started_at)) / 60000)
-  return `${clock(trip.started_at)}–${clock(trip.ended_at)} 完成一段约 ${(trip.distance_m / 1000).toFixed(1)} km 的行程（${minutes} 分钟）`
+  return `${beijingClock(trip.started_at)}–${beijingClock(trip.ended_at)} 完成一段约 ${(trip.distance_m / 1000).toFixed(1)} km 的行程（${minutes} 分钟）`
 }
 
 /** 一轮推送的模型调用入口：LLM 是系统边界，测试可换掉而不必 mock 自家模块。 */

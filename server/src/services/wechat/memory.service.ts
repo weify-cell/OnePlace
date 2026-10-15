@@ -7,6 +7,8 @@ import { withInflight } from '../../utils/inflight.js'
 import type { SubsystemJob } from './scheduler.js'
 import { runAgentTurn, wechatTaskAgentId, type AgentTurnRequest } from '../ai/agent-turn.js'
 import { buildMemoryUserContent, buildSystemPrompt } from '../ai/prompt.js'
+import { resolveRecentDeviceId } from '../phone/track.service.js'
+import { buildTrackSummary } from '../phone/track-summary.js'
 import { formatBeijingTime, getBeijingDate, getBeijingDateAfter, getBeijingDayWindow, shiftBeijingDate, toBeijingDate } from '../../utils/time.js'
 import { embedText } from '../ai/embedding-client.js'
 import { upsertChunks, searchChunks, deleteChunks } from '../vector/vector.service.js'
@@ -580,8 +582,11 @@ export async function consolidateDayMemory(
   runTurn: MemoryTurnRunner = runAgentTurn
 ): Promise<{ saved: number }> {
   const records = queryChatRecords(userId, getBeijingDayWindow(memoryDate))
-  if (records.length === 0) {
-    console.log(`[memory] no messages on ${memoryDate} for ${userId}, skip`)
+  // 手机轨迹也是素材：一天没聊天但出了门（规律、常去地点的变化）同样值得记
+  const deviceId = resolveRecentDeviceId()
+  const trackSummary = deviceId ? buildTrackSummary(deviceId, memoryDate) : ''
+  if (records.length === 0 && !trackSummary) {
+    console.log(`[memory] no messages and no track on ${memoryDate} for ${userId}, skip`)
     return { saved: 0 }
   }
 
@@ -603,7 +608,7 @@ export async function consolidateDayMemory(
     recentMemories: recentLines.length > 0
       ? `\n以下为已有记忆（含类型与主题键），请勿重复抽取；状态型请沿用同一主题键：\n${recentLines.join('\n')}`
       : ''
-  })
+  }, trackSummary)
 
   // 写库由 agent 在 loop 内调用 add_memory 工具完成；saved 用 (user, memory_date) 行数差值统计
   const before = countMemories(userId, memoryDate)
