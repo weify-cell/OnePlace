@@ -2,7 +2,7 @@ import { connectDatabase } from '../../database/index.js'
 import { ingestLocations, listLocationPoints, type IngestResult, type LocationPointInput } from './location.service.js'
 import { emptyRegionState, reduceRegions, type RegionState, type RegionTransition } from './region-tracker.js'
 import { listRegions, matchOrCreatePlace } from './place.service.js'
-import { recordSegmentEvents } from './event.service.js'
+import { recordRegionEvents, recordSegmentEvents } from './event.service.js'
 import {
   emptySegmenterState,
   reduceTrack,
@@ -131,11 +131,14 @@ export function processNewLocations(deviceId: string): {
   const { state: nextState, closed } = reduceTrack(state, points)
 
   // 区域判定看的是**所有新点**，不只是闭合的段：越界要在刚进门时就判出来，不能等停留成形
+  const regions = listRegions(deviceId)
   const { state: nextRegionState, transitions: regionTransitions } = reduceRegions(
     loadRegionState(deviceId),
-    listRegions(deviceId),
+    regions,
     points
   )
+  // 有名字的地方只报越界（"到家了"），不再报"在某某停留"——同一个地方不该收两条通知
+  const regionPlaceIds = new Set(regions.map(region => region.id))
 
   let stays = 0
   let trips = 0
@@ -156,7 +159,7 @@ export function processNewLocations(deviceId: string): {
             stayedAt: segment.startedAt
           })
           db.prepare('UPDATE phone_stays SET place_id = ? WHERE id = ?').run(placeId, id)
-          forEvents.push({ segment, id, placeId })
+          if (!regionPlaceIds.has(placeId)) forEvents.push({ segment, id, placeId })
         }
       } else {
         const { id, created } = insertTrip(deviceId, segment)
@@ -167,6 +170,7 @@ export function processNewLocations(deviceId: string): {
       }
     }
     if (forEvents.length > 0) recordSegmentEvents({ deviceId, segments: forEvents })
+    recordRegionEvents({ deviceId, transitions: regionTransitions })
     saveState(deviceId, nextState)
     saveRegionState(deviceId, nextRegionState)
   })()
@@ -198,6 +202,23 @@ function saveRegionState(deviceId: string, state: RegionState): void {
     VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     ON CONFLICT(device_id) DO UPDATE SET state = excluded.state, updated_at = excluded.updated_at
   `).run(`${deviceId}#region`, JSON.stringify(state))
+}
+
+/**
+ * 忘掉某处区域（或全部）的"在内/在外"状态。
+ *
+ * 人在地图上挪了圆心、改了半径、或者刚给它起名之后，旧的判定就过时了：
+ * 不作废的话，下一批点会拿新范围去比旧状态，凭空报一次"离开家"——而你一直坐在家里。
+ * 作废后按"首次观测静默确立"重新开始，不会误报。
+ */
+export function resetRegionState(deviceId: string, placeId?: number): void {
+  const state = loadRegionState(deviceId)
+  if (placeId === undefined) {
+    saveRegionState(deviceId, emptyRegionState())
+    return
+  }
+  delete state[String(placeId)]
+  saveRegionState(deviceId, state)
 }
 
 export function getStay(deviceId: string, stayId: number): StoredStay | null {

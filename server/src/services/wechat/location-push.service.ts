@@ -6,7 +6,7 @@ import { type SubsystemJob } from './scheduler.js'
 import { withInflight } from '../../utils/inflight.js'
 import { resolveRecentDeviceId, getStay, getTrip } from '../phone/track.service.js'
 import { consumeEvents, listUnconsumedEvents, type StoredEvent } from '../phone/event.service.js'
-import { isFrequentPlace } from '../phone/place.service.js'
+import { getPlace, isFrequentPlace } from '../phone/place.service.js'
 import { placeLabel } from '../phone/geocode.service.js'
 import { beijingClock, getBeijingDate, getBeijingHour, formatBeijingTime } from '../../utils/time.js'
 import { buildSystemPrompt } from '../ai/prompt.js'
@@ -103,6 +103,15 @@ function incrementDailyPushCount(userId: string, date: string = getBeijingDate()
 
 /** 把事件说成人能看懂的一句（供模型改写，不喂原始坐标）。 */
 export function describeEvent(deviceId: string, event: StoredEvent): string {
+  if (event.target_kind === 'region') {
+    // 区域事件比停留事件"快"：刚进门就判定出来了（停留要等够阈值）
+    const place = getPlace(event.target_id)
+    const where = place?.name ? `「${place.name}」` : '划定的区域'
+    return event.event_type === 'enter_region'
+      ? `${beijingClock(event.occurred_at)} 到达${where}`
+      : `${beijingClock(event.occurred_at)} 离开${where}`
+  }
+
   if (event.target_kind === 'stay') {
     const stay = getStay(deviceId, event.target_id)
     if (!stay) return `在 ${beijingClock(event.occurred_at)} 的停留`

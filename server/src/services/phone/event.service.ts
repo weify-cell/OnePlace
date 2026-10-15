@@ -9,13 +9,13 @@ import type { TrackSegment } from './track-segmenter.js'
  * 推送环节据此判断事件是否还新鲜（避免半夜收到"你昨晚到家了"）。
  */
 
-export type TrackEventType = 'arrive' | 'leave' | 'trip_end'
+export type TrackEventType = 'arrive' | 'leave' | 'trip_end' | 'enter_region' | 'exit_region'
 
 export interface StoredEvent {
   id: number
   device_id: string
   event_type: TrackEventType
-  target_kind: 'stay' | 'trip'
+  target_kind: 'stay' | 'trip' | 'region'
   target_id: number
   place_id: number | null
   occurred_at: string
@@ -56,6 +56,45 @@ export function recordSegmentEvents(input: {
         )
         if (res.changes > 0) created++
       }
+    }
+  })()
+
+  return created
+}
+
+/**
+ * 区域边界事件（到家/到公司）。
+ *
+ * 与停留事件**同表同管道**：推送的静默时段、时效上限、每日额度、一轮一条全部直接继承，
+ * 不另起一套机制。事件时刻用判定出的**真实越界时刻**（趋势开始那一刻），
+ * 而不是"确认"时刻——否则日志会把 22:20 到家记成 22:22。
+ *
+ * 重复调用不会重复写（UNIQUE 含 occurred_at + INSERT OR IGNORE）：崩溃重放时
+ * 重算出的同一条事件，occurred_at 逐字相同，照样被挡；而"今天第二次到家"时刻不同，能进去。
+ */
+export function recordRegionEvents(input: {
+  deviceId: string
+  transitions: Array<{ regionId: number; regionName: string; inside: boolean; at: string }>
+}): number {
+  if (input.transitions.length === 0) return 0
+  const db = connectDatabase()
+  const insert = db.prepare(`
+    INSERT OR IGNORE INTO phone_events
+      (device_id, event_type, target_kind, target_id, place_id, occurred_at)
+    VALUES (?, ?, 'region', ?, ?, ?)
+  `)
+
+  let created = 0
+  db.transaction(() => {
+    for (const transition of input.transitions) {
+      const res = insert.run(
+        input.deviceId,
+        transition.inside ? 'enter_region' : 'exit_region',
+        transition.regionId,
+        transition.regionId,
+        transition.at
+      )
+      if (res.changes > 0) created++
     }
   })()
 

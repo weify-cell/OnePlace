@@ -177,3 +177,36 @@ describe('接进加工链路', () => {
     expect(second.regionTransitions).toEqual([])
   })
 })
+
+describe('改了区域范围之后不误报', () => {
+  it('作废该区域状态后，下一批点静默重新确立（不会跳出一次"离开家"）', async () => {
+    const { resetRegionState } = await import('../services/phone/track.service.js')
+    const db = connectDatabase()
+    // id 要取真实值：AUTOINCREMENT 不会因为上一批用例删了行就重头开始
+    const regionId = Number(db.prepare("INSERT INTO phone_places (device_id, center_lat, center_lon, radius_m, name, hit_count, day_count) VALUES ('dev-rst', ?, ?, 200, '家', 1, 1)")
+      .run(HOME.lat, HOME.lon).lastInsertRowid)
+
+    const point = (min: number, inside: boolean) => ({
+      device_id: 'dev-rst',
+      recorded_at: new Date(BASE + min * 60_000).toISOString(),
+      latitude: HOME.lat,
+      longitude: inside ? HOME.lon : HOME.lon + 0.011,
+      accuracy: 10,
+      source: 'gps'
+    })
+
+    // 先在家待着（首次观测静默确立"在内"）
+    ingestAndProcessLocations([point(0, true), point(1, true)], { deviceId: 'dev-rst' })
+
+    // 人在地图上挪了圆心/改了半径 → 旧判定作废
+    resetRegionState('dev-rst', regionId)
+
+    // 假如没作废：现在人"在外面"了，会报一次离开。作废后应当只是静默确立
+    const after = ingestAndProcessLocations([point(30, false), point(34, false)], { deviceId: 'dev-rst' })
+    expect(after.regionTransitions).toEqual([])
+
+    // 状态确实被重新确立了：确实认定"在外"
+    const stored = JSON.parse((connectDatabase().prepare("SELECT state FROM phone_track_state WHERE device_id = 'dev-rst#region'").get() as { state: string }).state)
+    expect(stored[String(regionId)].inside).toBe(false)
+  })
+})

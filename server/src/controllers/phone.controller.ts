@@ -1,7 +1,7 @@
 import { Request, Response } from 'express'
 import { MAX_POINTS_PER_BATCH } from '../services/phone/location.service.js'
-import { ingestAndProcessLocations, resolveRecentDeviceId } from '../services/phone/track.service.js'
-import { createPlace, listPlacesForUi, updatePlace } from '../services/phone/place.service.js'
+import { ingestAndProcessLocations, resetRegionState, resolveRecentDeviceId } from '../services/phone/track.service.js'
+import { createPlace, getPlace, listPlacesForUi, updatePlace } from '../services/phone/place.service.js'
 import { geocodePendingPlaces } from '../services/phone/geocode.service.js'
 
 /**
@@ -55,11 +55,14 @@ export function patchPlace(req: Request, res: Response): void {
   }
 
   try {
+    const before = getPlace(id)
     const place = updatePlace(id, patch as never)
-    if (!place) {
+    if (!place || !before) {
       res.status(404).json({ error: '地点不存在' })
       return
     }
+    // 范围或名字变了 → 该处旧的"在内/在外"作废，否则下一批点会凭空报一次"离开"
+    resetRegionState(before.device_id, id)
     res.json(place)
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : '参数不合法' })

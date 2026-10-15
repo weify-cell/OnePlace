@@ -32,7 +32,10 @@ CREATE TABLE IF NOT EXISTS phone_events (
   occurred_at TEXT NOT NULL,
   consumed_at TEXT,
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-  UNIQUE(device_id, event_type, target_kind, target_id)
+  -- 唯一键必须含 occurred_at：区域事件每次 target_id 都是同一个区域 id，
+  -- 少了它，"今天第二次到家"会被当重复静默吞掉。同时它保住崩溃重放不重复报
+  -- （重放重算出的同一条事件，occurred_at 逐字相同，照样被挡）。
+  UNIQUE(device_id, event_type, target_kind, target_id, occurred_at)
 );
 CREATE INDEX IF NOT EXISTS idx_phone_events_pending ON phone_events(consumed_at, occurred_at);
 
