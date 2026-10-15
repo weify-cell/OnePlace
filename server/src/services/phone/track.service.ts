@@ -118,7 +118,8 @@ export function processNewLocations(deviceId: string): { stays: number; trips: n
   const state = loadState(deviceId)
   const points: TrackPoint[] = listLocationPoints(deviceId, { from: state.lastPointAt ?? undefined })
     .filter(p => !state.lastPointAt || Date.parse(p.recorded_at) > Date.parse(state.lastPointAt))
-    .map(p => ({ recordedAt: p.recorded_at, lat: p.latitude, lon: p.longitude }))
+    // 精度要一起喂给切分：里程是否计入这一步取决于"位移有没有超过定位误差"
+    .map(p => ({ recordedAt: p.recorded_at, lat: p.latitude, lon: p.longitude, accuracy: p.accuracy }))
 
   if (points.length === 0) return { stays: 0, trips: 0 }
 

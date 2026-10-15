@@ -9,7 +9,8 @@
  * - 行程：两次停留之间的点，首尾直线位移 ≥ TRIP_MIN_DISTANCE_M；里程按相邻点累加
  * - 相邻点间隔超过 TRIP_MAX_GAP_MS 视为断档（App 被杀/没信号），断开当前行程，不把断档
  *   抹成一段直线里程
- * - 里程忽略小于 DRIFT_MIN_STEP_M 的步长（GPS 静止漂移）
+ * - 里程按**精度加权**过滤：小于 DRIFT_MIN_STEP_M 的步长不算，精度差时门槛还要抬高
+ *   （静止时相邻两点差 20 米很常见，那是噪声不是走路），隐含速度离谱的跳变也不算
  * - 不看日期，跨天不切断（晚上出门、凌晨回家是一趟）
  */
 
@@ -17,6 +18,8 @@ export interface TrackPoint {
   recordedAt: string
   lat: number
   lon: number
+  /** 定位精度（米）；缺省视为未知，按 0 处理（门槛退化为 DRIFT_MIN_STEP_M） */
+  accuracy?: number | null
 }
 
 export interface StaySegment {
@@ -53,6 +56,8 @@ interface StayRun {
   sumLat: number
   sumLon: number
   maxRadiusM: number
+  /** 锚点精度；旧状态里没有这个字段，缺省按未知处理 */
+  anchorAccuracy?: number | null
 }
 
 /** 已确认停留之后、尚未闭合的移动 */
@@ -65,6 +70,8 @@ interface TripBuffer {
   firstLon: number
   lastLat: number
   lastLon: number
+  /** 上一个被接受的点的精度，用于判断这一步算不算数 */
+  lastAccuracy?: number | null
   /** 行程里"停下来"的候选锚点：它待够 STAY_MIN_MS 就变成下一个停留 */
   stillAnchorLat: number
   stillAnchorLon: number
@@ -86,6 +93,32 @@ export const STAY_MIN_MS = 10 * 60 * 1000
 export const TRIP_MIN_DISTANCE_M = 300
 export const TRIP_MAX_GAP_MS = 5 * 60 * 1000
 export const DRIFT_MIN_STEP_M = 10
+/** 隐含速度上限：比任何真实通勤都快，只有定位跳变才这么快（252 km/h） */
+export const MAX_IMPLIED_SPEED_MPS = 70
+/** 精度折算系数：位移小于「平均精度 × 这个系数」时不算移动 */
+export const ACCURACY_FACTOR = 0.75
+
+/**
+ * 这一步算不算"真的走了"，算的话返回步长、否则返回 0。
+ *
+ * 三个门槛，都是实测倒逼出来的：
+ * 1. 小于 DRIFT_MIN_STEP_M（10 米）——静止漂移；
+ * 2. 小于「平均精度 × ACCURACY_FACTOR」——实测 36–68 米精度下，静止时相邻点能差 20 米，
+ *    那只是噪声；户外 GPS 精度 5–10 米时门槛仍是 10 米，真走路（30 秒几十米）不受影响；
+ * 3. 隐含速度超过 MAX_IMPLIED_SPEED_MPS——那是定位跳变，不是移动。
+ */
+export function countedStepM(
+  stepM: number,
+  previousAccuracy: number | null | undefined,
+  currentAccuracy: number | null | undefined,
+  dtMs: number
+): number {
+  if (!Number.isFinite(stepM) || stepM < DRIFT_MIN_STEP_M) return 0
+  const averageAccuracy = ((previousAccuracy ?? 0) + (currentAccuracy ?? 0)) / 2
+  if (stepM < averageAccuracy * ACCURACY_FACTOR) return 0
+  if (dtMs > 0 && stepM / (dtMs / 1000) > MAX_IMPLIED_SPEED_MPS) return 0
+  return stepM
+}
 
 export function emptySegmenterState(): SegmenterState {
   return { lastPointAt: null, stay: null, trip: null }
@@ -111,6 +144,7 @@ function newStayRun(p: TrackPoint): StayRun {
   return {
     anchorLat: p.lat,
     anchorLon: p.lon,
+    anchorAccuracy: p.accuracy ?? null,
     startedAt: p.recordedAt,
     lastInsideAt: p.recordedAt,
     samples: 1,
@@ -143,11 +177,12 @@ function bufferFromStay(run: StayRun, p: TrackPoint): TripBuffer {
     startedAt: run.startedAt,
     lastAt: p.recordedAt,
     samples: run.samples + 1,
-    distanceM: step >= DRIFT_MIN_STEP_M ? step : 0,
+    distanceM: countedStepM(step, run.anchorAccuracy, p.accuracy, ms(run.lastInsideAt, p.recordedAt)),
     firstLat: run.anchorLat,
     firstLon: run.anchorLon,
     lastLat: p.lat,
     lastLon: p.lon,
+    lastAccuracy: p.accuracy ?? null,
     stillAnchorLat: p.lat,
     stillAnchorLon: p.lon,
     stillStartedAt: p.recordedAt,
@@ -213,11 +248,12 @@ export function reduceTrack(
             startedAt: next.stay.lastInsideAt,
             lastAt: point.recordedAt,
             samples: 1,
-            distanceM: step >= DRIFT_MIN_STEP_M ? step : 0,
+            distanceM: countedStepM(step, next.stay.anchorAccuracy, point.accuracy, ms(next.stay.lastInsideAt, point.recordedAt)),
             firstLat: centerLat,
             firstLon: centerLon,
             lastLat: point.lat,
             lastLon: point.lon,
+            lastAccuracy: point.accuracy ?? null,
             stillAnchorLat: point.lat,
             stillAnchorLon: point.lon,
             stillStartedAt: point.recordedAt,
@@ -243,10 +279,11 @@ export function reduceTrack(
           continue
         }
         const step = haversineM(next.trip.lastLat, next.trip.lastLon, point.lat, point.lon)
-        if (step >= DRIFT_MIN_STEP_M) next.trip.distanceM += step
+        next.trip.distanceM += countedStepM(step, next.trip.lastAccuracy, point.accuracy, gap)
         next.trip.lastAt = point.recordedAt
         next.trip.lastLat = point.lat
         next.trip.lastLon = point.lon
+        next.trip.lastAccuracy = point.accuracy ?? null
         next.trip.samples++
 
         // 停下来了吗：在"静止锚点"附近累计够时长就变成下一个停留
@@ -261,6 +298,7 @@ export function reduceTrack(
             next.stay = {
               anchorLat: next.trip.stillAnchorLat,
               anchorLon: next.trip.stillAnchorLon,
+              anchorAccuracy: next.trip.lastAccuracy ?? null,
               startedAt: next.trip.stillStartedAt,
               lastInsideAt: point.recordedAt,
               samples: next.trip.stillSamples,

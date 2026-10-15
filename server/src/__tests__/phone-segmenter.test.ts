@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  countedStepM,
   DRIFT_MIN_STEP_M,
   emptySegmenterState,
   haversineM,
@@ -213,5 +214,72 @@ describe('haversine 本身', () => {
     const d = haversineM(BASE.lat, BASE.lon, BASE.lat + mToLat(1), BASE.lon)
     expect(d).toBeGreaterThan(0.9)
     expect(d).toBeLessThan(1.1)
+  })
+})
+
+// ── 里程必须按精度过滤（实测倒逼：静止时 36–68 米精度下相邻点能差 20 米） ──
+
+describe('步长门槛：噪声不该被算成走路', () => {
+  it('精度差时抬高门槛：20 米位移在 68 米精度下不算移动', () => {
+    expect(countedStepM(20, 68, 68, 60_000)).toBe(0)
+  })
+
+  it('精度好时保持原门槛：10 米精度下 80 米就是走了 80 米', () => {
+    expect(countedStepM(80, 10, 10, 60_000)).toBe(80)
+  })
+
+  it('精度好且位移大于门槛就照常计入（真走路不受影响）', () => {
+    expect(countedStepM(20, 5, 5, 60_000)).toBe(20)
+  })
+
+  it('精度中等时 12 米仍算噪声（门槛 = 平均精度 × 0.75）', () => {
+    expect(countedStepM(12, 30, 30, 60_000)).toBe(0)
+  })
+
+  it('没有精度信息时退化为固定 10 米门槛', () => {
+    expect(countedStepM(15, null, undefined, 60_000)).toBe(15)
+    expect(countedStepM(5, null, undefined, 60_000)).toBe(0)
+  })
+
+  it('隐含速度离谱的是定位跳变，不是移动', () => {
+    expect(countedStepM(5000, 10, 10, 1000)).toBe(0)
+  })
+
+  it('行程中途的定位噪声不灌进里程（真走路才计入）', () => {
+    // 场景：走一段 → 在路口等待（精度差、抖动大）→ 再走一段 → 停下
+    // 关键是噪声发生在**行程内部**：此时不会走「停留」分支，只能靠精度门槛拦住。
+    // （早先那版用例把噪声放在开头，结果被停留逻辑吸收了，是假绿——变异验证才发现。）
+    const base = Date.parse('2026-05-01T01:00:00.000Z')
+    const lat = (m: number): number => 31.86 + m / 111320
+    const points: TrackPoint[] = []
+    let minute = 0
+    let walked = 0
+
+    const pushReal = (meters: number): void => {
+      walked += meters
+      points.push({ recordedAt: new Date(base + minute++ * 60_000).toISOString(), lat: lat(walked), lon: 117.16, accuracy: 8 })
+    }
+    // 抖动点：真实位置几乎没动，但精度差使报回的坐标偏 ±15 米（与实测同量级）
+    const pushNoisy = (jitterM: number): void => {
+      points.push({ recordedAt: new Date(base + minute++ * 60_000).toISOString(), lat: lat(walked + jitterM), lon: 117.16, accuracy: 45 })
+    }
+
+    for (let i = 0; i < 6; i++) pushReal(80)      // 走 480 米
+    pushNoisy(15); pushNoisy(-15); pushNoisy(15)  // 路口等待，噪声
+    for (let i = 0; i < 6; i++) pushReal(80)      // 再走 480 米
+    for (let i = 0; i < 12; i++) {                // 到地方停下（闭合行程）
+      points.push({ recordedAt: new Date(base + minute++ * 60_000).toISOString(), lat: lat(walked), lon: 117.16, accuracy: 8 })
+    }
+
+    const { closed } = reduceTrack(emptySegmenterState(), points)
+    const trip = closed.find(s => s.kind === 'trip') as TripSegment | undefined
+
+    expect(trip).toBeDefined()
+    // 真走 960 米；结果 864 米：丢了约 96 米"紧贴噪声量级的真位移"（15 米的步子在 45 米
+    // 精度下本来就分不清是走还是噪声，这个代价是自觉接受的），但**抖动一点没灌进来**。
+    // 上界是关键的：没有精度门槛时，那三次 ±15 米抖动会额外算进 90 米（960 → 约 1050）。
+    // 实测：干净实现 864，去掉精度门槛（变异）939 —— 上界必须卡在两者之间才有鉴别力
+    expect(trip!.distanceM).toBeGreaterThan(840)
+    expect(trip!.distanceM).toBeLessThan(920)
   })
 })
