@@ -7,6 +7,7 @@ import { withInflight } from '../../utils/inflight.js'
 import { resolveRecentDeviceId, getStay, getTrip } from '../phone/track.service.js'
 import { consumeEvents, listUnconsumedEvents, type StoredEvent } from '../phone/event.service.js'
 import { isFrequentPlace } from '../phone/place.service.js'
+import { placeLabel } from '../phone/geocode.service.js'
 import { beijingClock, getBeijingDate, getBeijingHour, formatBeijingTime } from '../../utils/time.js'
 import { buildSystemPrompt } from '../ai/prompt.js'
 import { runAgentTurn, wechatAgentId, type AgentTurnRequest } from '../ai/agent-turn.js'
@@ -106,12 +107,15 @@ export function describeEvent(deviceId: string, event: StoredEvent): string {
     const stay = getStay(deviceId, event.target_id)
     if (!stay) return `在 ${beijingClock(event.occurred_at)} 的停留`
     const minutes = Math.round((Date.parse(stay.ended_at) - Date.parse(stay.started_at)) / 60000)
-    const where = stay.place_name
-      ? stay.place_name
-      : stay.place_hit_count !== null && stay.place_day_count !== null
-        && isFrequentPlace({ hit_count: stay.place_hit_count, day_count: stay.place_day_count })
-        ? '一个常去的地方（还没命名）'
-        : '一个不常去的地方（还没命名）'
+    // 有名字就用名字（手工名或高德查到的 POI 名）；没名字只说"常去/不常去"，不编造地名
+    const frequent = stay.place_hit_count !== null && stay.place_day_count !== null
+      && isFrequentPlace({ hit_count: stay.place_hit_count, day_count: stay.place_day_count })
+    const label = stay.place_id ? placeLabel(stay.place_id, stay.place_name) : ''
+    const where = label && !label.startsWith('未命名地点')
+      ? label
+      : stay.place_id
+        ? `一个${frequent ? '常去' : '不常去'}的地方（还没命名）`
+        : '某处'
     return event.event_type === 'arrive'
       ? `${beijingClock(event.occurred_at)} 到达「${where}」，到 ${beijingClock(stay.ended_at)} 离开（停留 ${minutes} 分钟）`
       : `${beijingClock(event.occurred_at)} 从「${where}」离开，此前停留 ${minutes} 分钟`

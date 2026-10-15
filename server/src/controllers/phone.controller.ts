@@ -1,6 +1,7 @@
 import { Request, Response } from 'express'
 import { MAX_POINTS_PER_BATCH } from '../services/phone/location.service.js'
 import { ingestAndProcessLocations } from '../services/phone/track.service.js'
+import { geocodePendingPlaces } from '../services/phone/geocode.service.js'
 
 /**
  * 接收一批轨迹点。
@@ -19,5 +20,11 @@ export function postLocations(req: Request, res: Response): void {
   }
 
   const deviceId = typeof body.device_id === 'string' ? body.device_id : ''
-  res.json(ingestAndProcessLocations(body.points as never[], { deviceId }))
+  const result = ingestAndProcessLocations(body.points as never[], { deviceId })
+  res.json(result)
+
+  // 新地点顺手查一次地名：不阻塞响应（反查是网络调用），失败也不写缓存、下轮重试
+  if (result.stays > 0) {
+    void geocodePendingPlaces().catch(err => console.error('[geocode] 触发失败：', err))
+  }
 }

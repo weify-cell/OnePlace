@@ -1,6 +1,7 @@
 import { beijingClock, getBeijingDayWindow } from '../../utils/time.js'
 import { listStays, listTrips } from './track.service.js'
 import { isFrequentPlace } from './place.service.js'
+import { placeLabel } from './geocode.service.js'
 
 /**
  * 一天的轨迹摘要：给记忆整理当素材用的一句话人话。
@@ -19,11 +20,8 @@ export function buildTrackSummary(deviceId: string, date: string): string {
 
   for (const stay of stays) {
     const minutes = Math.round((Date.parse(stay.ended_at) - Date.parse(stay.started_at)) / 60000)
-    const where = stay.place_name
-      ? stay.place_name
-      : stay.place_id
-        ? `未命名地点 #${stay.place_id}`
-        : '未命名地点'
+    // 与工具、推送用同一套命名优先级：手工名 > 高德 POI 名（带区）> 地址 > 未命名
+    const where = stay.place_id ? placeLabel(stay.place_id, stay.place_name) : '未命名地点'
     const frequent = stay.place_hit_count !== null && stay.place_day_count !== null
       && isFrequentPlace({ hit_count: stay.place_hit_count, day_count: stay.place_day_count })
     lines.push(`- 停留 ${beijingClock(stay.started_at)}–${beijingClock(stay.ended_at)}（${minutes} 分钟）：${where}${frequent ? '（常去）' : ''}`)

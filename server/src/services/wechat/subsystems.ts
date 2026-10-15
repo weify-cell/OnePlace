@@ -6,6 +6,7 @@ import { proactiveChatJob } from './proactive-chat.service.js'
 import { reportJob } from './report.service.js'
 import { memoryJob } from './memory.service.js'
 import { locationPushJob } from './location-push.service.js'
+import { geocodeJob } from './geocode-job.js'
 
 /**
  * 微信后台子系统的组装处。
@@ -19,7 +20,8 @@ export const WECHAT_SUBSYSTEMS: SubsystemJob[] = [
   proactiveChatJob,
   reportJob,
   memoryJob,
-  locationPushJob
+  locationPushJob,
+  geocodeJob
 ]
 
 /**

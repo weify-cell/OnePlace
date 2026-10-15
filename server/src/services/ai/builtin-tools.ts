@@ -7,6 +7,8 @@ import { searchKnowledgeBase } from '../knowledge-base.service.js'
 import { searchMemories, searchMemoryVectors, addMemory, resolvePrimaryMemoryUser, stripUserIds, isMemoryKind, getMemoryDate } from '../wechat/memory.service.js'
 import { listStays, listTrips, resolveRecentDeviceId } from '../phone/track.service.js'
 import { getPlace, isFrequentPlace, mostRecentPlace, namePlace } from '../phone/place.service.js'
+import { getPlaceGeo, placeLabel } from '../phone/geocode.service.js'
+import { describeActivityArea } from '../phone/activity-area.js'
 import { beijingClock, formatBeijingTime, getBeijingDate, getBeijingDateAfter, getBeijingDateTime, getBeijingDayWindow, getBeijingDateTimeSec } from '../../utils/time.js'
 import type { StoredStay, StoredTrip } from '../phone/track.service.js'
 
@@ -455,9 +457,9 @@ export function getBuiltinToolMap(ctx: ToolContext = {}): Map<string, AgentTool>
           lines.push('停留：')
           for (const s of stays) {
             const minutes = Math.round((Date.parse(s.ended_at) - Date.parse(s.started_at)) / 60000)
-            // 有名字就用名字（"家""公司"），没名字给出编号与坐标——编号是命名工具的入参
+            // 名字来源：手工名 > 高德反查的 POI 名（带区）> 结构化地址 > 未命名地点 #N
             const where = s.place_id
-              ? (s.place_name ? `${s.place_name}（#${s.place_id}）` : `未命名地点（#${s.place_id}）${s.center_lat.toFixed(4)},${s.center_lon.toFixed(4)} 半径约 ${Math.round(s.radius_m)} m`)
+              ? `${placeLabel(s.place_id, s.place_name)}（#${s.place_id}）`
               : `${s.center_lat.toFixed(4)},${s.center_lon.toFixed(4)} 半径约 ${Math.round(s.radius_m)} m`
             lines.push(`- ${beijingClock(s.started_at)}–${beijingClock(s.ended_at)}（${minutes} 分钟）@ ${where}`)
           }
@@ -479,6 +481,21 @@ export function getBuiltinToolMap(ctx: ToolContext = {}): Map<string, AgentTool>
         }
         const totalKm = (trips.reduce((sum, t) => sum + t.distance_m, 0) / 1000).toFixed(1)
         lines.push('', `合计：停留 ${stays.length} 处、行程 ${trips.length} 段、里程约 ${totalKm} km`)
+
+        // 活动范围：把有轨迹的停留按地点围成凸包——回答"我活动范围多大、朝哪铺开"
+        const placeIds = [...new Set(stays.map(s => s.place_id).filter((id): id is number => id !== null))]
+        const area = describeActivityArea(placeIds.map(id => {
+          const stay = stays.find(s => s.place_id === id)!
+          return { id, lat: stay.center_lat, lon: stay.center_lon }
+        }))
+        if (area && area.pointCount >= 2) {
+          const spread = area.areaKm2 >= 0.05
+            ? `约 ${area.areaKm2.toFixed(1)} 平方公里`
+            : '近似一条线（几个地点几乎在同一线上）'
+          lines.push(`活动范围：涉及 ${area.pointCount} 个地点，${spread}，中心到最远一处约 ${area.maxDistanceKm.toFixed(1)} km`)
+        }
+        const districts = [...new Set(placeIds.map(id => getPlaceGeo(id)?.district).filter((d): d is string => Boolean(d)))]
+        if (districts.length > 0) lines.push(`涉及区划：${districts.join('、')}`)
         return textResult(lines.join('\n'))
       }
     },
