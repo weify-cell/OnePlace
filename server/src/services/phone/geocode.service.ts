@@ -49,6 +49,14 @@ export interface GeocodeResult {
 /** 反查调用入口：HTTP 是系统边界，测试可换掉而不必 mock 自家模块 */
 export type RegeoFetcher = (lat: number, lon: number) => Promise<GeocodeResult>
 
+/**
+ * 忘掉某处已缓存的地名。人会在地图上把圈挪走，挪完之后旧地址就是错的；
+ * 忘掉它，下一轮反查会按新坐标重新查（也是"想重查一次"的手段）。
+ */
+export function forgetPlaceGeo(placeId: number): void {
+  connectDatabase().prepare('DELETE FROM settings WHERE key = ?').run(`${GEO_KEY_PREFIX}${placeId}`)
+}
+
 export function getPlaceGeo(placeId: number): PlaceGeo | null {
   return getSettingValue<PlaceGeo | null>(`${GEO_KEY_PREFIX}${placeId}`, null)
 }

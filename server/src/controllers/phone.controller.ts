@@ -2,7 +2,13 @@ import { Request, Response } from 'express'
 import { MAX_POINTS_PER_BATCH } from '../services/phone/location.service.js'
 import { ingestAndProcessLocations, resetRegionState, resolveRecentDeviceId } from '../services/phone/track.service.js'
 import { createPlace, getPlace, listPlacesForUi, updatePlace } from '../services/phone/place.service.js'
-import { geocodePendingPlaces } from '../services/phone/geocode.service.js'
+import { forgetPlaceGeo, geocodePendingPlaces } from '../services/phone/geocode.service.js'
+
+/** 坐标变了就忘掉旧地名，顺手触发一次反查（不阻塞响应，失败下轮作业会补） */
+function refreshPlaceGeo(placeIds: number[]): void {
+  for (const id of placeIds) forgetPlaceGeo(id)
+  void geocodePendingPlaces().catch(err => console.error('[geocode] 触发失败：', err))
+}
 
 /**
  * 接收一批轨迹点。
@@ -63,6 +69,8 @@ export function patchPlace(req: Request, res: Response): void {
     }
     // 范围或名字变了 → 该处旧的"在内/在外"作废，否则下一批点会凭空报一次"离开"
     resetRegionState(before.device_id, id)
+    // 圈子挪走了 → 旧地址过时，重新查一次
+    if (patch.lat !== undefined || patch.lon !== undefined) refreshPlaceGeo([id])
     res.json(place)
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : '参数不合法' })
@@ -78,14 +86,17 @@ export function postPlace(req: Request, res: Response): void {
   }
   const body = (req.body ?? {}) as Record<string, unknown>
   try {
-    res.json(createPlace({
+    const created = createPlace({
       deviceId,
       name: body.name as string,
       lat: body.lat as number,
       lon: body.lon as number,
       radiusM: body.radiusM as number | undefined,
       coordSystem: body.coordSystem as 'wgs84' | 'gcj02' | undefined
-    }))
+    })
+    // 新画的地方还没查过地址；合并到已有地点则不必（那处本来就有）
+    if (!created.merged) refreshPlaceGeo([created.place.id])
+    res.json(created)
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : '参数不合法' })
   }

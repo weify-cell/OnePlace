@@ -15,7 +15,9 @@ import {
   listRegions,
   updatePlace
 } from '../services/phone/place.service.js'
-import { savePlaceGeo } from '../services/phone/geocode.service.js'
+import { geocodePendingPlaces, placeLabel } from '../services/phone/geocode.service.js'
+import { forgetPlaceGeo, savePlaceGeo } from '../services/phone/geocode.service.js'
+import { WGS, REAL_REGEO, parseAmapRegeo } from './helpers/geo-fixtures.js'
 
 const DEVICE = 'dev-admin'
 const LAT = 31.86
@@ -148,5 +150,27 @@ describe('给界面看的列表', () => {
 
   it('没有地点时返回空数组', () => {
     expect(listPlacesForUi(DEVICE)).toEqual([])
+  })
+})
+
+describe('挪了圈之后地址要重查', () => {
+  it('忘掉缓存后，下一轮反查会按新坐标给出新地址', async () => {
+    const id = seedPlace(WGS.lat, WGS.lon)
+    await geocodePendingPlaces(async () => parseAmapRegeo(REAL_REGEO)!)
+    expect(placeLabel(id)).toContain('蜀山区')
+
+    // 人把圈挪到别处
+    updatePlace(id, { lat: 32.5, lon: 118.5 })
+    forgetPlaceGeo(id)
+    expect(placeLabel(id)).toBe(`未命名地点 #${id}`)
+
+    // 再查一次，拿到的是新地址（这里仍用同一份响应，验证的是"确实重新查了"）
+    let calls = 0
+    await geocodePendingPlaces(async () => {
+      calls++
+      return parseAmapRegeo(REAL_REGEO)!
+    })
+    expect(calls).toBe(1)
+    expect(placeLabel(id)).toContain('蜀山区')
   })
 })
