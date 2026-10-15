@@ -28,8 +28,14 @@ import { getILinkModel } from './model.js'
 
 /** 事件超过这个时长就不再推送（只标记消费） */
 export const EVENT_MAX_AGE_MS = 2 * 60 * 60 * 1000
-/** 每日推送条数上限（默认） */
-export const DEFAULT_MAX_PUSH_PER_DAY = 3
+/**
+ * 每日推送条数上限默认值：**不限制**（null）。
+ *
+ * 上限是可选节流：设了数字才生效，未设置或 ≤0 都表示不限制。
+ * 需要"少打扰"就设一个数字；需要停用整条推送请用 `ilink_phone_push_enabled`，
+ * 而不是把上限设成 0 ——那只会让人以为"没坏，只是没发"。
+ */
+export const DEFAULT_MAX_PUSH_PER_DAY: number | null = null
 /** 模型可以选择"没什么好说的"，这时只消费事件、不打扰用户 */
 const SKIP_TOKEN = 'SKIP'
 
@@ -41,7 +47,7 @@ const DEFAULT_PUSH_USER_MESSAGE = [
 
 export interface LocationPushConfig {
   enabled: boolean
-  maxPerDay: number
+  maxPerDay: number | null
   quietHoursStart: number
   quietHoursEnd: number
   checkInterval: number
@@ -51,7 +57,7 @@ export interface LocationPushConfig {
 export function getLocationPushConfig(): LocationPushConfig {
   return {
     enabled: getSettingValue<boolean>('ilink_phone_push_enabled', true),
-    maxPerDay: getSettingValue<number>('ilink_phone_push_max_per_day', DEFAULT_MAX_PUSH_PER_DAY),
+    maxPerDay: getSettingValue<number | null>('ilink_phone_push_max_per_day', DEFAULT_MAX_PUSH_PER_DAY),
     quietHoursStart: getSettingValue<number>('ilink_proactive_chat_quiet_hours_start', 0),
     quietHoursEnd: getSettingValue<number>('ilink_proactive_chat_quiet_hours_end', 8),
     checkInterval: getSettingValue<number>('ilink_phone_push_check_interval', 5)
@@ -82,12 +88,16 @@ export function resolveEventPushDecision(input: {
   eventAgeMs: number
   quietHours: boolean
   sentToday: number
-  maxPerDay: number
+  /** null 或 ≤0 = 不限制 */
+  maxPerDay: number | null
   maxAgeMs?: number
 }): EventPushDecision {
   if (input.eventAgeMs > (input.maxAgeMs ?? EVENT_MAX_AGE_MS)) return { action: 'drop', reason: 'stale' }
   if (input.quietHours) return { action: 'hold', reason: 'quiet-hours' }
-  if (input.sentToday >= input.maxPerDay) return { action: 'drop', reason: 'daily-cap' }
+  // 未设置或 ≤0 = 不限制；只有明确设了正数才拦
+  if (input.maxPerDay !== null && input.maxPerDay > 0 && input.sentToday >= input.maxPerDay) {
+    return { action: 'drop', reason: 'daily-cap' }
+  }
   return { action: 'send' }
 }
 

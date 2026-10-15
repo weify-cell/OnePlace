@@ -107,8 +107,24 @@ describe('该不该发：决策是纯函数', () => {
       .toEqual({ action: 'drop', reason: 'stale' })
   })
 
-  it('达到每日上限 → 只入库不推送', () => {
+  it('设了每日上限、且用满 → 只入库不推送', () => {
     expect(resolveEventPushDecision({ ...base, sentToday: 3 })).toEqual({ action: 'drop', reason: 'daily-cap' })
+  })
+
+  it('没设上限（null）→ 不限制，发过多少条都还能发', () => {
+    expect(resolveEventPushDecision({ ...base, maxPerDay: null, sentToday: 99 })).toEqual({ action: 'send' })
+  })
+
+  it('上限设为 0 或负数 → 当作不限制（要停用请用开关，而不是把上限设成 0）', () => {
+    expect(resolveEventPushDecision({ ...base, maxPerDay: 0, sentToday: 99 })).toEqual({ action: 'send' })
+    expect(resolveEventPushDecision({ ...base, maxPerDay: -1, sentToday: 99 })).toEqual({ action: 'send' })
+  })
+
+  it('上限为 null 时，时效与静默照常生效（去掉的只是条数限制）', () => {
+    expect(resolveEventPushDecision({ ...base, maxPerDay: null, quietHours: true }))
+      .toEqual({ action: 'hold', reason: 'quiet-hours' })
+    expect(resolveEventPushDecision({ ...base, maxPerDay: null, eventAgeMs: EVENT_MAX_AGE_MS + 1 }))
+      .toEqual({ action: 'drop', reason: 'stale' })
   })
 
   it('过期优先于静默：静默时段里放旧事件只会等成过期，不如直接丢', () => {
@@ -186,7 +202,18 @@ describe('推送这一轮', () => {
     expect(listUnconsumedEvents(DEVICE)).toEqual([])
   })
 
-  it('发出去之后计入当日额度（否则上限永远拦不住）', async () => {
+  it('没设上限时，当天已发过也照发（去掉额度后的实际行为）', async () => {
+    seedTrack()
+    connectDatabase().prepare('INSERT INTO settings (key, value) VALUES (?, ?)')
+      .run(`ilink_phone_push_count_${USER}`, JSON.stringify({ date: beijingToday(), count: 7 }))
+
+    const res = await checkAndPushLocationEvents({ runTurn, hour: 12 })
+
+    expect(res.sent).toBe(1)
+    expect(sent).toHaveLength(1)
+  })
+
+  it('发出去之后计入当日额度（上限还在时才有意义，也留着做排查用）', async () => {
     seedTrack()
 
     await checkAndPushLocationEvents({ runTurn, hour: 12 })
