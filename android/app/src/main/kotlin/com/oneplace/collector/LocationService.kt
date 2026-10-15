@@ -52,9 +52,30 @@ class LocationService : Service() {
 
   private lateinit var locationManager: LocationManager
   private lateinit var uploader: ScheduledExecutorService
+  private var uploadScheduled = false
+
+  private var lastAccepted: Location? = null
+
+  /**
+   * 这个点值不值得记。
+   * 多个定位源会各自投递同一个位置（实测：同一坐标相差 4 毫秒来两次），
+   * 攒重复点没意义——**但阈值要按"漂移"而不是"移动"来定**：10 米以内、30 秒以内
+   * 视为同一次定位；真走路 30 秒至少几十米，不会被误杀。
+   */
+  private fun isDuplicate(location: Location): Boolean {
+    val previous = lastAccepted ?: return false
+    val seconds = (location.time - previous.time) / 1000.0
+    if (seconds < 0 || seconds > 30) return false
+    return previous.distanceTo(location) < 10f
+  }
 
   private val locationListener = object : LocationListener {
     override fun onLocationChanged(location: Location) {
+      if (isDuplicate(location)) {
+        Logs.append("跳过重复定位（与上一点同处，${location.provider}）")
+        return
+      }
+      lastAccepted = location
       val deviceId = AppPrefs.deviceId(this@LocationService)
       PointStore.add(this@LocationService, location, deviceId)
       Logs.append(
@@ -83,12 +104,15 @@ class LocationService : Service() {
     AppPrefs.setCollecting(this, true)
     AppPrefs.setLastUploadAt(this, 0L)
     requestUpdates()
-    uploader.scheduleWithFixedDelay(
-      { runCatching { uploadOnce() }.onFailure { Logs.append("上传线程异常：${it.message}") } },
-      UPLOAD_INTERVAL_SECONDS,
-      UPLOAD_INTERVAL_SECONDS,
-      TimeUnit.SECONDS
-    )
+    if (!uploadScheduled) {
+      uploadScheduled = true
+      uploader.scheduleWithFixedDelay(
+        { runCatching { uploadOnce() }.onFailure { Logs.append("上传线程异常：${it.message}") } },
+        UPLOAD_INTERVAL_SECONDS,
+        UPLOAD_INTERVAL_SECONDS,
+        TimeUnit.SECONDS
+      )
+    }
     // 立即试一次：如果队列里有上次没发出去的点，早点补上
     uploader.execute { runCatching { uploadOnce() } }
     Logs.append("采集已开始（每 ${LOCATION_MIN_INTERVAL_MS / 1000} 秒或移动 ${LOCATION_MIN_DISTANCE_M.toInt()} 米记一个点）")
@@ -137,31 +161,48 @@ class LocationService : Service() {
   }
 
   private fun requestUpdates() {
-    val provider = pickProvider()
-    try {
-      @Suppress("DEPRECATION")
-      locationManager.requestLocationUpdates(
-        provider,
-        LOCATION_MIN_INTERVAL_MS,
-        LOCATION_MIN_DISTANCE_M,
-        locationListener,
-        Looper.getMainLooper()
-      )
-    } catch (e: SecurityException) {
-      Logs.append("没有定位权限，采集无法开始：${e.message}")
-      stopSelf()
-    } catch (e: Exception) {
-      Logs.append("请求定位更新失败：${e.message}")
+    val providers = wantedProviders()
+    if (providers.isEmpty()) {
+      Logs.append("这台设备没有可用的定位源")
+      return
+    }
+    for (provider in providers) {
+      try {
+        @Suppress("DEPRECATION")
+        locationManager.requestLocationUpdates(
+          provider,
+          LOCATION_MIN_INTERVAL_MS,
+          LOCATION_MIN_DISTANCE_M,
+          locationListener,
+          Looper.getMainLooper()
+        )
+        Logs.append("已订阅定位源：$provider")
+      } catch (e: SecurityException) {
+        Logs.append("没有定位权限，采集无法开始：${e.message}")
+        stopSelf()
+        return
+      } catch (e: Exception) {
+        Logs.append("定位源 $provider 订阅失败：${e.message}")
+      }
     }
   }
 
-  /** 优先用系统融合定位（API 31+，不需要 GMS），退化到 GPS。 */
-  private fun pickProvider(): String {
+  /**
+   * 要订阅哪些定位源。
+   *
+   * **只用 FUSED_PROVIDER 是错的**（实测踩过）：在没有 GMS 的机器上，框架的融合源是
+   * "搭便车"的——它自己不驱动定位硬件，只在别的消费方已经在取位置时才跟着给数据，
+   * 结果就是"开始采集后只来一条缓存定位，然后彻底安静"。
+   * GPS / NETWORK 才会真正打开硬件（户外靠 GPS，室内靠网络定位），fused 有就一起订上。
+   */
+  private fun wantedProviders(): List<String> {
+    val available = locationManager.allProviders
+    val wanted = mutableListOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-      val fused = runCatching { LocationManager::class.java.getField("FUSED_PROVIDER").get(null) as String }.getOrNull()
-      if (fused != null && locationManager.allProviders.contains(fused)) return fused
+      runCatching { LocationManager::class.java.getField("FUSED_PROVIDER").get(null) as String }
+        .getOrNull()?.let { wanted.add(it) }
     }
-    return LocationManager.GPS_PROVIDER
+    return wanted.filter { available.contains(it) }
   }
 
   /** 取一批队列里的点上报；只有服务端确认后才从队列移除。 */
