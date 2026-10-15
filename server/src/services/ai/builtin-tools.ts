@@ -6,6 +6,7 @@ import { getFolders } from '../folders.service.js'
 import { searchKnowledgeBase } from '../knowledge-base.service.js'
 import { searchMemories, searchMemoryVectors, addMemory, resolvePrimaryMemoryUser, stripUserIds, isMemoryKind, getMemoryDate } from '../wechat/memory.service.js'
 import { listStays, listTrips, resolveRecentDeviceId } from '../phone/track.service.js'
+import { getPlace, isFrequentPlace, mostRecentPlace, namePlace } from '../phone/place.service.js'
 import { formatBeijingTime, getBeijingDate, getBeijingDateAfter, getBeijingDateTime, getBeijingDayWindow, getBeijingDateTimeSec } from '../../utils/time.js'
 import type { StoredStay, StoredTrip } from '../phone/track.service.js'
 
@@ -460,7 +461,18 @@ export function getBuiltinToolMap(ctx: ToolContext = {}): Map<string, AgentTool>
           lines.push('停留：')
           for (const s of stays) {
             const minutes = Math.round((Date.parse(s.ended_at) - Date.parse(s.started_at)) / 60000)
-            lines.push(`- ${beijingClock(s.started_at)}–${beijingClock(s.ended_at)}（${minutes} 分钟）@ ${s.center_lat.toFixed(4)},${s.center_lon.toFixed(4)} 半径约 ${Math.round(s.radius_m)} m`)
+            // 有名字就用名字（"家""公司"），没名字给出编号与坐标——编号是命名工具的入参
+            const where = s.place_id
+              ? (s.place_name ? `${s.place_name}（#${s.place_id}）` : `未命名地点（#${s.place_id}）${s.center_lat.toFixed(4)},${s.center_lon.toFixed(4)} 半径约 ${Math.round(s.radius_m)} m`)
+              : `${s.center_lat.toFixed(4)},${s.center_lon.toFixed(4)} 半径约 ${Math.round(s.radius_m)} m`
+            lines.push(`- ${beijingClock(s.started_at)}–${beijingClock(s.ended_at)}（${minutes} 分钟）@ ${where}`)
+          }
+          const unnamedFrequent = [...new Set(stays
+            .filter(s => s.place_id && !s.place_name && s.place_hit_count !== null && s.place_day_count !== null
+              && isFrequentPlace({ hit_count: s.place_hit_count, day_count: s.place_day_count }))
+            .map(s => s.place_id as number))]
+          if (unnamedFrequent.length > 0) {
+            lines.push(`（其中 ${unnamedFrequent.map(id => `#${id}`).join('、')} 已反复出现，可以用 name_place 命名，例如"把 #${unnamedFrequent[0]} 命名为家"）`)
           }
         }
         if (trips.length > 0) {
@@ -474,6 +486,25 @@ export function getBuiltinToolMap(ctx: ToolContext = {}): Map<string, AgentTool>
         const totalKm = (trips.reduce((sum, t) => sum + t.distance_m, 0) / 1000).toFixed(1)
         lines.push('', `合计：停留 ${stays.length} 处、行程 ${trips.length} 段、里程约 ${totalKm} km`)
         return textResult(lines.join('\n'))
+      }
+    },
+
+    // ── 18. 给地点命名 ──
+    {
+      name: 'name_place',
+      label: '给地点命名',
+      description: '给手机轨迹识别出的地点起个名字（如"家""公司""健身房"），以后就能用名字指代它。地点编号在"查询位置轨迹"的结果里写作 #N。不传编号时，给最近一次停留的那处命名。',
+      parameters: Type.Object({
+        name: Type.String({ description: '地点的名字，如"家""公司"' }),
+        place_id: Type.Optional(Type.Number({ description: '地点编号（#N）；不传则用最近一次停留的那处' }))
+      }),
+      execute: async (_toolCallId: string, params: { name: string; place_id?: number }) => {
+        const deviceId = resolveRecentDeviceId()
+        if (!deviceId) return textResult('还没有任何手机轨迹数据，暂时没法命名地点。')
+        const target = params.place_id ? getPlace(params.place_id) : mostRecentPlace(deviceId)
+        if (!target) return textResult('没找到那个地点（编号可能不对，或还没识别出地点）。')
+        if (!namePlace(target.id, params.name)) return textResult('名字不能为空。')
+        return textResult(`已命名：#${target.id} → 「${params.name.trim()}」（出现过 ${target.hit_count} 次、${target.day_count} 天）`)
       }
     }
   ] as unknown as AgentTool[]

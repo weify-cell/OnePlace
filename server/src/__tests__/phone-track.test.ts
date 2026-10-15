@@ -11,6 +11,7 @@ import { getBeijingDate } from '../utils/time.js'
 import { ingestAndProcessLocations } from '../services/phone/track.service.js'
 import { listStays, listTrips } from '../services/phone/track.service.js'
 import { getBuiltinToolMap } from '../services/ai/builtin-tools.js'
+import { listPlaces } from '../services/phone/place.service.js'
 
 const DEVICE = 'device-track'
 const BASE = { lat: 31.86, lon: 117.28 }
@@ -44,11 +45,15 @@ function count(table: string): number {
 }
 
 beforeEach(() => {
+  // 清理必须覆盖代码会写的**所有**表：漏掉 phone_places 时，上一个用例残留的地点
+  // 会让本用例的命中次数从 1 起算，制造出"分两批上报结果不一致"的假回归。
   const db = connectDatabase()
   db.prepare('DELETE FROM phone_locations').run()
   db.prepare('DELETE FROM phone_stays').run()
   db.prepare('DELETE FROM phone_trips').run()
   db.prepare('DELETE FROM phone_track_state').run()
+  db.prepare('DELETE FROM phone_places').run()
+  db.prepare('DELETE FROM phone_events').run()
 })
 
 describe('上报即加工（近实时）', () => {
@@ -95,11 +100,16 @@ describe('上报即加工（近实时）', () => {
   })
 })
 
-/** 段的内容快照：不含自增 id（清表不重置 AUTOINCREMENT，id 本来就会变） */
+/**
+ * 段的内容快照：不含自增 id（清表不重置 AUTOINCREMENT，id 与 place_id 本来就会变），
+ * 但地点本身的内容要一起比——否则"地点归属变了"这种回归会被掩盖。
+ */
 function snapshot(): unknown {
   return {
-    stays: listStays(DEVICE).map(({ id: _id, ...rest }) => rest),
-    trips: listTrips(DEVICE).map(({ id: _id, ...rest }) => rest)
+    stays: listStays(DEVICE).map(({ id: _id, place_id: _placeId, ...rest }) => rest),
+    trips: listTrips(DEVICE).map(({ id: _id, ...rest }) => rest),
+    placeCount: listPlaces(DEVICE).length,
+    placeStats: listPlaces(DEVICE).map(p => `${p.hit_count}/${p.day_count}`)
   }
 }
 
@@ -109,6 +119,8 @@ function resetTables(): void {
   db.prepare('DELETE FROM phone_stays').run()
   db.prepare('DELETE FROM phone_trips').run()
   db.prepare('DELETE FROM phone_track_state').run()
+  db.prepare('DELETE FROM phone_places').run()
+  db.prepare('DELETE FROM phone_events').run()
 }
 
 describe('按时间段读取', () => {

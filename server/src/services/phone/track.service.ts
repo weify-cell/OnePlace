@@ -1,5 +1,7 @@
 import { connectDatabase } from '../../database/index.js'
 import { ingestLocations, listLocationPoints, type IngestResult, type LocationPointInput } from './location.service.js'
+import { matchOrCreatePlace } from './place.service.js'
+import { recordSegmentEvents } from './event.service.js'
 import {
   emptySegmenterState,
   reduceTrack,
@@ -26,6 +28,11 @@ export interface StoredStay {
   center_lon: number
   radius_m: number
   sample_count: number
+  /** 归属的常去地点（命名之后机器人就能用名字指代它） */
+  place_id: number | null
+  place_name: string | null
+  place_hit_count: number | null
+  place_day_count: number | null
 }
 
 export interface StoredTrip {
@@ -62,16 +69,27 @@ function saveState(deviceId: string, state: SegmenterState): void {
   `).run(deviceId, JSON.stringify(state))
 }
 
-function insertStay(deviceId: string, stay: StaySegment): void {
-  connectDatabase().prepare(`
+/**
+ * 落一条停留，返回 `{ id, created }`。
+ * `created` 很关键：只有**新建**时才去匹配地点、记事件——
+ * 否则「崩溃后重跑加工」会把同一个停留的地点命中次数重复累加。
+ */
+function insertStay(deviceId: string, stay: StaySegment): { id: number; created: boolean } {
+  const db = connectDatabase()
+  const res = db.prepare(`
     INSERT OR IGNORE INTO phone_stays
       (device_id, started_at, ended_at, center_lat, center_lon, radius_m, sample_count)
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `).run(deviceId, stay.startedAt, stay.endedAt, stay.centerLat, stay.centerLon, stay.radiusM, stay.sampleCount)
+  if (res.changes > 0) return { id: Number(res.lastInsertRowid), created: true }
+  const row = db.prepare('SELECT id FROM phone_stays WHERE device_id = ? AND started_at = ? AND ended_at = ?')
+    .get(deviceId, stay.startedAt, stay.endedAt) as { id: number } | undefined
+  return { id: row?.id ?? 0, created: false }
 }
 
-function insertTrip(deviceId: string, trip: TripSegment): void {
-  connectDatabase().prepare(`
+function insertTrip(deviceId: string, trip: TripSegment): { id: number; created: boolean } {
+  const db = connectDatabase()
+  const res = db.prepare(`
     INSERT OR IGNORE INTO phone_trips
       (device_id, started_at, ended_at, start_lat, start_lon, end_lat, end_lon, distance_m, sample_count)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -86,6 +104,10 @@ function insertTrip(deviceId: string, trip: TripSegment): void {
     trip.distanceM,
     trip.sampleCount
   )
+  if (res.changes > 0) return { id: Number(res.lastInsertRowid), created: true }
+  const row = db.prepare('SELECT id FROM phone_trips WHERE device_id = ? AND started_at = ? AND ended_at = ?')
+    .get(deviceId, trip.startedAt, trip.endedAt) as { id: number } | undefined
+  return { id: row?.id ?? 0, created: false }
 }
 
 /**
@@ -106,15 +128,32 @@ export function processNewLocations(deviceId: string): { stays: number; trips: n
   let trips = 0
   const db = connectDatabase()
   db.transaction(() => {
+    const forEvents: Array<{ segment: (typeof closed)[number]; id: number; placeId: number | null }> = []
     for (const segment of closed) {
       if (segment.kind === 'stay') {
-        insertStay(deviceId, segment)
-        stays++
+        const { id, created } = insertStay(deviceId, segment)
+        if (created) {
+          stays++
+          // 归属到某处「常去地点」（200 m 内算同一处，没有就新建）
+          const placeId = matchOrCreatePlace({
+            deviceId,
+            centerLat: segment.centerLat,
+            centerLon: segment.centerLon,
+            radiusM: segment.radiusM,
+            stayedAt: segment.startedAt
+          })
+          db.prepare('UPDATE phone_stays SET place_id = ? WHERE id = ?').run(placeId, id)
+          forEvents.push({ segment, id, placeId })
+        }
       } else {
-        insertTrip(deviceId, segment)
-        trips++
+        const { id, created } = insertTrip(deviceId, segment)
+        if (created) {
+          trips++
+          forEvents.push({ segment, id, placeId: null })
+        }
       }
     }
+    if (forEvents.length > 0) recordSegmentEvents({ deviceId, segments: forEvents })
     saveState(deviceId, nextState)
   })()
 
@@ -128,10 +167,14 @@ export function listStays(deviceId: string, opts?: { from?: string; to?: string;
   if (opts?.from) { conditions.push('started_at >= ?'); values.push(opts.from) }
   if (opts?.to) { conditions.push('started_at < ?'); values.push(opts.to) }
   values.push(opts?.limit ?? 200)
+  const where = conditions.map(c => `s.${c}`).join(' AND ')
   return connectDatabase().prepare(
-    `SELECT id, device_id, started_at, ended_at, center_lat, center_lon, radius_m, sample_count
-     FROM phone_stays WHERE ${conditions.join(' AND ')}
-     ORDER BY started_at ASC, id ASC LIMIT ?`
+    `SELECT s.id, s.device_id, s.started_at, s.ended_at, s.center_lat, s.center_lon,
+            s.radius_m, s.sample_count,
+            p.id AS place_id, p.name AS place_name, p.hit_count AS place_hit_count, p.day_count AS place_day_count
+     FROM phone_stays s LEFT JOIN phone_places p ON p.id = s.place_id
+     WHERE ${where}
+     ORDER BY s.started_at ASC, s.id ASC LIMIT ?`
   ).all(...values) as StoredStay[]
 }
 
