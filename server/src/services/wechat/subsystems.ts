@@ -5,6 +5,7 @@ import { reminderJob } from './todo-reminder.service.js'
 import { proactiveChatJob } from './proactive-chat.service.js'
 import { reportJob } from './report.service.js'
 import { memoryJob } from './memory.service.js'
+import { locationPushJob } from './location-push.service.js'
 
 /**
  * 微信后台子系统的组装处。
@@ -17,7 +18,8 @@ export const WECHAT_SUBSYSTEMS: SubsystemJob[] = [
   reminderJob,
   proactiveChatJob,
   reportJob,
-  memoryJob
+  memoryJob,
+  locationPushJob
 ]
 
 /**

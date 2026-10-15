@@ -160,6 +160,28 @@ export function processNewLocations(deviceId: string): { stays: number; trips: n
   return { stays, trips }
 }
 
+/** 读单条停留（带地点名），推送描述事件时用。 */
+export function getStay(deviceId: string, stayId: number): StoredStay | null {
+  const row = connectDatabase().prepare(
+    `SELECT s.id, s.device_id, s.started_at, s.ended_at, s.center_lat, s.center_lon,
+            s.radius_m, s.sample_count,
+            p.id AS place_id, p.name AS place_name, p.hit_count AS place_hit_count, p.day_count AS place_day_count
+     FROM phone_stays s LEFT JOIN phone_places p ON p.id = s.place_id
+     WHERE s.device_id = ? AND s.id = ?`
+  ).get(deviceId, stayId) as StoredStay | undefined
+  return row ?? null
+}
+
+/** 读单条行程，推送描述事件时用。 */
+export function getTrip(deviceId: string, tripId: number): StoredTrip | null {
+  const row = connectDatabase().prepare(
+    `SELECT id, device_id, started_at, ended_at, distance_m, sample_count,
+            start_lat, start_lon, end_lat, end_lon
+     FROM phone_trips WHERE device_id = ? AND id = ?`
+  ).get(deviceId, tripId) as StoredTrip | undefined
+  return row ?? null
+}
+
 /** 按时间段读停留（左闭右开；按开始时刻升序）。 */
 export function listStays(deviceId: string, opts?: { from?: string; to?: string; limit?: number }): StoredStay[] {
   const conditions = ['device_id = ?']
