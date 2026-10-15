@@ -188,21 +188,22 @@ class LocationService : Service() {
   }
 
   /**
-   * 要订阅哪些定位源。
+   * 要订阅哪些定位源：**只订 GPS**。
    *
-   * **只用 FUSED_PROVIDER 是错的**（实测踩过）：在没有 GMS 的机器上，框架的融合源是
-   * "搭便车"的——它自己不驱动定位硬件，只在别的消费方已经在取位置时才跟着给数据，
-   * 结果就是"开始采集后只来一条缓存定位，然后彻底安静"。
-   * GPS / NETWORK 才会真正打开硬件（户外靠 GPS，室内靠网络定位），fused 有就一起订上。
+   * 曾经踩的坑（留在这里以免重犯）：一开始只订 `FUSED_PROVIDER`，理由是"API 31+ 系统自带、
+   * 不依赖 GMS"——结论对了一半，它确实不需要 GMS，但**它自己不驱动定位硬件**，只在别的
+   * 消费方已经在取位置时才跟着给数据。于是表现为"点一次开始采集只来一条缓存定位，然后彻底安静"。
+   * GPS 会真正打开 GNSS 硬件，这也是必须至少订它的原因。
+   *
+   * 为什么把 network 也去掉了：三种源都实测可用，但精度差 10 倍（户外 GPS 4.9–18.6 米，
+   * network/fused 30–68 米）。粗点源的危害不在于耗电，而在于**会误断停留**——一次偏 300 米
+   * 的网络定位落在停留半径之外，一段本来正确的停留就会被切断，甚至凭空接出一段行程。
+   *
+   * 代价（自觉接受）：**室内/无天空视野时可能完全拿不到点**。若发现"在家"的停留因此消失，
+   * 再改成"GPS 优先，GPS 超过 N 分钟没点时临时用 network 兜底"。
    */
   private fun wantedProviders(): List<String> {
-    val available = locationManager.allProviders
-    val wanted = mutableListOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-      runCatching { LocationManager::class.java.getField("FUSED_PROVIDER").get(null) as String }
-        .getOrNull()?.let { wanted.add(it) }
-    }
-    return wanted.filter { available.contains(it) }
+    return listOf(LocationManager.GPS_PROVIDER).filter { locationManager.allProviders.contains(it) }
   }
 
   /** 取一批队列里的点上报；只有服务端确认后才从队列移除。 */
