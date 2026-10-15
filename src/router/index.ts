@@ -32,7 +32,8 @@ const router = createRouter({
     { path: '/skills-manager', component: () => import('@/views/SkillsManagerView.vue'), meta: { requiresAuth: true } },
     { path: '/skills-manager/:categoryId', component: () => import('@/views/SkillsManagerView.vue'), meta: { requiresAuth: true } },
     { path: '/reports', component: () => import('@/views/ReportsView.vue'), meta: { requiresAuth: true } },
-    { path: '/memory', component: () => import('@/views/MemoryView.vue'), meta: { requiresAuth: true } }
+    { path: '/memory', component: () => import('@/views/MemoryView.vue'), meta: { requiresAuth: true } },
+    { path: '/locations', component: () => import('@/views/LocationsView.vue'), meta: { requiresAuth: true } }
   ]
 })
 
