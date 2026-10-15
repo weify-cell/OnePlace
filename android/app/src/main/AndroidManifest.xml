@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+  <!-- 采集定位：前台服务 + 位置权限；没网时也要能先攒着，所以还要联网权限 -->
+  <uses-permission android:name="android.permission.INTERNET" />
+  <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+  <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+  <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+  <application
+    android:label="OnePlace 采集"
+    android:allowBackup="false"
+    android:usesCleartextTraffic="true"
+    android:theme="@android:style/Theme.Material.Light">
+
+    <!-- usesCleartextTraffic：走 Tailscale 内网明文 HTTP（自用单机，不上公网） -->
+
+    <activity
+      android:name=".MainActivity"
+      android:exported="true"
+      android:label="OnePlace 采集">
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN" />
+        <category android:name="android.intent.category.LAUNCHER" />
+      </intent-filter>
+    </activity>
+
+    <service
+      android:name=".LocationService"
+      android:exported="false"
+      android:foregroundServiceType="location" />
+  </application>
+</manifest>

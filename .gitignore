@@ -63,3 +63,11 @@ skills-lock.json
 *.tar.gz
 /oneplace/
 /env
+
+# android 构建产物（APK 用 gradle assembleDebug 重新生成，不进仓库）
+/android/build/
+/android/app/build/
+/android/.gradle/
+/android/.kotlin/
+/android/.idea/
+/android/local.properties
