@@ -46,3 +46,28 @@ export function wgs84ToGcj02(lat: number, lon: number): { lat: number; lon: numb
   dLon = (dLon * 180.0) / ((A / sqrtMagic) * Math.cos(radLat) * Math.PI)
   return { lat: lat + dLat, lon: lon + dLon }
 }
+
+/**
+ * GCJ-02 → WGS-84（反向转换）。
+ *
+ * 用途很具体：**人在高德地图上点/拖出来的坐标是 GCJ-02**，直接当 WGS-84 存进库，
+ * 就会把"家"记到 500 米外的另一条街上——方向和"忘了正向转换"一样错，只是反过来。
+ *
+ * 用迭代逼近正向转换的逆：GCJ-02 变换本身没有解析逆，但这个式子在几轮内收敛到厘米级
+ * （每轮把误差加回输入，重新正变换，看还差多少）。
+ */
+export function gcj02ToWgs84(lat: number, lon: number): { lat: number; lon: number } {
+  if (outOfChina(lat, lon)) return { lat, lon }
+
+  let wgsLat = lat
+  let wgsLon = lon
+  for (let i = 0; i < 8; i++) {
+    const gcj = wgs84ToGcj02(wgsLat, wgsLon)
+    const dLat = lat - gcj.lat
+    const dLon = lon - gcj.lon
+    if (Math.abs(dLat) < 1e-9 && Math.abs(dLon) < 1e-9) break
+    wgsLat += dLat
+    wgsLon += dLon
+  }
+  return { lat: wgsLat, lon: wgsLon }
+}

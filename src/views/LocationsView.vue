@@ -153,10 +153,11 @@ function select(place: PlaceItem): void {
   creating.value = false
   draftName.value = place.name ?? ''
   draftRadius.value = Math.round(place.radiusM)
-  draftLat.value = place.centerLat
-  draftLon.value = place.centerLon
+  // 地图上的一律是 GCJ-02（与服务端存的 WGS-84 差 500 米，混用会画歪）
+  draftLat.value = place.gcjLat
+  draftLon.value = place.gcjLon
   drawOverlays()
-  if (map) map.setCenter([place.centerLon, place.centerLat])
+  if (map) map.setCenter([place.gcjLon, place.gcjLat])
 }
 
 function beginCreate(): void {
@@ -175,8 +176,7 @@ async function saveSelected(): Promise<void> {
     await updatePlace(selected.value.id, {
       name: draftName.value,
       radiusM: draftRadius.value,
-      lat: draftLat.value,
-      lon: draftLon.value
+      coord: { lat: draftLat.value, lon: draftLon.value }
     })
     await load()
     drawOverlays()
@@ -214,8 +214,7 @@ async function confirmCreate(): Promise<void> {
   try {
     const res = await createPlace({
       name: newName.value.trim(),
-      lat: newPoint.value.lat,
-      lon: newPoint.value.lon,
+      coord: { lat: newPoint.value.lat, lon: newPoint.value.lon },
       radiusM: draftRadius.value
     })
     await load()
@@ -251,7 +250,7 @@ function drawOverlays(): void {
 
   for (const place of places.value) {
     const marker = new window.AMap.Marker({
-      position: [place.centerLon, place.centerLat],
+      position: [place.gcjLon, place.gcjLat],
       title: placeLabel(place),
       // 已划定区域用不同颜色，一眼能分出"哪些是家/公司"
       content: place.isRegion
@@ -308,7 +307,7 @@ async function initMap(): Promise<void> {
       return
     }
     const center: [number, number] = places.value.length > 0
-      ? [places.value[0].centerLon, places.value[0].centerLat]
+      ? [places.value[0].gcjLon, places.value[0].gcjLat]
       : [116.397, 39.909]
     map = new ns.Map(el, { zoom: 13, center, viewMode: '2D' })
     map.on('click', (e) => {
@@ -437,7 +436,7 @@ onBeforeUnmount(() => {
               <input v-model.number="draftRadius" type="range" min="50" max="2000" step="10" />
             </label>
             <p class="muted">
-              圆心 {{ draftLat.toFixed(5) }}, {{ draftLon.toFixed(5) }}（在地图上点一下即可移动）
+              圆心（地图坐标）{{ draftLat.toFixed(5) }}, {{ draftLon.toFixed(5) }} —— 在地图上点一下即可移动
             </p>
             <div class="editor__actions">
               <button class="btn btn--primary" :disabled="saving" @click="saveSelected">保存</button>

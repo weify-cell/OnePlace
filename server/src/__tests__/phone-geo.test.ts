@@ -10,7 +10,7 @@ vi.mock('../database/index.js', async () => await import('./helpers/test-db.js')
 import { connectDatabase } from '../database/index.js'
 import { getSettingValue } from '../services/settings.service.js'
 import { haversineM } from '../services/phone/track-segmenter.js'
-import { outOfChina, wgs84ToGcj02 } from '../services/phone/geo-coords.js'
+import { gcj02ToWgs84, outOfChina, wgs84ToGcj02 } from '../services/phone/geo-coords.js'
 import {
   geocodePendingPlaces,
   knownDistricts,
@@ -219,5 +219,61 @@ describe('机器人读到的轨迹结论', () => {
     expect(text).toContain('博威香山丽舍')
     expect(text).toContain('蜀山区')
     expect(text).not.toContain('未命名地点')
+  })
+})
+
+describe('反向转换：地图上点出来的坐标是 GCJ-02，存库前要转回 WGS-84', () => {
+  it('来回一趟误差在 1 米内（否则人在地图上点的位置会被存歪）', () => {
+    const gcj = wgs84ToGcj02(WGS.lat, WGS.lon)
+    const back = gcj02ToWgs84(gcj.lat, gcj.lon)
+
+    expect(haversineM(back.lat, back.lon, WGS.lat, WGS.lon)).toBeLessThan(1)
+  })
+
+  it('与正向转换相反：直接拿 GCJ-02 当 WGS-84 存会差几百米', () => {
+    const gcj = wgs84ToGcj02(WGS.lat, WGS.lon)
+    expect(haversineM(gcj.lat, gcj.lon, WGS.lat, WGS.lon)).toBeGreaterThan(400)
+
+    const fixed = gcj02ToWgs84(gcj.lat, gcj.lon)
+    expect(haversineM(fixed.lat, fixed.lon, WGS.lat, WGS.lon)).toBeLessThan(1)
+  })
+
+  it('境外原样返回', () => {
+    expect(gcj02ToWgs84(35.68, 139.76)).toEqual({ lat: 35.68, lon: 139.76 })
+  })
+})
+
+describe('界面拿到的坐标要能直接画在高德地图上', () => {
+  it('列表里同时给出 WGS-84（真相）与 GCJ-02（画图用），两者相差数百米', async () => {
+    const { listPlacesForUi } = await import('../services/phone/place.service.js')
+    seedPlace(WGS.lat, WGS.lon)
+
+    const [view] = listPlacesForUi('dev-geo')
+
+    expect(view.centerLat).toBeCloseTo(WGS.lat, 6) // 存的是真相
+    expect(haversineM(view.gcjLat, view.gcjLon, view.centerLat, view.centerLon)).toBeGreaterThan(400)
+    // 与服务端查地名时用的是同一个转换结果
+    expect(haversineM(view.gcjLat, view.gcjLon, 31.860922, 117.167673)).toBeLessThan(20)
+  })
+
+  it('从地图上点出来的坐标（GCJ-02）会被转成 WGS-84 再存', async () => {
+    const { updatePlace } = await import('../services/phone/place.service.js')
+    const id = seedPlace(WGS.lat, WGS.lon)
+    const gcj = wgs84ToGcj02(32.5, 118.5)
+
+    const updated = updatePlace(id, { lat: gcj.lat, lon: gcj.lon, coordSystem: 'gcj02' })
+
+    // 存进去的必须是 WGS-84，否则"点了家"会变成把家画到 500 米外
+    expect(haversineM(updated!.centerLat, updated!.centerLon, 32.5, 118.5)).toBeLessThan(1)
+    expect(haversineM(updated!.gcjLat, updated!.gcjLon, gcj.lat, gcj.lon)).toBeLessThan(1)
+  })
+
+  it('不声明坐标系的调用（机器人、旧代码）仍按 WGS-84 处理', async () => {
+    const { updatePlace } = await import('../services/phone/place.service.js')
+    const id = seedPlace(WGS.lat, WGS.lon)
+
+    const updated = updatePlace(id, { lat: 32.5, lon: 118.5 })
+
+    expect(haversineM(updated!.centerLat, updated!.centerLon, 32.5, 118.5)).toBeLessThan(1)
   })
 })

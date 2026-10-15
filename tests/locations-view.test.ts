@@ -42,6 +42,8 @@ const PLACE: PlaceItem = {
   dayCount: 1,
   lastSeenAt: '2026-10-15T13:58:20.062Z',
   isRegion: false,
+  gcjLat: 31.860922,
+  gcjLon: 117.167673,
   geo: {
     poiName: '博威香山丽舍',
     poiType: '商务住宅;住宅区;住宅小区',
@@ -116,8 +118,8 @@ describe('划定区域', () => {
     expect(updatePlace).toHaveBeenCalledWith(1, {
       name: '家',
       radiusM: 85,
-      lat: PLACE.centerLat,
-      lon: PLACE.centerLon
+      // 画在地图上的坐标（GCJ-02），不是 centerLat/centerLon
+      coord: { lat: PLACE.gcjLat, lon: PLACE.gcjLon }
     })
     expect(wrapper.text()).toContain('已划定')
   })

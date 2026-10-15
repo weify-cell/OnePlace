@@ -3,6 +3,7 @@ import type { RegionDef } from './region-tracker.js'
 import { getBeijingDate } from '../../utils/time.js'
 import { haversineM } from './track-segmenter.js'
 import { getPlaceGeo, type PlaceGeo } from './geocode.service.js'
+import { gcj02ToWgs84, wgs84ToGcj02 } from './geo-coords.js'
 
 /**
  * 常去地点：把停留归到同一处，并允许用户命名。
@@ -137,10 +138,21 @@ export interface PlaceAdminView {
   lastSeenAt: string | null
   /** 是否已被划定为区域 */
   isRegion: boolean
+  /** 同一处的 GCJ-02 坐标：高德地图画图必须用它，拿 WGS-84 画会偏 500 米 */
+  gcjLat: number
+  gcjLon: number
   geo: PlaceGeo | null
 }
 
+/** 坐标来自哪套坐标系。手机上报与库里存的都是 WGS-84；地图上点出来的是 GCJ-02。 */
+export type CoordSystem = 'wgs84' | 'gcj02'
+
+function toWgs84(lat: number, lon: number, coordSystem: CoordSystem = 'wgs84'): { lat: number; lon: number } {
+  return coordSystem === 'gcj02' ? gcj02ToWgs84(lat, lon) : { lat, lon }
+}
+
 function toAdminView(place: StoredPlace): PlaceAdminView {
+  const gcj = wgs84ToGcj02(place.center_lat, place.center_lon)
   return {
     id: place.id,
     name: place.name,
@@ -151,6 +163,8 @@ function toAdminView(place: StoredPlace): PlaceAdminView {
     dayCount: place.day_count,
     lastSeenAt: place.last_seen_at,
     isRegion: place.name !== null && place.name.trim() !== '',
+    gcjLat: gcj.lat,
+    gcjLon: gcj.lon,
     geo: getPlaceGeo(place.id)
   }
 }
@@ -193,13 +207,15 @@ export function createPlace(input: {
   lat: number
   lon: number
   radiusM?: number
+  coordSystem?: CoordSystem
 }): { place: PlaceAdminView; merged: boolean } {
   const name = assertName(input.name)
   assertCoord(input.lat, input.lon)
+  const { lat, lon } = toWgs84(input.lat, input.lon, input.coordSystem)
   const radiusM = input.radiusM === undefined ? DEFAULT_PLACE_RADIUS_M : assertRadius(input.radiusM)
 
   const nearby = listDevicePlaces(input.deviceId).find(place =>
-    haversineM(input.lat, input.lon, place.center_lat, place.center_lon) <= PLACE_MATCH_RADIUS_M
+    haversineM(lat, lon, place.center_lat, place.center_lon) <= PLACE_MATCH_RADIUS_M
   )
   if (nearby) {
     connectDatabase().prepare('UPDATE phone_places SET name = ?, radius_m = ? WHERE id = ?').run(name, radiusM, nearby.id)
@@ -209,7 +225,7 @@ export function createPlace(input: {
   const res = connectDatabase().prepare(`
     INSERT INTO phone_places (device_id, center_lat, center_lon, radius_m, name, hit_count, day_count)
     VALUES (?, ?, ?, ?, ?, 0, 0)
-  `).run(input.deviceId, input.lat, input.lon, radiusM, name)
+  `).run(input.deviceId, lat, lon, radiusM, name)
   return { place: toAdminView(getPlace(Number(res.lastInsertRowid)) as StoredPlace), merged: false }
 }
 
@@ -219,7 +235,7 @@ export function createPlace(input: {
  */
 export function updatePlace(
   placeId: number,
-  patch: { name?: string | null; radiusM?: number; lat?: number; lon?: number }
+  patch: { name?: string | null; radiusM?: number; lat?: number; lon?: number; coordSystem?: CoordSystem }
 ): PlaceAdminView | null {
   const existing = getPlace(placeId)
   if (!existing) return null
@@ -239,8 +255,9 @@ export function updatePlace(
   }
   if (patch.lat !== undefined || patch.lon !== undefined) {
     assertCoord(patch.lat, patch.lon)
+    const { lat, lon } = toWgs84(patch.lat as number, patch.lon as number, patch.coordSystem)
     sets.push('center_lat = ?', 'center_lon = ?')
-    values.push(patch.lat, patch.lon)
+    values.push(lat, lon)
   }
 
   if (sets.length > 0) {

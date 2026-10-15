@@ -49,8 +49,8 @@ export function patchPlace(req: Request, res: Response): void {
   }
   const body = (req.body ?? {}) as Record<string, unknown>
   // 只认这几个字段，别的一律忽略（避免前端顺手把 hit_count 之类也传进来）
-  const patch: { name?: unknown; radiusM?: unknown; lat?: unknown; lon?: unknown } = {}
-  for (const key of ['name', 'radiusM', 'lat', 'lon'] as const) {
+  const patch: { name?: unknown; radiusM?: unknown; lat?: unknown; lon?: unknown; coordSystem?: unknown } = {}
+  for (const key of ['name', 'radiusM', 'lat', 'lon', 'coordSystem'] as const) {
     if (key in body) patch[key] = body[key]
   }
 
@@ -80,7 +80,8 @@ export function postPlace(req: Request, res: Response): void {
       name: body.name as string,
       lat: body.lat as number,
       lon: body.lon as number,
-      radiusM: body.radiusM as number | undefined
+      radiusM: body.radiusM as number | undefined,
+      coordSystem: body.coordSystem as 'wgs84' | 'gcj02' | undefined
     }))
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : '参数不合法' })
