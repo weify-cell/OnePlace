@@ -99,6 +99,20 @@ export const MAX_IMPLIED_SPEED_MPS = 70
 export const ACCURACY_FACTOR = 0.75
 
 /**
+ * 判定一个点"还算在停留范围内"的半径：把该点的定位误差算进去。
+ *
+ * 为什么需要它：App 同时订 gps/network/fused，network 的精度 30–68 米。拿一条偏 300 米的
+ * 网络定位去比 100 米的停留半径，会把一段正确的停留切断，甚至凭空接出一段行程。
+ *
+ * 为什么有上限：一个精度写 5000 米的坏点不能因此把停留范围撑到无限大，
+ * 因此最多再放宽一个 STAY_RADIUS_M。
+ */
+export function effectiveStayRadiusM(accuracy: number | null | undefined): number {
+  const slack = Math.min(Math.max(accuracy ?? 0, 0), STAY_RADIUS_M)
+  return STAY_RADIUS_M + slack
+}
+
+/**
  * 这一步算不算"真的走了"，算的话返回步长、否则返回 0。
  *
  * 三个门槛，都是实测倒逼出来的：
@@ -229,7 +243,7 @@ export function reduceTrack(
     while (true) {
       if (next.stay) {
         const d = haversineM(next.stay.anchorLat, next.stay.anchorLon, point.lat, point.lon)
-        if (d <= STAY_RADIUS_M) {
+        if (d <= effectiveStayRadiusM(point.accuracy)) {
           next.stay.samples++
           next.stay.sumLat += point.lat
           next.stay.sumLon += point.lon
@@ -288,7 +302,7 @@ export function reduceTrack(
 
         // 停下来了吗：在"静止锚点"附近累计够时长就变成下一个停留
         const dStill = haversineM(next.trip.stillAnchorLat, next.trip.stillAnchorLon, point.lat, point.lon)
-        if (dStill <= STAY_RADIUS_M) {
+        if (dStill <= effectiveStayRadiusM(point.accuracy)) {
           next.trip.stillSamples++
           next.trip.stillSumLat += point.lat
           next.trip.stillSumLon += point.lon

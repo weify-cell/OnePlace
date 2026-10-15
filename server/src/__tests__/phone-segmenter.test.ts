@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   countedStepM,
+  effectiveStayRadiusM,
   DRIFT_MIN_STEP_M,
   emptySegmenterState,
   haversineM,
@@ -281,5 +282,56 @@ describe('步长门槛：噪声不该被算成走路', () => {
     // 实测：干净实现 864，去掉精度门槛（变异）939 —— 上界必须卡在两者之间才有鉴别力
     expect(trip!.distanceM).toBeGreaterThan(840)
     expect(trip!.distanceM).toBeLessThan(920)
+  })
+})
+
+// ── 粗精度点不该把停留"打断"（App 同时订 gps/network/fused 的必然结果） ──
+
+describe('停留半径按定位误差放宽', () => {
+  it('精度越差，允许的半径越大（上限为一个半径）', () => {
+    expect(effectiveStayRadiusM(0)).toBe(100)
+    expect(effectiveStayRadiusM(30)).toBe(130)
+    expect(effectiveStayRadiusM(68)).toBe(168)
+    // 坏点不能把范围撑到无限大
+    expect(effectiveStayRadiusM(5000)).toBe(200)
+    expect(effectiveStayRadiusM(null)).toBe(100)
+  })
+
+  it('一条偏 130 米的网络定位（精度 68 米）不会切断停留', () => {
+    const base = Date.parse('2026-05-01T01:00:00.000Z')
+    const lat = (m: number): number => 31.86 + m / 111320
+    const minutes = (i: number): string => new Date(base + i * 60_000).toISOString()
+    const points: TrackPoint[] = []
+    // 在家：gps 精度 8 米，先 12 分钟
+    for (let i = 0; i < 12; i++) points.push({ recordedAt: minutes(i), lat: lat(0), lon: 117.16, accuracy: 8 })
+    // 一条网络定位偏了 130 米 —— 旧实现（固定 100 米半径）会在这里判定"离开了"
+    points.push({ recordedAt: minutes(12), lat: lat(130), lon: 117.16, accuracy: 68 })
+    // 继续在家到第 22 分钟
+    for (let i = 13; i < 22; i++) points.push({ recordedAt: minutes(i), lat: lat(0), lon: 117.16, accuracy: 8 })
+    // 真出门（精度 8 米、偏 200 米）→ 停留在此闭合
+    points.push({ recordedAt: minutes(22), lat: lat(200), lon: 117.16, accuracy: 8 })
+
+    const { closed } = reduceTrack(emptySegmenterState(), points)
+    const stays = closed.filter(s => s.kind === 'stay')
+
+    // 关键在**条数与采样点数**：被噪声切断会得到两段（12 点 + 9 点）而不是一段 22 点
+    expect(stays).toHaveLength(1)
+    expect((stays[0] as { sampleCount: number }).sampleCount).toBe(22)
+    expect(closed.filter(s => s.kind === 'trip')).toHaveLength(0)
+  })
+
+  it('但高铁精度下真走出去仍会断（放宽不是万能豁免）', () => {
+    const base = Date.parse('2026-05-01T01:00:00.000Z')
+    const lat = (m: number): number => 31.86 + m / 111320
+    const points: TrackPoint[] = []
+    for (let i = 0; i < 12; i++) {
+      points.push({ recordedAt: new Date(base + i * 60_000).toISOString(), lat: lat(0), lon: 117.16, accuracy: 5 })
+    }
+    // 精度 5 米却偏了 130 米：这是真的走了，不是噪声
+    points.push({ recordedAt: new Date(base + 12 * 60_000).toISOString(), lat: lat(130), lon: 117.16, accuracy: 5 })
+
+    const { closed } = reduceTrack(emptySegmenterState(), points)
+
+    expect(closed.filter(s => s.kind === 'stay')).toHaveLength(1) // 前 12 分钟那段停留照样闭合
   })
 })
