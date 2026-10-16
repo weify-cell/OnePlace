@@ -4,9 +4,9 @@ import { listLocationPoints, type StoredLocationPoint } from './location.service
 import { listStays, listTrips, resolveRecentDeviceId, type StoredStay, type StoredTrip } from './track.service.js'
 import { listEvents } from './event.service.js'
 import { listRegions } from './place.service.js'
-import type { RegionDef } from './region-tracker.js'
 import { wgs84ToGcj02 } from './geo-coords.js'
 import { haversineM } from './track-segmenter.js'
+import type { RegionDef } from './region-tracker.js'
 
 /**
  * 一天的轨迹回看：把原始点、停留、行程整理成"一页能看明白"的形状。
@@ -107,8 +107,12 @@ export interface TrackDayView {
   gaps: TrackGapView[]
   /** 被精度过滤挡在折线之外的点数——如实报出来，不偷偷丢 */
   droppedLowAccuracy: number
-  /** 当天真去过的已划定区域（没去的不画圈） */
-  places: RegionDef[]
+  /**
+   * 当天真去过的已划定区域（没去的不画圈）。
+   * **只给 GCJ-02**：区域在库里存的是 WGS-84，直接发给前端画会整体偏 500 多米——
+   * 干脆不给那套坐标，让"画错"这件事写不出来。
+   */
+  places: TrackRegionCircle[]
   totals: TrackDayTotals
 }
 
@@ -270,13 +274,28 @@ function summarize(
   }
 }
 
+export interface TrackRegionCircle {
+  id: number
+  name: string
+  /** GCJ-02，专供地图 */
+  gcjLat: number
+  gcjLon: number
+  radiusM: number
+}
+
 /** 当天有点落在其中的区域（没去过的不画圈） */
-function regionsVisited(regions: RegionDef[], points: StoredLocationPoint[]): RegionDef[] {
+function regionsVisited(regions: RegionDef[], points: StoredLocationPoint[]): TrackRegionCircle[] {
   // 注意：区域圆心与原始点都是 WGS-84，必须**同一套坐标系**比较。
   // 拿转换后的 GCJ 点去比 WGS 圆心，会偏 500 多米，"家"永远算不进去。
-  return regions.filter(region => points.some(point =>
-    haversineM(point.latitude, point.longitude, region.lat, region.lon) <= region.radiusM
-  ))
+  return regions
+    .filter(region => points.some(point =>
+      // 区域圆心与原始点都是 WGS-84，同一套坐标系比较
+      haversineM(point.latitude, point.longitude, region.lat, region.lon) <= region.radiusM
+    ))
+    .map(region => {
+      const gcj = wgs84ToGcj02(region.lat, region.lon)
+      return { id: region.id, name: region.name, gcjLat: gcj.lat, gcjLon: gcj.lon, radiusM: region.radiusM }
+    })
 }
 
 /** 某天（北京日期）的轨迹回看；`date` 缺省为今天 */

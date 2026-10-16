@@ -12,6 +12,8 @@ import type { PlaceItem } from '../src/api/locations.api'
  * 地图本身（高德脚本、打点、画圆）在无浏览器环境里验证不了，留给真浏览器。
  */
 
+const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
 const fetchPlaces = vi.fn()
 const createPlace = vi.fn()
 const updatePlace = vi.fn()
@@ -68,6 +70,9 @@ function mountView() {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // 地图在 jsdom 里永远不会就绪，所以"点列表项时处理函数里抛异常"这类问题
+  // 组件用例看不见——但它会打到 console.error，这里把它变成失败
+  consoleErrorSpy.mockClear()
   settingsGetAll.mockResolvedValue({ data: {} })
   fetchPlaces.mockResolvedValue({ device_id: 'dev-1', places: [PLACE] })
 })
@@ -138,6 +143,17 @@ describe('划定区域', () => {
     await flushPromises()
 
     expect(updatePlace).toHaveBeenCalledWith(1, { name: '' })
+  })
+
+  it('选中地点时处理函数里不该抛异常（地图未就绪也不许炸）', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.findAll('.list__item')[0].trigger('click')
+    await flushPromises()
+
+    const crashed = consoleErrorSpy.mock.calls.filter(call => String(call[0] ?? '').includes('TypeError'))
+    expect(crashed).toEqual([])
   })
 
   it('服务端报错时把原话显示出来，不吞掉', async () => {

@@ -41,7 +41,7 @@ const { mapEl, ready: mapReady, error: mapError } = amap
 let markers: AmapOverlay[] = []
 let circle: AmapOverlay | null = null
 
-const map = (): AmapMap | null => amap.getMap()
+const currentMap = (): AmapMap | null => amap.getMap()
 
 // 编辑中的区域（未保存前不动服务端）
 const draftName = ref('')
@@ -90,7 +90,7 @@ async function load(): Promise<void> {
 async function loadKeys(): Promise<void> {
   try {
     const { data } = await settingsApi.getAll()
-    const bag = data as Record<string, unknown>
+    const bag = data as unknown as Record<string, unknown>
     serviceKey.value = typeof bag[KEY_SERVICE] === 'string' ? bag[KEY_SERVICE] : ''
     jsKey.value = typeof bag[KEY_JS] === 'string' ? bag[KEY_JS] : ''
     securityCode.value = typeof bag[KEY_SECURITY] === 'string' ? bag[KEY_SECURITY] : ''
@@ -127,7 +127,7 @@ function select(place: PlaceItem): void {
   draftLat.value = place.gcjLat
   draftLon.value = place.gcjLon
   drawOverlays()
-  if (map) map.setCenter([place.gcjLon, place.gcjLat])
+  currentMap()?.setCenter([place.gcjLon, place.gcjLat])
 }
 
 function beginCreate(): void {
@@ -203,7 +203,7 @@ async function confirmCreate(): Promise<void> {
 
 // ── 地图 ────────────────────────────────────────────────────────────────────
 function drawOverlays(): void {
-  const instance = map()
+  const instance = currentMap()
   const ns = amap.getNamespace()
   if (!instance || !ns) return
 

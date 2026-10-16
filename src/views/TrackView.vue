@@ -4,6 +4,7 @@ import AppLayout from '@/components/common/AppLayout.vue'
 import { settingsApi } from '@/api/settings.api'
 import { fetchTrackDay, fetchTrackDays, type TrackDay } from '@/api/track.api'
 import { useAmap, type AmapOverlay } from '@/composables/useAmap'
+import { buildTrackOverlays } from '@/utils/trackOverlays'
 
 /**
  * 轨迹回看：一天的路线与停留时间。
@@ -130,61 +131,48 @@ function drawTrack(): void {
 
   clearOverlays()
 
-  // 全天折线（用 GCJ-02：拿 WGS-84 画会整体偏 500 多米）
-  if (data.points.length > 1) {
-    const line = new ns.Polyline({
-      path: data.points.map(point => [point.gcjLon, point.gcjLat]),
-      strokeColor: '#2563eb',
-      strokeWeight: 4,
-      strokeOpacity: 0.85,
-      lineJoin: 'round'
-    })
-    overlays.push(line)
-    instance.add(line)
-  }
-
-  // 已划定区域：虚线圈 + 名字
-  for (const region of data.places) {
-    const circle = new ns.Circle({
-      center: [region.lon, region.lat],
-      radius: region.radiusM,
-      strokeColor: '#f59e0b',
-      strokeWeight: 2,
-      strokeStyle: 'dashed',
-      fillColor: '#f59e0b',
-      fillOpacity: 0.08
-    })
-    overlays.push(circle)
-    instance.add(circle)
-    const label = new ns.Marker({
-      position: [region.lon, region.lat],
-      content: `<div style="color:#b45309;font-size:12px">${region.name}</div>`,
-      anchor: 'bottom-center'
-    })
-    overlays.push(label)
-    instance.add(label)
-  }
-
-  // 停留：圆圈 + 名字/时长
-  for (const stay of data.stays) {
-    const circle = new ns.Circle({
-      center: [stay.gcjLon, stay.gcjLat],
-      radius: Math.max(stay.radiusM, 30),
-      strokeColor: '#0ea5e9',
-      strokeWeight: 2,
-      fillColor: '#0ea5e9',
-      fillOpacity: 0.18
-    })
-    overlays.push(circle)
-    instance.add(circle)
-
-    const label = new ns.Marker({
-      position: [stay.gcjLon, stay.gcjLat],
-      content: `<div style="background:rgba(14,165,233,.92);color:#fff;padding:2px 8px;border-radius:10px;font-size:12px;white-space:nowrap">${stay.name ?? '停留'} · ${humanMinutes(stay.minutes)}</div>`,
-      anchor: 'bottom-center'
-    })
-    overlays.push(label)
-    instance.add(label)
+  // 画什么由纯函数决定（可测），坐标一律是 GCJ-02 —— 见 utils/trackOverlays.ts
+  for (const overlay of buildTrackOverlays(data)) {
+    let shape: AmapOverlay
+    if (overlay.kind === 'path') {
+      shape = new ns.Polyline({
+        path: overlay.path,
+        strokeColor: '#2563eb',
+        strokeWeight: 4,
+        strokeOpacity: 0.85,
+        lineJoin: 'round'
+      })
+    } else if (overlay.kind === 'region') {
+      shape = new ns.Circle({
+        center: overlay.center,
+        radius: overlay.radius,
+        strokeColor: '#f59e0b',
+        strokeWeight: 2,
+        strokeStyle: 'dashed',
+        fillColor: '#f59e0b',
+        fillOpacity: 0.08
+      })
+    } else if (overlay.kind === 'stay') {
+      shape = new ns.Circle({
+        center: overlay.center,
+        radius: overlay.radius,
+        strokeColor: '#0ea5e9',
+        strokeWeight: 2,
+        fillColor: '#0ea5e9',
+        fillOpacity: 0.18
+      })
+    } else {
+      const isRegion = overlay.kind === 'region-label'
+      shape = new ns.Marker({
+        position: overlay.center,
+        content: isRegion
+          ? `<div style="color:#b45309;font-size:12px">${overlay.text}</div>`
+          : `<div style="background:rgba(14,165,233,.92);color:#fff;padding:2px 8px;border-radius:10px;font-size:12px;white-space:nowrap">${overlay.text}</div>`,
+        anchor: 'bottom-center'
+      })
+    }
+    overlays.push(shape)
+    instance.add(shape)
   }
 
   if (overlays.length > 0) instance.setFitView(overlays)
@@ -195,7 +183,7 @@ async function initMap(): Promise<void> {
   let securityCode = ''
   try {
     const { data } = await settingsApi.getAll()
-    const bag = data as Record<string, unknown>
+    const bag = data as unknown as Record<string, unknown>
     jsKey = typeof bag.amap_js_key === 'string' ? bag.amap_js_key : ''
     securityCode = typeof bag.amap_js_security === 'string' ? bag.amap_js_security : ''
   } catch {

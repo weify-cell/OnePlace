@@ -209,6 +209,21 @@ describe('汇总', () => {
     expect(day.totals.distanceKm).toBeCloseTo(16, 1)
   })
 
+  it('区域的圆心只给 GCJ-02（给了 WGS-84 会画偏 500 米）', () => {
+    const homeId = addPlace('家', 31.862827483, 117.16209704)
+    addStay('2026-10-16', 60, homeId, 31.862827483, 117.16209704)
+    addPoint(bj('2026-10-16', 10, 0), 31.862827483, 117.16209704) // 当天真去过
+
+    const [region] = getTrackDay(DEVICE, '2026-10-16').places
+
+    // 与库里那份 WGS-84 相差数百米，且与已知的 GCJ-02 一致
+    expect(haversineM(region.gcjLat, region.gcjLon, 31.862827483, 117.16209704)).toBeGreaterThan(400)
+    expect(haversineM(region.gcjLat, region.gcjLon, 31.860922, 117.167673)).toBeLessThan(20)
+    // 不该再带 WGS 字段（前端拿不到就不会画错）
+    expect('lat' in region).toBe(false)
+    expect('lon' in region).toBe(false)
+  })
+
   it('只带当天真去过的区域（没去的不画圈）', () => {
     const homeId = addPlace('家')
     addPlace('公司', 32.5, 118.5)
