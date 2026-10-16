@@ -1,4 +1,4 @@
-import { ref, type Ref } from 'vue'
+import { nextTick, ref, type Ref } from 'vue'
 
 /**
  * 高德 JS API 的加载与地图初始化，抽出来给多个页面共用。
@@ -80,7 +80,13 @@ export interface UseAmap {
   destroy(): void
 }
 
-export function useAmap(): UseAmap {
+export interface UseAmapOptions {
+  /** 脚本加载是系统边界，测试可替换（默认真加载高德） */
+  loadScript?: (src: string) => Promise<void>
+}
+
+export function useAmap(options: UseAmapOptions = {}): UseAmap {
+  const load = options.loadScript ?? loadScript
   const mapEl = ref<HTMLElement | null>(null)
   const ready = ref(false)
   const error = ref<string | null>(null)
@@ -109,13 +115,22 @@ export function useAmap(): UseAmap {
       error.value = '还没填「Web端(JS API)」key。填好并保存后地图才会出现；本页其它部分不受影响。'
       return
     }
-    const el = mapEl.value
-    if (!el) return
+    // 容器可能因为 v-if 还没渲染出来：等一次微任务再取，仍没有就**明确报错**，
+    // 而不是静默返回——静默失败会表现成"地图就是不出现"，排查时毫无线索。
+    let el = mapEl.value
+    if (!el) {
+      await nextTick()
+      el = mapEl.value
+    }
+    if (!el) {
+      error.value = '地图容器还没准备好（页面结构问题，不是 key 的问题）。'
+      return
+    }
 
     try {
       const security = opts.securityCode?.trim()
       window._AMapSecurityConfig = security ? { securityJsCode: security } : undefined
-      await loadScript(`https://webapi.amap.com/maps?v=2.0&key=${encodeURIComponent(jsKey)}`)
+      await load(`https://webapi.amap.com/maps?v=2.0&key=${encodeURIComponent(jsKey)}`)
       const ns = window.AMap
       if (!ns) {
         error.value = '地图脚本加载了但没有暴露 AMap：多半是 key 无效或平台类型不对（要用「Web端(JS API)」）。'

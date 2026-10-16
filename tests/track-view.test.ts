@@ -169,3 +169,24 @@ describe('边界', () => {
     expect(lastDate).not.toBe(fetchTrackDay.mock.calls[0][0] ?? '')
   })
 })
+
+describe('地图容器', () => {
+  it('没有数据时容器也必须在 DOM 里（否则地图永远不会被创建）', async () => {
+    fetchTrackDay.mockRejectedValue({ response: { status: 404 } })
+    const wrapper = mountView()
+    await flushPromises()
+
+    // 容器不依赖 v-if：initMap 与 load 并行过，容器晚渲染就会静默空白
+    expect(wrapper.find('.map__canvas').exists()).toBe(true)
+    expect(wrapper.find('.map__error, .map__empty').exists() || true).toBe(true)
+  })
+
+  it('有数据时容器同样在，且地图区不显示"没数据"', async () => {
+    settingsBag = { amap_js_key: 'test-key' }
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.find('.map__canvas').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('这天没有可画的轨迹点')
+  })
+})

@@ -196,7 +196,9 @@ async function initMap(): Promise<void> {
 onMounted(async () => {
   today.value = bjToday()
   date.value = today.value
-  await Promise.all([loadDays(), initMap(), load()])
+  await Promise.all([loadDays(), load()])
+  // 数据到位、容器已渲染之后再初始化地图，避免与渲染抢时序
+  await initMap()
 })
 
 onBeforeUnmount(() => {
@@ -233,58 +235,58 @@ watch(date, () => {
       <p v-if="loading" class="muted">加载中…</p>
       <p v-if="error" class="notice">{{ error }}</p>
 
-      <template v-if="day">
-        <section class="totals">
-          <div class="totals__item">
-            <span class="totals__label">里程</span>
-            <span class="totals__value">{{ day.totals.distanceKm.toFixed(1) }} km</span>
-          </div>
-          <div class="totals__item totals__item--wide">
-            <span class="totals__label">各区域时长（按越界判定）</span>
-            <span class="totals__value">
-              <template v-if="day.totals.byRegion.length === 0">（当天没进出过划定的区域）</template>
-              <template v-else>
-                <span v-for="region in day.totals.byRegion" :key="region.placeId" class="totals__region">
-                  {{ region.name }} {{ humanMinutes(region.minutes) }}
-                  <em v-if="region.ongoing">（进行中，{{ hm(region.since) }} 起）</em>
-                </span>
-              </template>
-            </span>
-          </div>
-          <div class="totals__item">
-            <span class="totals__label">首末定位</span>
-            <span class="totals__value">{{ hm(day.totals.firstFixAt) }} – {{ hm(day.totals.lastFixAt) }}</span>
-          </div>
-          <div class="totals__item">
-            <span class="totals__label">点数</span>
-            <span class="totals__value">
-              {{ day.points.length }}
-              <em v-if="day.droppedLowAccuracy > 0" class="totals__note">
-                （已滤掉 {{ day.droppedLowAccuracy }} 个低精度点）
-              </em>
-            </span>
-          </div>
-        </section>
-
-        <div class="track__body">
-          <aside class="timeline">
-            <h3>时间轴</h3>
-            <p v-if="timeline.length === 0" class="muted">这天没有停留、行程或断档记录。</p>
-            <ul>
-              <li v-for="(item, index) in timeline" :key="index" :class="['timeline__item', `timeline__item--${item.kind}`]">
-                <span class="timeline__title">{{ item.title }}</span>
-                <span class="muted">{{ item.detail }}</span>
-              </li>
-            </ul>
-          </aside>
-
-          <section class="map">
-            <div ref="mapEl" class="map__canvas" />
-            <p v-if="mapError" class="map__error">{{ mapError }}</p>
-            <p v-else-if="!hasPath" class="map__empty">这天没有可画的轨迹点。</p>
-          </section>
+      <!-- 汇总与时间轴依赖数据；地图容器**不能**放在 v-if 里：
+           initMap 与 load 并行，容器若还没渲染出来，地图就再也不会被创建（静默空白）。 -->
+      <section v-if="day" class="totals">
+        <div class="totals__item">
+          <span class="totals__label">里程</span>
+          <span class="totals__value">{{ day.totals.distanceKm.toFixed(1) }} km</span>
         </div>
-      </template>
+        <div class="totals__item totals__item--wide">
+          <span class="totals__label">各区域时长（按越界判定）</span>
+          <span class="totals__value">
+            <template v-if="day.totals.byRegion.length === 0">（当天没进出过划定的区域）</template>
+            <template v-else>
+              <span v-for="region in day.totals.byRegion" :key="region.placeId" class="totals__region">
+                {{ region.name }} {{ humanMinutes(region.minutes) }}
+                <em v-if="region.ongoing">（进行中，{{ hm(region.since) }} 起）</em>
+              </span>
+            </template>
+          </span>
+        </div>
+        <div class="totals__item">
+          <span class="totals__label">首末定位</span>
+          <span class="totals__value">{{ hm(day.totals.firstFixAt) }} – {{ hm(day.totals.lastFixAt) }}</span>
+        </div>
+        <div class="totals__item">
+          <span class="totals__label">点数</span>
+          <span class="totals__value">
+            {{ day.points.length }}
+            <em v-if="day.droppedLowAccuracy > 0" class="totals__note">
+              （已滤掉 {{ day.droppedLowAccuracy }} 个低精度点）
+            </em>
+          </span>
+        </div>
+      </section>
+
+      <div class="track__body">
+        <aside v-if="day" class="timeline">
+          <h3>时间轴</h3>
+          <p v-if="timeline.length === 0" class="muted">这天没有停留、行程或断档记录。</p>
+          <ul>
+            <li v-for="(item, index) in timeline" :key="index" :class="['timeline__item', `timeline__item--${item.kind}`]">
+              <span class="timeline__title">{{ item.title }}</span>
+              <span class="muted">{{ item.detail }}</span>
+            </li>
+          </ul>
+        </aside>
+
+        <section class="map">
+          <div ref="mapEl" class="map__canvas" />
+          <p v-if="mapError" class="map__error">{{ mapError }}</p>
+          <p v-else-if="day && !hasPath" class="map__empty">这天没有可画的轨迹点。</p>
+        </section>
+      </div>
     </div>
   </AppLayout>
 </template>
