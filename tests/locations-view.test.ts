@@ -78,7 +78,7 @@ describe('没填 JS API key', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('Web端(JS API)')
-    expect(wrapper.text()).toContain('列表部分不受影响')
+    expect(wrapper.text()).toContain('本页其它部分不受影响')
 
     // 列表仍然渲染出这处地点，并带上高德查到的名字与区划
     expect(wrapper.text()).toContain('博威香山丽舍')

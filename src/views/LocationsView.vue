@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import AppLayout from '@/components/common/AppLayout.vue'
 import { settingsApi } from '@/api/settings.api'
 import { createPlace, fetchPlaces, updatePlace, type PlaceItem } from '@/api/locations.api'
+import { useAmap, type AmapMap, type AmapOverlay } from '@/composables/useAmap'
 
 /**
  * 位置与区域：在地图上划定「家」「公司」这类范围。
@@ -15,38 +16,6 @@ import { createPlace, fetchPlaces, updatePlace, type PlaceItem } from '@/api/loc
  *
  * 没填「Web端(JS API)」key 时不白屏：列表照常能看能改，地图位置给出明确指引。
  */
-
-// ── 高德 JS API 的最小类型（只声明用得到的部分，不为一个地图页引整包类型）────────
-interface AmapLngLat {
-  getLng(): number
-  getLat(): number
-}
-interface AmapMap {
-  add(overlay: unknown): void
-  remove(overlay: unknown): void
-  setCenter(pos: [number, number]): void
-  setZoom(zoom: number): void
-  setFitView(overlays?: unknown[]): void
-  on(event: string, cb: (e: { lnglat: AmapLngLat }) => void): void
-  destroy(): void
-}
-interface AmapOverlay {
-  setPosition?(pos: [number, number]): void
-  setCenter?(pos: [number, number]): void
-  setRadius?(radius: number): void
-}
-interface AmapNamespace {
-  Map: new (el: HTMLElement, opts: Record<string, unknown>) => AmapMap
-  Marker: new (opts: Record<string, unknown>) => AmapOverlay
-  Circle: new (opts: Record<string, unknown>) => AmapOverlay
-}
-
-declare global {
-  interface Window {
-    _AMapSecurityConfig?: { securityJsCode: string }
-    AMap?: AmapNamespace
-  }
-}
 
 const KEY_SERVICE = 'amap_key'
 const KEY_JS = 'amap_js_key'
@@ -66,12 +35,13 @@ const showSettings = ref(false)
 const savingKeys = ref(false)
 
 // 地图
-const mapEl = ref<HTMLElement | null>(null)
-const mapError = ref<string | null>(null)
-const mapReady = ref(false)
-let map: AmapMap | null = null
+// 地图（加载/初始化/失败提示都在共用件里，两个地图页共用同一套）
+const amap = useAmap()
+const { mapEl, ready: mapReady, error: mapError } = amap
 let markers: AmapOverlay[] = []
 let circle: AmapOverlay | null = null
+
+const map = (): AmapMap | null => amap.getMap()
 
 // 编辑中的区域（未保存前不动服务端）
 const draftName = ref('')
@@ -232,24 +202,16 @@ async function confirmCreate(): Promise<void> {
 }
 
 // ── 地图 ────────────────────────────────────────────────────────────────────
-function loadScript(src: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const script = document.createElement('script')
-    script.src = src
-    script.async = true
-    script.onload = () => resolve()
-    script.onerror = () => reject(new Error('地图脚本加载失败（网络不通或 key 无效）'))
-    document.head.appendChild(script)
-  })
-}
-
 function drawOverlays(): void {
-  if (!map || !window.AMap) return
-  for (const marker of markers) map.remove(marker)
+  const instance = map()
+  const ns = amap.getNamespace()
+  if (!instance || !ns) return
+
+  for (const marker of markers) instance.remove(marker)
   markers = []
 
   for (const place of places.value) {
-    const marker = new window.AMap.Marker({
+    const marker = new ns.Marker({
       position: [place.gcjLon, place.gcjLat],
       title: placeLabel(place),
       // 已划定区域用不同颜色，一眼能分出"哪些是家/公司"
@@ -260,15 +222,15 @@ function drawOverlays(): void {
       anchor: 'bottom-center'
     })
     markers.push(marker)
-    map.add(marker)
+    instance.add(marker)
   }
 
   if (circle) {
-    map.remove(circle)
+    instance.remove(circle)
     circle = null
   }
   if (selectedId.value) {
-    circle = new window.AMap.Circle({
+    circle = new ns.Circle({
       center: [draftLon.value, draftLat.value],
       radius: draftRadius.value,
       strokeColor: '#2563eb',
@@ -276,63 +238,40 @@ function drawOverlays(): void {
       fillColor: '#2563eb',
       fillOpacity: 0.15
     })
-    map.add(circle)
+    instance.add(circle)
   }
 }
 
 async function initMap(): Promise<void> {
-  mapError.value = null
-  mapReady.value = false
-  if (map) {
-    map.destroy()
-    map = null
-    markers = []
-    circle = null
-  }
-  if (!jsKey.value.trim()) {
-    mapError.value = '还没填「Web端(JS API)」key。可以点右上角「高德 key」填写，或在设置页填；列表部分不受影响。'
-    return
-  }
-  const el = mapEl.value
-  if (!el) return
-
-  try {
-    window._AMapSecurityConfig = securityCode.value.trim()
-      ? { securityJsCode: securityCode.value.trim() }
-      : undefined
-    await loadScript(`https://webapi.amap.com/maps?v=2.0&key=${encodeURIComponent(jsKey.value.trim())}`)
-    const ns = window.AMap
-    if (!ns) {
-      mapError.value = '地图脚本加载了，但没有暴露 AMap：多半是 key 无效或平台类型不对（要用「Web端(JS API)」）。'
-      return
+  markers = []
+  circle = null
+  await amap.init({
+    jsKey: jsKey.value,
+    securityCode: securityCode.value,
+    center: places.value.length > 0 ? [places.value[0].gcjLon, places.value[0].gcjLat] : undefined,
+    onReady: instance => {
+      instance.on('click', (e) => {
+        const lon = e.lnglat.getLng()
+        const lat = e.lnglat.getLat()
+        if (creating.value) {
+          newPoint.value = { lat, lon }
+          message.value = '位置已选，填个名字就能创建'
+          return
+        }
+        if (selectedId.value) {
+          draftLat.value = lat
+          draftLon.value = lon
+          circle?.setCenter?.([lon, lat])
+          message.value = '圆心已移动，记得点「保存」'
+        }
+      })
+      drawOverlays()
+      if (places.value.length > 0) {
+        instance.setCenter([places.value[0].gcjLon, places.value[0].gcjLat])
+      }
+      if (places.value.length > 1) instance.setFitView(markers)
     }
-    const center: [number, number] = places.value.length > 0
-      ? [places.value[0].gcjLon, places.value[0].gcjLat]
-      : [116.397, 39.909]
-    map = new ns.Map(el, { zoom: 13, center, viewMode: '2D' })
-    map.on('click', (e) => {
-      const lon = e.lnglat.getLng()
-      const lat = e.lnglat.getLat()
-      if (creating.value) {
-        newPoint.value = { lat, lon }
-        message.value = '位置已选，填个名字就能创建'
-        return
-      }
-      if (selectedId.value) {
-        draftLat.value = lat
-        draftLon.value = lon
-        circle?.setCenter?.([lon, lat])
-        message.value = '圆心已移动，记得点「保存」'
-      }
-    })
-    mapReady.value = true
-    drawOverlays()
-    if (places.value.length > 1) map.setFitView(markers)
-  } catch (err) {
-    mapError.value = err instanceof Error
-      ? `${err.message}。如果控制台报 INVALID_USER_SCODE，说明这个 key 还需要「安全密钥」，在下面一并填写。`
-      : '地图初始化失败'
-  }
+  })
 }
 
 onMounted(async () => {
@@ -342,8 +281,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
-  map?.destroy()
-  map = null
+  amap.destroy()
 })
 </script>
 

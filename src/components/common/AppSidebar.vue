@@ -16,6 +16,7 @@ const navItems = [
   { path: '/reports', label: '报告', icon: '📊' },
   { path: '/memory', label: '记忆', icon: '🧠' },
   { path: '/locations', label: '位置', icon: '🗺️' },
+  { path: '/track', label: '轨迹', icon: '🧭' },
   { path: '/toolbox', label: '百宝箱', icon: '🧰' },
   { path: '/settings/general', label: '通用设置', icon: '⚙️' },
   { path: '/settings/kb', label: '知识库', icon: '📚' },
