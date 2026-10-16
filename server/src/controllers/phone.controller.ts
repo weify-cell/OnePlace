@@ -2,6 +2,7 @@ import { Request, Response } from 'express'
 import { MAX_POINTS_PER_BATCH } from '../services/phone/location.service.js'
 import { ingestAndProcessLocations, resetRegionState, resolveRecentDeviceId } from '../services/phone/track.service.js'
 import { createPlace, getPlace, listPlacesForUi, updatePlace } from '../services/phone/place.service.js'
+import { getTrackDay, listTrackDays } from '../services/phone/track-view.service.js'
 import { forgetPlaceGeo, geocodePendingPlaces } from '../services/phone/geocode.service.js'
 
 /** 坐标变了就忘掉旧地名，顺手触发一次反查（不阻塞响应，失败下轮作业会补） */
@@ -100,4 +101,31 @@ export function postPlace(req: Request, res: Response): void {
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : '参数不合法' })
   }
+}
+
+/** 某天（北京日期）的轨迹回看：折线点、停留、行程、断档、汇总。 */
+export function getTrackDayView(req: Request, res: Response): void {
+  const date = typeof req.query.date === 'string' && req.query.date !== ''
+    ? req.query.date
+    : undefined
+  if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    res.status(400).json({ error: 'date 必须是 YYYY-MM-DD' })
+    return
+  }
+  const deviceId = resolveRecentDeviceId()
+  if (!deviceId) {
+    res.status(404).json({ error: '还没有任何手机轨迹数据' })
+    return
+  }
+  try {
+    res.json(getTrackDay(deviceId, date))
+  } catch (err) {
+    // 日期本身合法但解析不了（如 2026-02-30）时走这里
+    res.status(400).json({ error: err instanceof Error ? err.message : '日期不合法' })
+  }
+}
+
+/** 有定位数据的日期列表（倒序），用来在界面上标"哪天有数据"。 */
+export function getTrackDays(_req: Request, res: Response): void {
+  res.json({ days: listTrackDays() })
 }

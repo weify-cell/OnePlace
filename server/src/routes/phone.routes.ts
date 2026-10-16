@@ -10,3 +10,7 @@ phoneRouter.post('/locations', phoneController.postLocations)
 phoneRouter.get('/places', phoneController.getPlaces)
 phoneRouter.post('/places', phoneController.postPlace)
 phoneRouter.patch('/places/:id', phoneController.patchPlace)
+
+// 轨迹回看（一天）
+phoneRouter.get('/track', phoneController.getTrackDayView)
+phoneRouter.get('/track/days', phoneController.getTrackDays)
