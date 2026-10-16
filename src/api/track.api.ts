@@ -62,7 +62,10 @@ export interface TrackDay {
   stays: TrackStay[]
   trips: TrackTrip[]
   gaps: TrackGap[]
+  /** 精度太差被挡在折线之外的点数（如实报，不偷偷丢） */
   droppedLowAccuracy: number
+  /** 同一秒多源重复被合并掉的点数 */
+  droppedDuplicates: number
   /**
    * 当天去过的已划定区域。**只有 GCJ-02**：区域在服务端存的是 WGS-84，
    * 直接画会整体偏 500 多米，所以服务端干脆不发那套坐标——画错这件事写不出来。

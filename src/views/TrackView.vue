@@ -94,6 +94,16 @@ const timeline = computed<TimelineItem[]>(() => {
 
 const hasPath = computed(() => (day.value?.points.length ?? 0) > 1)
 
+/** 丢了哪些、丢了多少，页面必须说清楚，不能让人以为这就是全部原始点 */
+const droppedNote = computed(() => {
+  const data = day.value
+  if (!data) return ''
+  const parts: string[] = []
+  if (data.droppedLowAccuracy > 0) parts.push(`滤掉 ${data.droppedLowAccuracy} 个低精度点`)
+  if (data.droppedDuplicates > 0) parts.push(`合并 ${data.droppedDuplicates} 个同秒重复点`)
+  return parts.join('，')
+})
+
 async function loadDays(): Promise<void> {
   try {
     days.value = await fetchTrackDays()
@@ -262,9 +272,7 @@ watch(date, () => {
           <span class="totals__label">点数</span>
           <span class="totals__value">
             {{ day.points.length }}
-            <em v-if="day.droppedLowAccuracy > 0" class="totals__note">
-              （已滤掉 {{ day.droppedLowAccuracy }} 个低精度点）
-            </em>
+            <em v-if="droppedNote" class="totals__note">（{{ droppedNote }}）</em>
           </span>
         </div>
       </section>

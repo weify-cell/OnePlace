@@ -7,6 +7,7 @@ import { listRegions } from './place.service.js'
 import { wgs84ToGcj02 } from './geo-coords.js'
 import { haversineM } from './track-segmenter.js'
 import type { RegionDef } from './region-tracker.js'
+import { cleanTrackPoints } from './track-cleaner.js'
 
 /**
  * 一天的轨迹回看：把原始点、停留、行程整理成"一页能看明白"的形状。
@@ -16,9 +17,6 @@ import type { RegionDef } from './region-tracker.js'
  * 2. **画线与断档不是一回事**：折线要丢掉低精度点（室内 60 米的漂移会画成毛刺），
  *    断档却要按**全部点**判断（"真的有数据"和"能画得准"是两件事）。
  */
-
-/** 折线用的点最多容忍多少米误差；更差的点会把路径画成锯齿 */
-export const MAX_ACCURACY_FOR_PATH_M = 100
 
 /** 相邻点超过这么久没有新点，就认为中间"没有定位数据" */
 export const GAP_MIN_MS = 15 * 60 * 1000
@@ -107,6 +105,8 @@ export interface TrackDayView {
   gaps: TrackGapView[]
   /** 被精度过滤挡在折线之外的点数——如实报出来，不偷偷丢 */
   droppedLowAccuracy: number
+  /** 同一秒多源重复被合并掉的点数（同样如实报） */
+  droppedDuplicates: number
   /**
    * 当天真去过的已划定区域（没去的不画圈）。
    * **只给 GCJ-02**：区域在库里存的是 WGS-84，直接发给前端画会整体偏 500 多米——
@@ -303,7 +303,9 @@ export function getTrackDay(deviceId: string, date: string = getBeijingDate()): 
   const window = getBeijingDayWindow(date)
   const all = listLocationPoints(deviceId, { from: window.start, to: window.end })
 
-  const pathPoints = all.filter(point => point.accuracy === null || point.accuracy <= MAX_ACCURACY_FOR_PATH_M)
+  // 画线用清洗后的点（同秒去重 + 精度阈值）；断档、停留、区域仍按**全部点**判断
+  const cleaned = cleanTrackPoints(all)
+  const pathPoints = cleaned.points
   const stays = listStays(deviceId, { from: window.start, to: window.end })
   const trips = listTrips(deviceId, { from: window.start, to: window.end })
   const regions = listRegions(deviceId)
@@ -315,7 +317,8 @@ export function getTrackDay(deviceId: string, date: string = getBeijingDate()): 
     stays: stays.map(toStayView),
     trips: trips.map(toTripView),
     gaps: findGaps(all),
-    droppedLowAccuracy: all.length - pathPoints.length,
+    droppedLowAccuracy: cleaned.droppedLowAccuracy,
+    droppedDuplicates: cleaned.droppedDuplicates,
     places: regionsVisited(regions, all),
     totals: {
       ...totals,

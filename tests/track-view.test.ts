@@ -52,6 +52,7 @@ const DAY: TrackDay = {
   ],
   gaps: [{ from: bj('2026-10-16', 8, 53), to: bj('2026-10-16', 12, 9), minutes: 196 }],
   droppedLowAccuracy: 13,
+  droppedDuplicates: 4,
   places: [{ id: 1, name: '家', lat: 31.86, lon: 117.16, radiusM: 270 }],
   totals: {
     pointCount: 255,
@@ -121,7 +122,8 @@ describe('汇总', () => {
     const wrapper = mountView()
     await flushPromises()
 
-    expect(wrapper.text()).toContain('已滤掉 13 个低精度点')
+    expect(wrapper.text()).toContain('滤掉 13 个低精度点')
+    expect(wrapper.text()).toContain('合并 4 个同秒重复点')
     expect(wrapper.text()).toContain('37.4 km')
   })
 })
@@ -143,6 +145,7 @@ describe('边界', () => {
       trips: [],
       gaps: [],
       droppedLowAccuracy: 0,
+      droppedDuplicates: 0,
       places: [],
       totals: { ...DAY.totals, pointCount: 0, distanceKm: 0, stayMinutes: 0, firstFixAt: null, lastFixAt: null, byPlace: [], byRegion: [] }
     })

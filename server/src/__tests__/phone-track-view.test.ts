@@ -12,10 +12,10 @@ import { connectDatabase } from '../database/index.js'
 import { haversineM } from '../services/phone/track-segmenter.js'
 import {
   GAP_MIN_MS,
-  MAX_ACCURACY_FOR_PATH_M,
   getTrackDay,
   listTrackDays
 } from '../services/phone/track-view.service.js'
+import { MAX_ACCURACY_FOR_PATH_M } from '../services/phone/track-cleaner.js'
 import { recordRegionEvents } from '../services/phone/event.service.js'
 
 const DEVICE = 'dev-view'
@@ -98,10 +98,10 @@ describe('按北京日期切天', () => {
 })
 
 describe('画线用的点：低精度点丢掉，但要如实报数', () => {
-  it('accuracy 超过 100 米的点不进折线，计数如实', () => {
+  it('accuracy 超过阈值的点不进折线，计数如实', () => {
     addPoint(bj('2026-10-16', 10, 0), 31.86, 117.16, 10)
-    addPoint(bj('2026-10-16', 10, 1), 31.86, 117.16, MAX_ACCURACY_FOR_PATH_M + 1) // 室内漂移
-    addPoint(bj('2026-10-16', 10, 2), 31.86, 117.16, 68) // 室内但还能用
+    addPoint(bj('2026-10-16', 10, 1), 31.86, 117.16, MAX_ACCURACY_FOR_PATH_M + 1) // 刚过期
+    addPoint(bj('2026-10-16', 10, 2), 31.86, 117.16, MAX_ACCURACY_FOR_PATH_M) // 刚好在阈值上：留
     addPoint(bj('2026-10-16', 10, 3), 31.86, 117.16, null) // 没报精度：不能当坏点丢掉
 
     const day = getTrackDay(DEVICE, '2026-10-16')
@@ -325,5 +325,30 @@ describe('在某个区域待了多久：按区域事件算，不按停留段', (
 
     expect(day.totals.byRegion).toEqual([])
     expect(day.stays).toHaveLength(1)
+  })
+})
+
+describe('画线前的清洗接进了日视图', () => {
+  it('同一秒多源重复被合并，计数单独报出来', () => {
+    addPoint('2026-10-16T04:00:00.100Z', 31.87, 117.17, 250) // network 飘了
+    addPoint('2026-10-16T04:00:00.900Z', 31.86, 117.16, 5)   // gps
+
+    const day = getTrackDay(DEVICE, '2026-10-16')
+
+    expect(day.points).toHaveLength(1)
+    expect(day.points[0].accuracy).toBe(5)
+    expect(day.droppedDuplicates).toBe(1)
+    expect(day.droppedLowAccuracy).toBe(0)
+    expect(day.totals.pointCount).toBe(2) // 原始点一个没少
+  })
+
+  it('清洗不影响断档判断（断档按全部点算）', () => {
+    addPoint('2026-10-16T04:00:00.000Z', 31.86, 117.16, 5)
+    addPoint('2026-10-16T04:30:00.000Z', 31.86, 117.16, 250) // 粗点，不画线
+
+    const day = getTrackDay(DEVICE, '2026-10-16')
+
+    expect(day.points).toHaveLength(1)
+    expect(day.gaps).toHaveLength(1) // 30 分钟没有**任何**数据才算断档
   })
 })
