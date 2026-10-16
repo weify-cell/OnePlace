@@ -223,6 +223,12 @@ export async function sendAndPersist(
   await withInflight(`${userId}:${type}`, async () => {
     try {
       const { content } = await generateReport(userId, type, window)
+      // 只判空：报告回合没有「跳过」的权力（TURN_RULES 里 skip: 'none'），
+      // 空文本是生成异常——不发也不落表（落表会被去重逻辑当成已发，用户再也收不到）
+      if (!content.trim()) {
+        console.warn(`[report] 生成结果为空，不发送也不落表（${type} for ${userId}）`)
+        return
+      }
       const delivered = await sendFn(userId, content)
 
       if (delivered === false) {
@@ -260,6 +266,12 @@ export async function handleReportCommand(
   type: ReportType
 ): Promise<string> {
   const { content, window } = await generateReport(userId, type)
+  // 空文本不落表；返回空串交由调用方提示失败（这是你**主动**要的报告，
+  // 沉默在此处与"卡住了"无法区分，所以沿用既有异常路径的提示）
+  if (!content.trim()) {
+    console.warn(`[report] 生成结果为空，不落表（${type} for ${userId}）`)
+    return ''
+  }
   saveReport(userId, type, window, content)
   return content
 }

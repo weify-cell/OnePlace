@@ -1,6 +1,8 @@
 import { getSettingValue } from '../settings.service.js'
 import { loadSkillPrompt } from './agent-pool.js'
 import {
+  BOT_CHAT_SKIP_RULE,
+  PROACTIVE_SKIP_RULE,
   DEFAULT_CHAT_SYSTEM_PROMPT,
   DEFAULT_ILINK_LEARNING_PROMPT,
   DEFAULT_ILINK_SYSTEM_PROMPT,
@@ -42,13 +44,27 @@ export interface SystemPromptRequest {
  * 各类回合的附加规则（一张表，避免两张并行表随类型增长而失同步）。
  * skills：是否追加技能提示词；memory：是否追加该用户的记忆提示词。
  */
-const TURN_RULES: Record<TurnKind, { skills: boolean; memory: boolean }> = {
-  'web-chat': { skills: true, memory: false },
-  'bot-chat': { skills: true, memory: true },
-  learning: { skills: true, memory: true },
-  proactive: { skills: true, memory: false },
-  report: { skills: false, memory: false },
-  memory: { skills: false, memory: false }
+const TURN_RULES: Record<TurnKind, { skills: boolean; memory: boolean; skip: SkipRule }> = {
+  'web-chat': { skills: true, memory: false, skip: 'none' },
+  'bot-chat': { skills: true, memory: true, skip: 'narrow' },
+  learning: { skills: true, memory: true, skip: 'none' },
+  proactive: { skills: true, memory: false, skip: 'loose' },
+  report: { skills: false, memory: false, skip: 'none' },
+  memory: { skills: false, memory: false, skip: 'none' }
+}
+
+/**
+ * 「跳过」规则的档位。
+ * - none：这个回合没有不说话的权利（提醒、日报是承诺和事实；学习模式是你主动开的会话）
+ * - narrow：默认必须回，例外才跳过（bot 回复）
+ * - loose：跳过是常态选项（主动搭话）
+ */
+type SkipRule = 'none' | 'narrow' | 'loose'
+
+const SKIP_RULES: Record<SkipRule, string> = {
+  none: '',
+  narrow: BOT_CHAT_SKIP_RULE,
+  loose: PROACTIVE_SKIP_RULE
 }
 
 /** 渲染 `{var}` 占位符（替换全部出现处，而非只替换第一处）。 */
@@ -112,7 +128,8 @@ export async function buildSystemPrompt(req: SystemPromptRequest): Promise<strin
   const rules = TURN_RULES[req.kind]
   const skills = rules.skills ? await loadSkillPrompt() : ''
   const memory = rules.memory ? req.memoryPrompt : ''
-  return composePrompt([basePromptFor(req), skills, memory])
+  // 「跳过」规则排在最后：它是对本轮行为的收尾约束，比前面的人设更靠后更容易被遵守
+  return composePrompt([basePromptFor(req), skills, memory, SKIP_RULES[rules.skip]])
 }
 
 /**

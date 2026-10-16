@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
  */
 vi.mock('@wechatbot/wechatbot', async () => await import('./helpers/fake-wechat-sdk.js'))
 vi.mock('../database/index.js', async () => await import('./helpers/test-db.js'))
+import { isSkipReply } from '../services/ai/skip.js'
 
 // 注意：这一行必须在其他 services 之前——模块图里存在环（见 .scratch/module-graph/issues/01），
 // 从 location-push 侧先进会让 subsystems 的 const 还没初始化，读出来是 undefined
@@ -19,7 +20,6 @@ import { saveWeChatUser } from '../services/wechat/users.service.js'
 import {
   EVENT_MAX_AGE_MS,
   checkAndPushLocationEvents,
-  isSkipReply,
   resolveEventPushDecision
 } from '../services/wechat/location-push.service.js'
 import { ingestAndProcessLocations } from '../services/phone/track.service.js'

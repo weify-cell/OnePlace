@@ -13,6 +13,7 @@ import { getILinkModel } from './model.js'
 import { flushPending, hasPending } from './delivery.js'
 import { AgentEvent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import { formatBeijingTime } from '../../utils/time.js'
+import { decideReplyOutcome } from '../ai/skip.js'
 
 // 北京时间格式化统一由 utils/time.js 实现，此处 re-export 以保持既有引用可用
 export { formatBeijingTime }
@@ -290,7 +291,8 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
         await bot!.reply(msg, `${reportMatch[1]}生成中，请稍候...`)
         try {
           const content = await handleReportCommand(bot!, msg.userId, type)
-          await bot!.reply(msg, content)
+          // 主动索取的报告产出空文本时，给失败提示而不是发一条空消息
+          await bot!.reply(msg, content.trim() ? content : `${reportMatch[1]}生成失败，请稍后再试。`)
         } catch (err) {
           console.error('[ilink] 生成报告失败:', err)
           await bot!.reply(msg, `${reportMatch[1]}生成失败，请稍后再试。`)
@@ -349,9 +351,13 @@ export async function startILinkBot(): Promise<{ success: boolean; error?: strin
           ...getILinkModel()
         })
 
-        await bot!.reply(msg, replyContent || '抱歉，没有生成回复。')
-        addMessageToHistory(msg.userId, 'user', userText)
-        addMessageToHistory(msg.userId, 'assistant', replyContent)
+        // 发不发、留什么，全交给这一处判断（跳过与空文本都不发消息）
+        await deliverBotTurn({
+          userId: msg.userId,
+          userText,
+          replyContent,
+          send: (text) => bot!.reply(msg, text)
+        })
         messagesProcessed++
         lastMessageAt = new Date().toISOString()
         lastError = null
@@ -532,4 +538,45 @@ export function clearMessageHistory(userId?: string): void {
 export function resetLoginState(): void {
   loginStatus = 'idle'
   loginQRCode = null
+}
+
+/**
+ * 一回合的收尾：发出去 / 跳过 / 空了，三种结局的账目都在这里，别处不再各判一遍。
+ *
+ * 发送器是注入的（位置推送的 `runTurn` 同款做法），这样测试验的是**账目**——发不发、
+ * 历史里留什么——而不是模型的输出。
+ *
+ * 三条规矩：
+ * - **跳过**：不发、不留 assistant 行，但你说的话必须入库（你确实说了，抹掉会让
+ *   重启后重建历史时以为你没说过）；历史里因此会出现连续两条 user，`convertMessages`
+ *   是直通映射，已验证安全。
+ * - **空文本**：同样是生成异常而非决定，不发、记 warning。两者后果一样，原因必须分开。
+ * - **正常**：发出去了才写 assistant 行（没送达的话下一轮不该以为自己说过）。
+ */
+export async function deliverBotTurn(input: {
+  userId: string
+  userText: string
+  replyContent: string
+  send: (text: string) => Promise<unknown>
+}): Promise<'sent' | 'skipped' | 'empty'> {
+  const outcome = decideReplyOutcome(input.replyContent)
+
+  // 你的消息先入库：这句话你确实说了，与后面发不发得出去无关
+  // （发送失败也照记，否则重启后重建历史时会以为你没说过）
+  addMessageToHistory(input.userId, 'user', input.userText)
+
+  if (outcome === 'empty') {
+    console.warn(`[ilink] 模型这一回合没产出内容，不发消息（user=${input.userId}）`)
+    return 'empty'
+  }
+
+  if (outcome === 'skip') {
+    console.log(`[ilink] 跳过这一回合，不回复（user=${input.userId}）`)
+    return 'skipped'
+  }
+
+  await input.send(input.replyContent)
+  // 只有真发出去了才留 assistant 行：发送抛错不该让它以为自己说过
+  addMessageToHistory(input.userId, 'assistant', input.replyContent)
+  return 'sent'
 }

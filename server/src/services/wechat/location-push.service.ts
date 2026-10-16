@@ -13,6 +13,7 @@ import { buildSystemPrompt } from '../ai/prompt.js'
 import { runAgentTurn, wechatAgentId, type AgentTurnRequest } from '../ai/agent-turn.js'
 import type { ChatMessage } from '../ai/pi-ai.adapter.js'
 import { getILinkModel } from './model.js'
+import { SKIP_TOKEN, isSkipReply } from '../ai/skip.js'
 
 /**
  * 轨迹事件推送：到家/离开/一段行程结束时，主动说一句有用的话。
@@ -36,8 +37,6 @@ export const EVENT_MAX_AGE_MS = 2 * 60 * 60 * 1000
  * 而不是把上限设成 0 ——那只会让人以为"没坏，只是没发"。
  */
 export const DEFAULT_MAX_PUSH_PER_DAY: number | null = null
-/** 模型可以选择"没什么好说的"，这时只消费事件、不打扰用户 */
-const SKIP_TOKEN = 'SKIP'
 
 const DEFAULT_PUSH_USER_MESSAGE = [
   '【手机轨迹事件】{events}',
@@ -167,11 +166,6 @@ async function generatePushMessage(
     ...getILinkModel()
   })
   return content.trim()
-}
-
-/** 是否是「没什么好说的」：容忍模型多打一个句号。 */
-export function isSkipReply(reply: string): boolean {
-  return reply.trim().replace(/[。.!！]$/, '').toUpperCase() === SKIP_TOKEN
 }
 
 /**

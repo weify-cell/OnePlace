@@ -299,3 +299,35 @@ describe('sendAndPersist', () => {
     expect(db.prepare('SELECT COUNT(*) c FROM wechat_reports').get()).toMatchObject({ c: 1 })
   })
 })
+
+describe('空文本：不是「跳过」，是生成异常', () => {
+  it('定时报告产出空文本 → 不发送、不落表（否则用户收到一条空消息，或被误记成已发）', async () => {
+    const { runAgentTurn } = await import('../services/ai/agent-turn.js')
+    const { sendAndPersist, listReports } = await import('../services/wechat/report.service.js')
+    vi.mocked(runAgentTurn).mockResolvedValueOnce('')
+    const sent: string[] = []
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    // 单用户部署：listReports 不按 user 过滤，所以看前后差值
+    const before = listReports('u-empty-1', 'daily').length
+
+    await sendAndPersist('u-empty-1', 'daily', async (_uid, content) => { sent.push(content) })
+
+    expect(sent).toHaveLength(0)
+    expect(listReports('u-empty-1', 'daily')).toHaveLength(before)
+    expect(warn.mock.calls.flat().join(' ')).toContain('[report]')
+    warn.mockRestore()
+  })
+
+  it('手动 /日报 产出空文本 → 不落表（返回空串，由调用方给出失败提示）', async () => {
+    const { runAgentTurn } = await import('../services/ai/agent-turn.js')
+    const { handleReportCommand, listReports } = await import('../services/wechat/report.service.js')
+    vi.mocked(runAgentTurn).mockResolvedValueOnce('   ')
+
+    const before = listReports('u-empty-2', 'daily').length
+
+    const content = await handleReportCommand({} as never, 'u-empty-2', 'daily')
+
+    expect(content.trim()).toBe('')
+    expect(listReports('u-empty-2', 'daily')).toHaveLength(before)
+  })
+})

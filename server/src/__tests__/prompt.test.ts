@@ -240,3 +240,49 @@ describe('buildMemoryUserContent', () => {
     expect(DEFAULT_MEMORY_USER_TEMPLATE).toContain('{recordCount}')
   })
 })
+
+describe('「跳过」规则只出现在允许跳过的回合里', () => {
+  it('bot 回复与主动搭话拿得到规则', async () => {
+    const bot = await buildSystemPrompt({ kind: 'bot-chat' })
+    const proactive = await buildSystemPrompt({ kind: 'proactive' })
+
+    expect(bot).toContain('SKIP')
+    expect(proactive).toContain('SKIP')
+  })
+
+  it('bot 回复的规则要挡住「该回却不回」：提问、需要信息、情绪类不许跳过', async () => {
+    const bot = await buildSystemPrompt({ kind: 'bot-chat' })
+
+    expect(bot).toContain('提问')
+  })
+
+  it('两个档位不能串：bot 默认必须回，主动搭话是"跳过是常态"', async () => {
+    const bot = await buildSystemPrompt({ kind: 'bot-chat' })
+    const proactive = await buildSystemPrompt({ kind: 'proactive' })
+
+    // 让你提问时不许沉默的那句，只属于 bot 回复
+    expect(bot).toContain('必须回')
+    expect(proactive).not.toContain('必须回')
+  })
+
+  it('学习模式没有跳过的权力（你主动开的会话，它不能说走就走）', async () => {
+    const prompt = await buildSystemPrompt({ kind: 'learning', topic: 'Rust' })
+
+    expect(prompt).not.toContain('SKIP')
+  })
+
+  it('其它回合（web 对话 / 报告 / 记忆整理）也拿不到', async () => {
+    expect(await buildSystemPrompt({ kind: 'web-chat', toolsEnabled: true })).not.toContain('SKIP')
+    expect(await buildSystemPrompt({ kind: 'report', reportType: '日报' })).not.toContain('SKIP')
+    expect(await buildSystemPrompt({ kind: 'memory' })).not.toContain('SKIP')
+  })
+
+  it('设置页里把提示词改成什么都盖不掉它（能力是机制，不是话术）', async () => {
+    setSetting('ilink_system_prompt', '你是我的私人助理，说话简短。')
+
+    const prompt = await buildSystemPrompt({ kind: 'bot-chat' })
+
+    expect(prompt).toContain('你是我的私人助理')
+    expect(prompt).toContain('SKIP')
+  })
+})
