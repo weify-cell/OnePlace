@@ -1,23 +1,24 @@
 <script setup lang="ts">
 import { useTodoStore } from '@/stores/todo.store'
+import { asSelectOptions } from '@/utils/naiveSelect'
 import { TODO_PRIORITY_LABELS, TODO_TASK_KIND_LABELS, TODO_TYPE_LABELS } from '@/types'
 
 const todoStore = useTodoStore()
 
-const priorityOptions = [
+const priorityOptions = asSelectOptions([
   { label: '全部优先级', value: null },
   ...Object.entries(TODO_PRIORITY_LABELS).map(([value, label]) => ({ label, value }))
-]
+])
 
-const taskKindOptions = [
+const taskKindOptions = asSelectOptions([
   { label: '全部任务性质', value: null },
   ...Object.entries(TODO_TASK_KIND_LABELS).map(([value, label]) => ({ label, value }))
-]
+])
 
-const typeOptions = [
+const typeOptions = asSelectOptions([
   { label: '全部类型', value: null },
   ...Object.entries(TODO_TYPE_LABELS).map(([value, label]) => ({ label, value }))
-]
+])
 
 const hasFilters = computed(() =>
   todoStore.filters.priority ||

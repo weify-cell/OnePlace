@@ -89,7 +89,7 @@ function fillCurrentDatetime() {
 }
 
 async function copyResult() {
-  const text = isTimestampMode() ? datetimeResult.value : timestampResult.value
+  const text = isTimestampMode.value ? datetimeResult.value : timestampResult.value
   if (!text) {
     message.warning('没有可复制的内容')
     return

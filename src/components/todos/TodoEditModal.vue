@@ -7,6 +7,7 @@ import {
   TODO_TASK_KIND_LABELS,
   TODO_TYPE_LABELS
 } from '@/types'
+import { asSelectOptions } from '@/utils/naiveSelect'
 import TagInput from '@/components/common/TagInput.vue'
 
 const props = defineProps<{ show: boolean; todo: Todo }>()
@@ -87,10 +88,10 @@ const taskKindHint = computed(() =>
     ? '长期任务：提醒到点后自动顺延到次日同一时间，每天重复提醒，并可记录进度'
     : '一次性任务：提醒到点后只推送一次，随后自动关闭提醒'
 )
-const typeOptions = [
+const typeOptions = asSelectOptions([
   { label: '未分类', value: null },
   ...Object.entries(TODO_TYPE_LABELS).map(([value, label]) => ({ label, value }))
-]
+])
 
 async function loadProgressLogs() {
   progressLoading.value = true

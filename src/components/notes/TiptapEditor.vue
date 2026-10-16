@@ -33,7 +33,7 @@ watch(() => props.content, (newContent) => {
   const current = JSON.stringify(editor.value.getJSON())
   if (current !== newContent) {
     try {
-      editor.value.commands.setContent(JSON.parse(newContent), false)
+      editor.value.commands.setContent(JSON.parse(newContent), { emitUpdate: false })
     } catch {
       // ignore
     }

@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import { useNoteStore } from '@/stores/note.store'
 import { uploadApi } from '@/api/upload.api'
+import { asSelectOptions } from '@/utils/naiveSelect'
 
 const props = defineProps<{
   show: boolean
@@ -22,10 +23,10 @@ const selectedFolderId = ref<number | null>(null)
 const uploading = ref(false)
 const dragOver = ref(false)
 
-const folderOptions = computed(() => [
+const folderOptions = computed(() => asSelectOptions([
   { label: '无文件夹', value: null },
   ...noteStore.folders.map(f => ({ label: f.name, value: f.id }))
-])
+]))
 
 const fileSize = computed(() => {
   if (!selectedFile.value) return ''

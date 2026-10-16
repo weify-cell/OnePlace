@@ -72,7 +72,8 @@ const naiveThemeOverrides = computed(() => ({
   },
   Select: {
     peers: {
-      InternalInput: {
+      // naive-ui 改过内部组件名：旧的 InternalInput 已不存在，改后覆盖才真的生效
+      InternalSelection: {
         color: isDark.value ? '#292524' : '#fffbeb',
         colorDisabled: isDark.value ? '#1c1917' : '#fef3c7',
       }

@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { useTodoStore } from '@/stores/todo.store'
 import type { TodoPriority, TodoStatus, TodoTaskKind, TodoType } from '@/types'
 import { TODO_PRIORITY_LABELS, TODO_TASK_KIND_LABELS, TODO_TYPE_LABELS } from '@/types'
+import { asSelectOptions } from '@/utils/naiveSelect'
 import TagInput from '@/components/common/TagInput.vue'
 
 defineProps<{ show: boolean }>()
@@ -27,10 +28,10 @@ const defaultForm = () => ({
 const form = ref(defaultForm())
 
 const priorityOptions = Object.entries(TODO_PRIORITY_LABELS).map(([value, label]) => ({ label, value }))
-const typeOptions = [
+const typeOptions = asSelectOptions([
   { label: '未分类', value: null },
   ...Object.entries(TODO_TYPE_LABELS).map(([value, label]) => ({ label, value }))
-]
+])
 const taskKindOptions = Object.entries(TODO_TASK_KIND_LABELS).map(([value, label]) => ({ label, value }))
 
 // 任务性质决定提醒行为，页面显式提示（长期每天顺延重复提醒 / 一次性只提醒一次）

@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMessage, useDialog } from 'naive-ui'
 import { useDebounceFn } from '@vueuse/core'
+import { asSelectOptions } from '@/utils/naiveSelect'
 import AppLayout from '@/components/common/AppLayout.vue'
 import TiptapEditor from '@/components/notes/TiptapEditor.vue'
 import CodeMirrorMarkdownEditor from '@/components/notes/CodeMirrorMarkdownEditor.vue'
@@ -10,6 +11,7 @@ import MarkdownPreview from '@/components/notes/MarkdownPreview.vue'
 import TagInput from '@/components/common/TagInput.vue'
 import { tiptapToMarkdown } from '@/components/editor/TiptapToMarkdown'
 import { useNoteStore } from '@/stores/note.store'
+import type { Note } from '@/types'
 import { useKnowledgeBaseStore } from '@/stores/knowledge_base.store'
 
 const route = useRoute()
@@ -29,10 +31,10 @@ const hasUnsavedChanges = ref(false)
 const pendingTitle = ref('')
 const pendingContent = ref('')
 
-const folderOptions = computed(() => [
+const folderOptions = computed(() => asSelectOptions([
   { label: '无文件夹', value: null },
   ...noteStore.folders.map(f => ({ label: f.name, value: f.id }))
-])
+]))
 
 const isMarkdownNote = computed(() => note.value?.content_format === 'markdown')
 const isLegacyNote = computed(() => note.value?.content_format === 'tiptap' || !note.value?.content_format)
@@ -93,7 +95,7 @@ watch(() => noteEmbeddingStatus.value.running, (running) => {
   }
 })
 
-const debouncedSave = useDebounceFn(async (data: { title?: string; content?: string; content_format?: string; tags?: string[] }) => {
+const debouncedSave = useDebounceFn(async (data: { title?: string; content?: string; content_format?: Note['content_format']; tags?: string[] }) => {
   if (!note.value) return
   await noteStore.updateNote(note.value.id, data)
 }, 1000)
@@ -273,9 +275,9 @@ function handleEditLegacyNote() {
               </template>
               {{ note.is_pinned ? '取消置顶' : '置顶' }}
             </n-button>
-            <div class="note-toolbar__kb">
+            <div v-if="note" class="note-toolbar__kb">
               <span class="note-toolbar__kb-label">知识库</span>
-              <n-switch size="small" :value="note.is_knowledge_base" @update:value="(v) => noteStore.updateNote(note.id, { is_knowledge_base: v })" />
+              <n-switch size="small" :value="note.is_knowledge_base" @update:value="(v) => noteStore.updateNote(note!.id, { is_knowledge_base: v })" />
             </div>
           </template>
           <template v-else>
